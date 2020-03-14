@@ -30,9 +30,96 @@ quick_rom = ROM( [
   ANDI( 3, 1, 0x94D ), AND( 4, 1, 2 ),
   # Jump over some dummy data.
   JAL( 31, 0x00006 ), 0xDEADBEEF, 0xDEADBEEF,
+  # ADDI, SUB (expect r5 = -2, r6 = 0x0000125)
+  ADDI( 5, 0, 0xFFE ), SUB( 6, 1, 5 ),
   # Done; infinite loop.
   JAL( 1, 0x00000 )
 ] )
+
+#####################################################################
+# RISC-V test cases. The assembly files for the 'rv32ui' tests are  #
+# identical to the 'rv64ui' ones; 64-bit values are just truncated. #
+# They are structured as C preprocessor macro calls; for example,   #
+# most immediate test files are a series of `TEST_IMM_OP(...)`s,    #
+# which translate to "LI, <operation>, LI, LI, BNE", where the      #
+# final "LI / BNE" branches to a "fail" label if the result         #
+# doesn't match. I'm going to reduce that to just the first two     #
+# "LI, <operation>" instructions, then I'll inspect the result      #
+# in the testbench without running the final `TEST_CASE(...)`       #
+# macro instructions. I think this is an adequate way to            #
+# run the test cases before the CPU can actually run in an FPGA.    #
+# Note that "LI" is not an instruction; it is an assembly pseudo-op #
+# which translates into multiple instructions that load an entire   #
+# 32-bit constant into a register. See the definition in `isa.py`.  #
+#####################################################################
+
+# 'ADDI' rv32ui tests. (Same as rv64ui tests, with truncated values)
+addi_img = [
+  # Test #2. For some reason, RISC-V test numbering starts at 2.
+  # Maybe I'm missing a couple of common shared 'startup' tests?
+  LI( 1, 0x00000000 ), ADDI( 14, 1, 0x000 ),
+  # Test #3.
+  LI( 1, 0x00000001 ), ADDI( 14, 1, 0x001 ),
+  # Test #4.
+  LI( 1, 0x00000003 ), ADDI( 14, 1, 0x007 ),
+  # Test #5.
+  LI( 1, 0x00000000 ), ADDI( 14, 1, 0x800 ),
+  # Test #6.
+  LI( 1, 0x80000000 ), ADDI( 14, 1, 0x000 ),
+  # Test #7.
+  LI( 1, 0x80000000 ), ADDI( 14, 1, 0x800 ),
+  # Test #8.
+  LI( 1, 0x00000000 ), ADDI( 14, 1, 0x7FF ),
+  # Test #9.
+  LI( 1, 0x7FFFFFFF ), ADDI( 14, 1, 0x000 ),
+  # Test #10.
+  LI( 1, 0x7FFFFFFF ), ADDI( 14, 1, 0x7FF ),
+  # Test #11.
+  LI( 1, 0x80000000 ), ADDI( 14, 1, 0x7FF ),
+  # Test #12.
+  LI( 1, 0x7FFFFFFF ), ADDI( 14, 1, 0x800 ),
+  # Test #13.
+  LI( 1, 0x00000000 ), ADDI( 14, 1, 0xFFF ),
+  # Test #14.
+  LI( 1, 0xFFFFFFFF ), ADDI( 14, 1, 0x001 ),
+  # Test #15.
+  LI( 1, 0xFFFFFFFF ), ADDI( 14, 1, 0xFFF ),
+  # Test #16.
+  LI( 1, 0x7FFFFFFF ), ADDI( 14, 1, 0x001 ),
+  # Test #17
+  LI( 1, 13 ), ADDI( 1, 1, 11 ),
+  # The extra iteration over these 'bypass' tests looks odd,
+  # but I think it's supposed to check for data hazards when
+  # instructions are pipelined. I haven't implemented anything
+  # fancy like that yet, but there you go.
+  # Test #18
+  LI( 4, 0 ), LI( 1, 13 ), ADDI( 14, 1, 11 ), ADDI( 6, 14, 0x000 ),
+  ADDI( 4, 4, 0x001 ), LI( 5, 2 ), BNE( 4, 5, -14 ),
+  # Test #19
+  LI( 4, 0 ), LI( 1, 13 ), ADDI( 14, 1, 10 ), ADDI( 6, 14, 0x000 ),
+  NOP(),
+  ADDI( 4, 4, 0x001 ), LI( 5, 2 ), BNE( 4, 5, -16 ),
+  # Test #20
+  LI( 4, 0 ), LI( 1, 13 ), ADDI( 14, 1, 9 ), ADDI( 6, 14, 0x000 ),
+  NOP(), NOP(),
+  ADDI( 4, 4, 0x001 ), LI( 5, 2 ), BNE( 4, 5, -18 ),
+  # Test #21
+  LI( 4, 0 ), LI( 1, 13 ), ADDI( 14, 1, 11 ),
+  ADDI( 4, 4, 0x001 ), LI( 5, 2 ), BNE( 4, 5, -12 ),
+  # Test #22
+  LI( 4, 0 ), LI( 1, 13 ), ADDI( 14, 1, 10 ), NOP(),
+  ADDI( 4, 4, 0x001 ), LI( 5, 2 ), BNE( 4, 5, -14 ),
+  # Test #23
+  LI( 4, 0 ), LI( 1, 13 ), ADDI( 14, 1, 9 ), NOP(), NOP(),
+  ADDI( 4, 4, 0x001 ), LI( 5, 2 ), BNE( 4, 5, -16 ),
+  # Test #24
+  ADDI( 1, 0, 32 ),
+  # Test #25
+  LI( 1, 33 ), ADDI( 0, 1, 50 ),
+  # Done; infinite loop.
+  JAL( 1, 0x00000 )
+]
+addi_rom = ROM( rom_img( addi_img ) )
 
 ########################################
 # Expected runtime register values for #
@@ -78,7 +165,69 @@ quick_exp = {
   8: [ { 'r': 3, 'e': 0x00000101 }, { 'r': 4, 'e': 0x00000002 } ],
   # An unconditional jump skips ahead a bit more.
   9: [ { 'r': 'pc', 'e': 0x00000044 } ],
+  # Two subtraction operations set r5, r6.
+  11: [ { 'r': 5, 'e': -2 }, { 'r': 6, 'e': 0x0000125 } ],
   'end': 52
+}
+
+# Expected runtime values for the "ADDI instruction" test program.
+addi_exp = {
+  # Standard immediate tests (r1 = 'a', r14 = result)
+  # Testcase 2:  0 + 0 = 0
+  3:  [ { 'r': 1, 'e': 0x00000000 }, { 'r': 14, 'e': 0x00000000 } ],
+  # Testcase 3:  1 + 1 = 2
+  6:  [ { 'r': 1, 'e': 0x00000001 }, { 'r': 14, 'e': 0x00000002 } ],
+  # Testcase 4:  3 + 7 = 10
+  9:  [ { 'r': 1, 'e': 0x00000003 }, { 'r': 14, 'e': 0x0000000a } ],
+  # Testcase 5:  0 + 0x800 = 0xFFFFF800
+  12: [ { 'r': 1, 'e': 0x00000000 }, { 'r': 14, 'e': 0xFFFFF800 } ],
+  # Testcase 6:  min + 0 = min
+  15: [ { 'r': 1, 'e': 0x80000000 }, { 'r': 14, 'e': 0x80000000 } ],
+  # Testcase 7:  min + 0x800 = 0x7FFFF800
+  18: [ { 'r': 1, 'e': 0x80000000 }, { 'r': 14, 'e': 0x7FFFF800 } ],
+  # Testcase 8:  0 + 0x7FF = 0x000007FF
+  21: [ { 'r': 1, 'e': 0x00000000 }, { 'r': 14, 'e': 0x000007FF } ],
+  # Testcase 9:  max + 0 = max
+  24: [ { 'r': 1, 'e': 0x7FFFFFFF }, { 'r': 14, 'e': 0x7FFFFFFF } ],
+  # Testcase 10: max + 0x7FF = 0x800007FE
+  27: [ { 'r': 1, 'e': 0x7FFFFFFF }, { 'r': 14, 'e': 0x800007FE } ],
+  # Testcase 11: min + 0x7FF = 0x800007FF
+  30: [ { 'r': 1, 'e': 0x80000000 }, { 'r': 14, 'e': 0x800007FF } ],
+  # Testcase 12: max + 0x800 = 0x7FFFF7FF
+  33: [ { 'r': 1, 'e': 0x7FFFFFFF }, { 'r': 14, 'e': 0x7FFFF7FF } ],
+  # Testcase 13: 0 + -1 = -1
+  36: [ { 'r': 1, 'e': 0x00000000 }, { 'r': 14, 'e': 0xFFFFFFFF } ],
+  # Testcase 14: -1 + 1 = 0
+  39: [ { 'r': 1, 'e': 0xFFFFFFFF }, { 'r': 14, 'e': 0x00000000 } ],
+  # Testcase 15: -1 + -1 = -2
+  42: [ { 'r': 1, 'e': 0xFFFFFFFF }, { 'r': 14, 'e': 0xFFFFFFFE } ],
+  # Testcase 16: max + 1 = min
+  45: [ { 'r': 1, 'e': 0x7FFFFFFF }, { 'r': 14, 'e': 0x80000000 } ],
+  # Source/Destination tests (r1 = 'a', r1 = result)
+  # Testcase 17: 13 + 11 = 24
+  47: [ { 'r': 1, 'e': 13 } ],
+  48: [ { 'r': 1, 'e': 24 } ],
+  # 'Destination Bypass' tests with 0, 1, 2 nops:
+  # Testcase 18: 13 + 11 = 24
+  66: [ { 'r': 6, 'e': 24 }, { 'r': 14, 'e': 24 } ],
+  # Testcase 19: 13 + 10 = 23
+  86: [ { 'r': 6, 'e': 23 }, { 'r': 14, 'e': 23 } ],
+  # Testcase 20: 13 + 9 = 22
+  108: [ { 'r': 6, 'e': 22 }, { 'r': 14, 'e': 22 } ],
+  # 'Source Bypass' tests with 0, 1, 2 nops:
+  # Testcase 21: 13 + 11 = 24
+  124: [ { 'r': 14, 'e': 24 } ],
+  # Testcase 22: 13 + 10 = 23
+  142: [ { 'r': 14, 'e': 23 } ],
+  # Testcase 23: 13 + 9 = 22
+  162: [ { 'r': 14, 'e': 22 } ],
+  # 'Zero Source' tests:
+  # Testcase 24: 32 + 0 = 32
+  163: [ { 'r': 1, 'e': 32 } ],
+  # 'Zero Destination' tests:
+  166: [ { 'r': 1, 'e': 33 }, { 'r': 0, 'e': 0 } ],
+  # Testcase 25: 33 + 50 = 0 (because r0 is always 0)
+  'end': 170
 }
 
 ############################################
@@ -89,3 +238,4 @@ quick_exp = {
 
 loop_test  = [ 'inifinite loop test', 'cpu_loop', loop_rom, loop_exp ]
 quick_test = [ 'quick test', 'cpu_quick', quick_rom, quick_exp ]
+addi_test  = [ 'ADDI test cases', 'cpu_addi', addi_rom, addi_exp ]

@@ -154,7 +154,7 @@ def RV32I_B( bop, a, b, i ):
 def RV32I_U( op, c, i ):
   return ( ( op & 0x7F ) |
          ( ( c  & 0x1F ) << 7 ) |
-         ( i << 20 ) )
+         ( ( i & 0xFFFFF000 ) ) )
 
 # J-type operation: In the base RV32I spec, this is only used by JAL.
 # Jumps to (PC + Immediate) and stores (PC + 4) in Rc. The 20-bit
@@ -249,6 +249,14 @@ def AUIPC( c, i ):
 # J-type operation:
 def JAL( c, i ):
   return RV32I_J( OP_JAL, c, i )
+# Assembly pseudo-ops:
+def LI( c, i ):
+  if ( ( i & 0x0FFF ) & 0x0800 ):
+    return LUI( c, ( ( i >> 12 ) + 1 ) << 12 ), ADDI( c, c, ( i & 0x0FFF ) )
+  else:
+    return LUI( c, i ), ADDI( c, c, ( i & 0x0FFF ) )
+def NOP():
+  return ADDI( 0, 0, 0x000 )
 
 # Helper method to pretty-print a 2s-complement 32-bit hex string.
 def hexs( h ):
@@ -256,3 +264,15 @@ def hexs( h ):
     return "0x%08X"%( h )
   else:
     return "0x%08X"%( ( h + ( 1 << 32 ) ) % ( 1 << 32 ) )
+
+# Helper method to assemble a ROM image from a mix of instructions
+# and assembly pseudo-operations.
+def rom_img( arr ):
+  a = []
+  for i in arr:
+    if type( i ) == tuple:
+      for j in i:
+        a.append( j )
+    else:
+      a.append( i )
+  return a

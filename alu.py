@@ -65,6 +65,9 @@ class ALU( Elaboratable ):
     # Y = A + B
     with m.Elif( fn == ALU_ADD ):
       m.d.comb += self.y.eq( xa + xb )
+    # Y = A - B
+    with m.Elif( fn == ALU_SUB ):
+      m.d.comb += self.y.eq( xa - xb )
     # Y = ( A < B ) (signed)
     with m.Elif( fn == ALU_SLT ):
       m.d.comb += self.y.eq( xa < xb )

@@ -81,7 +81,8 @@ class CPU( Elaboratable ):
       with cpu.If( rb == i ):
         cpu.d.comb += self.alu.b.eq( self.r[ i ] )
       with cpu.If( rc == i ):
-        cpu.d.sync += self.r[ i ].eq( self.alu.y )
+        if i > 0:
+          cpu.d.sync += self.r[ i ].eq( self.alu.y )
 
   # Helper method to define shared logic for 'Rc = Ra ? Immediate'
   # ALU operations such as 'ADDI', 'ANDI', 'SLTI', etc.
@@ -115,8 +116,9 @@ class CPU( Elaboratable ):
     for i in range( 32 ):
       with cpu.If( ra == i ):
         cpu.d.comb += self.alu.a.eq( self.r[ i ] )
-      with cpu.If( rc == i ):
-        cpu.d.sync += self.r[ i ].eq( self.alu.y )
+      if i > 0:
+        with cpu.If( rc == i ):
+          cpu.d.sync += self.r[ i ].eq( self.alu.y )
 
   def elaborate( self, platform ):
     # Core CPU module.
@@ -138,7 +140,7 @@ class CPU( Elaboratable ):
     ipc = Signal( 32, reset = 0x00000000 )
 
     # r0 is hard-wired to 0.
-    self.r[ 0 ].eq( 0x00000000 )
+    m.d.comb += self.r[ 0 ].eq( 0x00000000 )
     # Set the program counter to the simulated ROM address by default.
     # (Load operations can temporarily override this)
     m.d.comb += self.rom.addr.eq( self.pc )
@@ -243,19 +245,19 @@ class CPU( Elaboratable ):
         m.d.comb += self.fsms.eq( CPU_PC_DECODE ) #TODO: Remove
         # "Load Upper Immediate" instruction:
         with m.If( opcode == OP_LUI ):
-          for i in range( 32 ):
-            with m.If( ra == i ):
+          for i in range( 1, 32 ):
+            with m.If( rc == i ):
               m.d.sync += self.r[ i ].eq( imm )
           m.next = "CPU_PC_LOAD"
         # "Add Upper Immediate to PC" instruction:
         with m.Elif( opcode == OP_AUIPC ):
-          for i in range( 32 ):
+          for i in range( 1, 32 ):
             with m.If( ra == i ):
               m.d.sync += self.r[ i ].eq( imm + self.pc )
           m.next = "CPU_PC_LOAD"
         # "Jump And Link" instruction:
         with m.Elif( opcode == OP_JAL ):
-          for i in range( 32 ):
+          for i in range( 1, 32 ):
             with m.If( rc == i ):
               m.d.sync += self.r[ i ].eq( ipc + 4 )
           m.d.nsync += self.pc.eq( self.pc + imm )
@@ -267,8 +269,9 @@ class CPU( Elaboratable ):
             with m.If( ra == i ):
               m.d.nsync += self.pc.eq( ( self.r[ i ] + imm ) &
                                        ( 0xFFFFFFFE ) )
-            with m.If( rc == i ):
-              m.d.sync += self.r[ i ].eq( ipc + 4 )
+            if i > 0:
+              with m.If( rc == i ):
+                m.d.sync += self.r[ i ].eq( ipc + 4 )
           m.next = "CPU_PC_ROM_FETCH"
         # "Conditional Branch" instructions:
         with m.Elif( opcode == OP_BRANCH ):
@@ -463,6 +466,8 @@ def cpu_sim( test ):
 
 # 'main' method to run a basic testbench.
 if __name__ == "__main__":
+  # Simulate the 'ADDI test' ROM.
+  cpu_sim( addi_test )
   # Simulate the 'quick test' ROM.
   cpu_sim( quick_test )
   # Simulate the 'infinite loop test' ROM.

@@ -9,14 +9,15 @@ from alu import *
 # ALU operation definitions. These implement the logic behind math
 # instructions, e.g. 'ADD' covers 'ADD', 'ADDI', 'SUB', and 'SUBI'.
 ALU_ADD   = 0b0001
-ALU_SLT   = 0b0010
-ALU_SLTU  = 0b0011
-ALU_XOR   = 0b0100
-ALU_OR    = 0b0101
-ALU_AND   = 0b0110
-ALU_SLL   = 0b0111
-ALU_SRL   = 0b1000
-ALU_SRA   = 0b1001
+ALU_SUB   = 0b0010
+ALU_SLT   = 0b0011
+ALU_SLTU  = 0b0100
+ALU_XOR   = 0b0101
+ALU_OR    = 0b0110
+ALU_AND   = 0b0111
+ALU_SLL   = 0b1000
+ALU_SRL   = 0b1001
+ALU_SRA   = 0b1010
 # Instruction field definitions.
 # RV32I opcode definitions:
 OP_LUI    = 0b0110111
@@ -100,7 +101,7 @@ def RV32I_R( rop, c, a, b ):
   op = rop[ 0 ]
   f  = rop[ 1 ]
   ff = rop[ 2 ]
-  return ( ( op & 0x7C ) |
+  return ( ( op & 0x7F ) |
          ( ( c  & 0x1F ) << 7  ) |
          ( ( f  & 0x07 ) << 12 ) |
          ( ( a  & 0x1F ) << 15 ) |
@@ -112,7 +113,7 @@ def RV32I_R( rop, c, a, b ):
 def RV32I_I( iop, c, a, i ):
   op = iop[ 0 ]
   f  = iop[ 1 ]
-  return ( ( op & 0x7C  ) |
+  return ( ( op & 0x7F  ) |
          ( ( c  & 0x1F  ) << 7  ) |
          ( ( f  & 0x07  ) << 12 ) |
          ( ( a  & 0x1F  ) << 15 ) |
@@ -123,7 +124,7 @@ def RV32I_I( iop, c, a, i ):
 def RV32I_S( sop, a, b, i ):
   op = sop[ 0 ]
   f  = sop[ 1 ]
-  return ( ( op & 0x7C ) |
+  return ( ( op & 0x7F ) |
          ( ( i  & 0x1F ) << 7  ) |
          ( ( f  & 0x07 ) << 12 ) |
          ( ( a  & 0x1F ) << 15 ) |
@@ -137,22 +138,22 @@ def RV32I_S( sop, a, b, i ):
 def RV32I_B( bop, a, b, i ):
   op = bop[ 0 ]
   f  = bop[ 1 ]
-  return ( ( op & 0x7C ) |
-         ( ( ( i >> 11 ) & 0x01 ) << 7  ) |
-         ( ( ( i >> 1  ) & 0x0F ) << 8  ) |
+  return ( ( op & 0x7F ) |
+         ( ( ( i >> 10 ) & 0x01 ) << 7  ) |
+         ( ( ( i ) & 0x0F ) << 8 ) |
          ( ( f  & 0x07 ) << 12 ) |
          ( ( a  & 0x1F ) << 15 ) |
          ( ( b  & 0x1F ) << 20 ) |
-         ( ( ( i >> 5  ) & 0x3F ) << 25 ) |
-         ( ( ( i >> 12 ) & 0x01 ) << 31 ) )
+         ( ( ( i >> 4  ) & 0x3F ) << 25 ) |
+         ( ( ( i >> 11 ) & 0x01 ) << 31 ) )
 
 # U-type operation: Load the 20-bit immediate into the most
 # significant bits of Rc, setting the 12 least significant bits to 0.
 # The opcode selects between LUI and AUIPC; AUIPC also adds the
 # current PC address to the result which is stored in Rc.
 def RV32I_U( op, c, i ):
-  return ( ( op & 0x7C ) |
-         ( ( c  & 0x1F ) << 5 ) |
+  return ( ( op & 0x7F ) |
+         ( ( c  & 0x1F ) << 7 ) |
          ( i << 20 ) )
 
 # J-type operation: In the base RV32I spec, this is only used by JAL.
@@ -160,12 +161,12 @@ def RV32I_U( op, c, i ):
 # immediate value represents a 21-bit value with LSb = 0; this
 # function takes the 21-bit representation as an argument.
 def RV32I_J( op, c, i ):
-  return ( ( op & 0x7C ) |
-         ( ( c  & 0x1F ) << 5 ) |
-         ( ( ( i >> 12 ) & 0xFF  ) << 12 ) |
-         ( ( ( i >> 11 ) & 0x01  ) << 20 ) |
-         ( ( ( i >> 1  ) & 0x3FF ) << 21 ) |
-         ( ( ( i >> 20 ) & 0x01  ) << 31 ) )
+  return ( ( op & 0x7F ) |
+         ( ( c  & 0x1F ) << 7 ) |
+         ( ( ( i >> 11 ) & 0xFF ) << 12 ) |
+         ( ( ( i >> 10 ) & 0x01 ) << 20 ) |
+         ( ( ( i ) & 0x3FF ) << 21 ) |
+         ( ( ( i >> 19 ) & 0x01 ) << 31 ) )
 
 # Functions to assemble individual instructions.
 # R-type operations:

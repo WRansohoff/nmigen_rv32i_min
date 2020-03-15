@@ -415,7 +415,7 @@ add_exp = {
   # Testcase 33:
   408: [ { 'r': 14, 'e': 25 } ],
   # Testcase 34:
-  432: [ { 'r': 14, 'e': 25 } ],
+  432: [ { 'r': 14, 'e': 26 } ],
   # 'Zero Source' tests:
   # Testcase 35:
   435: [ { 'r': 2, 'e': 15 } ],

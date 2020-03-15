@@ -34,8 +34,6 @@ Each test suite also creates a `.vcd` file containing the waveform results, so y
 
 - I haven't implemented traps (interrupts / exceptions) yet.
 
-- I'm not quite sure if nMigen generates little- or big-endian signals. I hope they're little-endian, and I would guess that they are since that's what x86/64 and ARM use, but I'm not completely sure. RISC-V does let you choose your endianness, but it sounds like they recommend a little-endian design for the sake of compatibility.
-
 - The spec does not define behavior when an unspecified opcode is encountered. For now, I'll just skip to incrementing the PC if that happens. But once I implement traps, it might merit raising an exception.
 
 - `FENCE`, `ECALL`, and `EBREAK` instructions will probably be implemented last. And the specification implies that simple designs can get away with combining `ECALL` and `EBREAK` into a single `SYSTEM` instruction, so I might do that.

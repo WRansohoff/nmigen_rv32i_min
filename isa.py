@@ -95,13 +95,21 @@ ALU_STRS = {
 # so that it's easier to name variables.                     #
 ##############################################################
 
+# Convert a 32-bit word to little-endian byte format.
+# 0x1234ABCD -> 0xCDAB3412
+def LITTLE_END( v ):
+  return ( ( ( v & 0x000000FF ) << 24 ) |
+           ( ( v & 0x0000FF00 ) << 8  ) |
+           ( ( v & 0x00FF0000 ) >> 8  ) |
+           ( ( v & 0xFF000000 ) >> 24 ) )
+
 # R-type operation: Rc = Ra ? Rb
 # The '?' operation depends on the opcode, funct3, and funct7 bits.
 def RV32I_R( rop, c, a, b ):
   op = rop[ 0 ]
   f  = rop[ 1 ]
   ff = rop[ 2 ]
-  return ( ( op & 0x7F ) |
+  return LITTLE_END( ( op & 0x7F ) |
          ( ( c  & 0x1F ) << 7  ) |
          ( ( f  & 0x07 ) << 12 ) |
          ( ( a  & 0x1F ) << 15 ) |
@@ -113,7 +121,7 @@ def RV32I_R( rop, c, a, b ):
 def RV32I_I( iop, c, a, i ):
   op = iop[ 0 ]
   f  = iop[ 1 ]
-  return ( ( op & 0x7F  ) |
+  return LITTLE_END( ( op & 0x7F  ) |
          ( ( c  & 0x1F  ) << 7  ) |
          ( ( f  & 0x07  ) << 12 ) |
          ( ( a  & 0x1F  ) << 15 ) |
@@ -124,7 +132,7 @@ def RV32I_I( iop, c, a, i ):
 def RV32I_S( sop, a, b, i ):
   op = sop[ 0 ]
   f  = sop[ 1 ]
-  return ( ( op & 0x7F ) |
+  return LITTLE_END( ( op & 0x7F ) |
          ( ( i  & 0x1F ) << 7  ) |
          ( ( f  & 0x07 ) << 12 ) |
          ( ( a  & 0x1F ) << 15 ) |
@@ -138,7 +146,7 @@ def RV32I_S( sop, a, b, i ):
 def RV32I_B( bop, a, b, i ):
   op = bop[ 0 ]
   f  = bop[ 1 ]
-  return ( ( op & 0x7F ) |
+  return LITTLE_END( ( op & 0x7F ) |
          ( ( ( i >> 10 ) & 0x01 ) << 7  ) |
          ( ( ( i ) & 0x0F ) << 8 ) |
          ( ( f  & 0x07 ) << 12 ) |
@@ -152,7 +160,7 @@ def RV32I_B( bop, a, b, i ):
 # The opcode selects between LUI and AUIPC; AUIPC also adds the
 # current PC address to the result which is stored in Rc.
 def RV32I_U( op, c, i ):
-  return ( ( op & 0x7F ) |
+  return LITTLE_END( ( op & 0x7F ) |
          ( ( c  & 0x1F ) << 7 ) |
          ( ( i & 0xFFFFF000 ) ) )
 
@@ -161,7 +169,7 @@ def RV32I_U( op, c, i ):
 # immediate value represents a 21-bit value with LSb = 0; this
 # function takes the 21-bit representation as an argument.
 def RV32I_J( op, c, i ):
-  return ( ( op & 0x7F ) |
+  return LITTLE_END( ( op & 0x7F ) |
          ( ( c  & 0x1F ) << 7 ) |
          ( ( ( i >> 11 ) & 0xFF ) << 12 ) |
          ( ( ( i >> 10 ) & 0x01 ) << 20 ) |

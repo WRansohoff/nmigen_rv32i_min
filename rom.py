@@ -30,9 +30,16 @@ class ROM( Elaboratable ):
     with m.Elif( self.addr >= ( self.size * 4 ) ):
       m.d.sync += self.out.eq( 0 )
     # Set the 'output' value to the requested 'data' array index.
+    # Decode words as little-endian values.
+    # 0xCDAB3412 -> 0x1234ABCD
+    # TODO: Do this in the CPU's decode stage instead of ROM output.
     for i in range( self.size ):
       with m.Elif( self.addr == ( i * 4 ) ):
-        m.d.sync += self.out.eq( self.data[ i ] )
+        m.d.sync += self.out.eq(
+          ( ( self.data[ i ] & 0x000000FF ) << 24 ) |
+          ( ( self.data[ i ] & 0x0000FF00 ) << 8  ) |
+          ( ( self.data[ i ] & 0x00FF0000 ) >> 8  ) |
+          ( ( self.data[ i ] & 0xFF000000 ) >> 24 ) )
 
     # End of ROM module definition.
     return m

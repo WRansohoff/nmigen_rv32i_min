@@ -466,8 +466,13 @@ def cpu_sim( test ):
 
 # 'main' method to run a basic testbench.
 if __name__ == "__main__":
+  # RV32I operation RISC-V tests.
+  # Simulate the 'ADD test' ROM.
+  cpu_sim( add_test )
   # Simulate the 'ADDI test' ROM.
   cpu_sim( addi_test )
+
+  # Miscellaneous tests which are not part of the RV32I test suite.
   # Simulate the 'quick test' ROM.
   cpu_sim( quick_test )
   # Simulate the 'infinite loop test' ROM.

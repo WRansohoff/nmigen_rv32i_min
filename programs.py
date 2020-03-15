@@ -53,45 +53,143 @@ quick_rom = ROM( [
 # 32-bit constant into a register. See the definition in `isa.py`.  #
 #####################################################################
 
-# 'ADDI' rv32ui tests. (Same as rv64ui tests, with truncated values)
-addi_img = [
+# 'ADD' rv32ui tests. (Same as rv64ui tests, with truncated values)
+add_img = [
   # Test #2. For some reason, RISC-V test numbering starts at 2.
   # Maybe I'm missing a couple of common shared 'startup' tests?
-  LI( 1, 0x00000000 ), ADDI( 14, 1, 0x000 ),
-  # Test #3.
-  LI( 1, 0x00000001 ), ADDI( 14, 1, 0x001 ),
-  # Test #4.
-  LI( 1, 0x00000003 ), ADDI( 14, 1, 0x007 ),
-  # Test #5.
-  LI( 1, 0x00000000 ), ADDI( 14, 1, 0x800 ),
-  # Test #6.
-  LI( 1, 0x80000000 ), ADDI( 14, 1, 0x000 ),
-  # Test #7.
-  LI( 1, 0x80000000 ), ADDI( 14, 1, 0x800 ),
-  # Test #8.
-  LI( 1, 0x00000000 ), ADDI( 14, 1, 0x7FF ),
-  # Test #9.
-  LI( 1, 0x7FFFFFFF ), ADDI( 14, 1, 0x000 ),
-  # Test #10.
-  LI( 1, 0x7FFFFFFF ), ADDI( 14, 1, 0x7FF ),
-  # Test #11.
-  LI( 1, 0x80000000 ), ADDI( 14, 1, 0x7FF ),
-  # Test #12.
-  LI( 1, 0x7FFFFFFF ), ADDI( 14, 1, 0x800 ),
-  # Test #13.
-  LI( 1, 0x00000000 ), ADDI( 14, 1, 0xFFF ),
-  # Test #14.
-  LI( 1, 0xFFFFFFFF ), ADDI( 14, 1, 0x001 ),
-  # Test #15.
-  LI( 1, 0xFFFFFFFF ), ADDI( 14, 1, 0xFFF ),
-  # Test #16.
-  LI( 1, 0x7FFFFFFF ), ADDI( 14, 1, 0x001 ),
+  LI( 1, 0x00000000 ), LI( 2, 0x00000000 ), ADD( 14, 1, 2 ),
+  # Test #3
+  LI( 1, 0x00000001 ), LI( 2, 0x00000001 ), ADD( 14, 1, 2 ),
+  # Test #4
+  LI( 1, 3 ), LI( 2, 7 ), ADD( 14, 1, 2 ),
+  # Test #5
+  LI( 1, 0x00000000 ), LI( 2, 0xFFFF8000 ), ADD( 14, 1, 2 ),
+  # Test #6
+  LI( 1, 0x80000000 ), LI( 2, 0x00000000 ), ADD( 14, 1, 2 ),
+  # Test #7
+  LI( 1, 0x80000000 ), LI( 2, 0xFFFF8000 ), ADD( 14, 1, 2 ),
+  # Test #8
+  LI( 1, 0x00000000 ), LI( 2, 0x00007FFF ), ADD( 14, 1, 2 ),
+  # Test #9
+  LI( 1, 0x7FFFFFFF ), LI( 2, 0x00000000 ), ADD( 14, 1, 2 ),
+  # Test #10
+  LI( 1, 0x7FFFFFFF ), LI( 2, 0x00007FFF ), ADD( 14, 1, 2 ),
+  # Test #11
+  LI( 1, 0x80000000 ), LI( 2, 0x00007FFF ), ADD( 14, 1, 2 ),
+  # Test #12
+  LI( 1, 0x7FFFFFFF ), LI( 2, 0xFFFF8000 ), ADD( 14, 1, 2 ),
+  # Test #13
+  LI( 1, 0x00000000 ), LI( 2, 0xFFFFFFFF ), ADD( 14, 1, 2 ),
+  # Test #14
+  LI( 1, 0xFFFFFFFF ), LI( 2, 0x00000001 ), ADD( 14, 1, 2 ),
+  # Test #15
+  LI( 1, 0xFFFFFFFF ), LI( 2, 0xFFFFFFFF ), ADD( 14, 1, 2 ),
+  # Test #16
+  LI( 1, 0x00000001 ), LI( 2, 0x7FFFFFFF ), ADD( 14, 1, 2 ),
   # Test #17
-  LI( 1, 13 ), ADDI( 1, 1, 11 ),
+  LI( 1, 13 ), LI( 2, 11 ), ADD( 1, 1, 2 ),
+  # Test #18
+  LI( 1, 14 ), LI( 2, 11 ), ADD( 2, 1, 2 ),
+  # Test #19
+  LI( 1, 13 ), ADD( 1, 1, 1 ),
   # The extra iteration over these 'bypass' tests looks odd,
   # but I think it's supposed to check for data hazards when
   # instructions are pipelined. I haven't implemented anything
   # fancy like that yet, but there you go.
+  # Test #20
+  LI( 4, 0 ), LI( 1, 13 ), LI( 2, 11 ), ADD( 14, 1, 2 ),
+  ADDI( 6, 14, 0 ), ADDI( 4, 4, 1 ), LI( 5, 2 ), BNE( 4, 5, -18 ),
+  # Test #21
+  LI( 4, 0 ), LI( 1, 14 ), LI( 2, 11 ), ADD( 14, 1, 2 ),
+  NOP(),
+  ADDI( 6, 14, 0 ), ADDI( 4, 4, 1 ), LI( 5, 2 ), BNE( 4, 5, -20 ),
+  # Test #22
+  LI( 4, 0 ), LI( 1, 15 ), LI( 2, 11 ), ADD( 14, 1, 2 ),
+  NOP(), NOP(),
+  ADDI( 6, 14, 0 ), ADDI( 4, 4, 1 ), LI( 5, 2 ), BNE( 4, 5, -22 ),
+  # Test #23
+  LI( 4, 0 ), LI( 1, 13 ), LI( 2, 11 ),
+  ADD( 14, 1, 2 ), ADDI( 4, 4, 1 ), LI( 5, 2 ), BNE( 4, 5, -16 ),
+  # Test #24
+  LI( 4, 0 ), LI( 1, 14 ), LI( 2, 11 ), NOP(),
+  ADD( 14, 1, 2 ), ADDI( 4, 4, 1 ), LI( 5, 2 ), BNE( 4, 5, -18 ),
+  # Test #25
+  LI( 4, 0 ), LI( 1, 15 ), LI( 2, 11 ), NOP(), NOP(),
+  ADD( 14, 1, 2 ), ADDI( 4, 4, 1 ), LI( 5, 2 ), BNE( 4, 5, -20 ),
+  # Test #26
+  LI( 4, 0 ), LI( 1, 13 ), NOP(), LI( 2, 11 ),
+  ADD( 14, 1, 2 ), ADDI( 4, 4, 1 ), LI( 5, 2 ), BNE( 4, 5, -18 ),
+  # Test #27
+  LI( 4, 0 ), LI( 1, 14 ), NOP(), LI( 2, 11 ), NOP(),
+  ADD( 14, 1, 2 ), ADDI( 4, 4, 1 ), LI( 5, 2 ), BNE( 4, 5, -20 ),
+  # Test #28
+  LI( 4, 0 ), LI( 1, 15 ), NOP(), NOP(), LI( 2, 11 ),
+  ADD( 14, 1, 2 ), ADDI( 4, 4, 1 ), LI( 5, 2 ), BNE( 4, 5, -20 ),
+  # Test #29
+  LI( 4, 0 ), LI( 2, 11 ), LI( 1, 13 ),
+  ADD( 14, 1, 2 ), ADDI( 4, 4, 1 ), LI( 5, 2 ), BNE( 4, 5, -16 ),
+  # Test #30
+  LI( 4, 0 ), LI( 2, 11 ), LI( 1, 14 ), NOP(),
+  ADD( 14, 1, 2 ), ADDI( 4, 4, 1 ), LI( 5, 2 ), BNE( 4, 5, -18 ),
+  # Test #31
+  LI( 4, 0 ), LI( 2, 11 ), LI( 1, 15 ), NOP(), NOP(),
+  ADD( 14, 1, 2 ), ADDI( 4, 4, 1 ), LI( 5, 2 ), BNE( 4, 5, -20 ),
+  # Test #32
+  LI( 4, 0 ), LI( 2, 11 ), NOP(), LI( 1, 13 ),
+  ADD( 14, 1, 2 ), ADDI( 4, 4, 1 ), LI( 5, 2 ), BNE( 4, 5, -18 ),
+  # Test #33
+  LI( 4, 0 ), LI( 2, 11 ), NOP(), LI( 1, 14 ), NOP(),
+  ADD( 14, 1, 2 ), ADDI( 4, 4, 1 ), LI( 5, 2 ), BNE( 4, 5, -20 ),
+  # Test #34
+  LI( 4, 0 ), LI( 2, 11 ), NOP(), NOP(), LI( 1, 15 ),
+  ADD( 14, 1, 2 ), ADDI( 4, 4, 1 ), LI( 5, 2 ), BNE( 4, 5, -20 ),
+  # Test #35
+  LI( 1, 15 ), ADD( 2, 0, 1 ),
+  # Test #36
+  LI( 1, 32 ), ADD( 2, 1, 0 ),
+  # Test #37
+  ADD( 1, 0, 0 ),
+  # Test #38
+  LI( 1, 16 ), LI( 2, 30 ), ADD( 0, 1, 2 ),
+  # Done; infinite loop.
+  JAL( 1, 0x00000 )
+]
+add_rom = ROM( rom_img( add_img ) )
+
+# 'ADDI' rv32ui tests. (Same as rv64ui tests, with truncated values)
+addi_img = [
+  # Test #2
+  LI( 1, 0x00000000 ), ADDI( 14, 1, 0x000 ),
+  # Test #3
+  LI( 1, 0x00000001 ), ADDI( 14, 1, 0x001 ),
+  # Test #4
+  LI( 1, 0x00000003 ), ADDI( 14, 1, 0x007 ),
+  # Test #5
+  LI( 1, 0x00000000 ), ADDI( 14, 1, 0x800 ),
+  # Test #6
+  LI( 1, 0x80000000 ), ADDI( 14, 1, 0x000 ),
+  # Test #7
+  LI( 1, 0x80000000 ), ADDI( 14, 1, 0x800 ),
+  # Test #8
+  LI( 1, 0x00000000 ), ADDI( 14, 1, 0x7FF ),
+  # Test #9
+  LI( 1, 0x7FFFFFFF ), ADDI( 14, 1, 0x000 ),
+  # Test #10
+  LI( 1, 0x7FFFFFFF ), ADDI( 14, 1, 0x7FF ),
+  # Test #11
+  LI( 1, 0x80000000 ), ADDI( 14, 1, 0x7FF ),
+  # Test #12
+  LI( 1, 0x7FFFFFFF ), ADDI( 14, 1, 0x800 ),
+  # Test #13
+  LI( 1, 0x00000000 ), ADDI( 14, 1, 0xFFF ),
+  # Test #14
+  LI( 1, 0xFFFFFFFF ), ADDI( 14, 1, 0x001 ),
+  # Test #15
+  LI( 1, 0xFFFFFFFF ), ADDI( 14, 1, 0xFFF ),
+  # Test #16
+  LI( 1, 0x7FFFFFFF ), ADDI( 14, 1, 0x001 ),
+  # Test #17
+  LI( 1, 13 ), ADDI( 1, 1, 11 ),
   # Test #18
   LI( 4, 0 ), LI( 1, 13 ), ADDI( 14, 1, 11 ), ADDI( 6, 14, 0x000 ),
   ADDI( 4, 4, 0x001 ), LI( 5, 2 ), BNE( 4, 5, -14 ),
@@ -170,48 +268,209 @@ quick_exp = {
   'end': 52
 }
 
+# Expected runtime values for the "ADD instruction" test program.
+add_exp = {
+  # Standard register tests (r1 = 'a', r2 = 'b', r14 = result)
+  # Testcase 2:  0 + 0 = 0
+  5:   [
+         { 'r': 1,  'e': 0 },
+         { 'r': 2,  'e': 0 },
+         { 'r': 14, 'e': 0 }
+       ],
+  # Testcase 3:  1 + 1 = 2
+  10:  [
+         { 'r': 1,  'e': 1 },
+         { 'r': 2,  'e': 1 },
+         { 'r': 14, 'e': 2 }
+       ],
+  # Testcase 4:  3 + 7 = 10
+  15:  [
+         { 'r': 1,  'e': 3 },
+         { 'r': 2,  'e': 7 },
+         { 'r': 14, 'e': 10 }
+       ],
+  # Testcase 5:  0 + 0xFFFF8000 = 0xFFFF8000
+  20:  [
+         { 'r': 1,  'e': 0x00000000 },
+         { 'r': 2,  'e': 0xFFFF8000 },
+         { 'r': 14, 'e': 0xFFFF8000 }
+       ],
+  # Testcase 6:  min + 0 = min
+  25:  [
+         { 'r': 1,  'e': 0x80000000 },
+         { 'r': 2,  'e': 0x00000000 },
+         { 'r': 14, 'e': 0x80000000 }
+       ],
+  # Testcase 7:  min + 0xFFFF800 = 0x7FFF8000
+  30:  [
+         { 'r': 1,  'e': 0x80000000 },
+         { 'r': 2,  'e': 0xFFFF8000 },
+         { 'r': 14, 'e': 0x7FFF8000 }
+       ],
+  # Testcase 8:  0 + 0x00007FFF = 0x00007FFF
+  35:  [
+         { 'r': 1,  'e': 0x00000000 },
+         { 'r': 2,  'e': 0x00007FFF },
+         { 'r': 14, 'e': 0x00007FFF }
+       ],
+  # Testcase 9:  max + 0 = max
+  40:  [
+         { 'r': 1,  'e': 0x7FFFFFFF },
+         { 'r': 2,  'e': 0x00000000 },
+         { 'r': 14, 'e': 0x7FFFFFFF }
+       ],
+  # Testcase 10: max + 0x00007FFF = 0x80007FFE
+  45:  [
+         { 'r': 1,  'e': 0x7FFFFFFF },
+         { 'r': 2,  'e': 0x00007FFF },
+         { 'r': 14, 'e': 0x80007FFE }
+       ],
+  # Testcase 11: min + 0x00007FFF = 0x80007FFF
+  50:  [
+         { 'r': 1,  'e': 0x80000000 },
+         { 'r': 2,  'e': 0x00007FFF },
+         { 'r': 14, 'e': 0x80007FFF }
+       ],
+  # Testcase 12: max + 0xFFFF8000 = 0x7FFF7FFF
+  55:  [
+         { 'r': 1,  'e': 0x7FFFFFFF },
+         { 'r': 2,  'e': 0xFFFF8000 },
+         { 'r': 14, 'e': 0x7FFF7FFF }
+       ],
+  # Testcase 13: 0 + (-1) = -1
+  60:  [
+         { 'r': 1,  'e': 0x00000000 },
+         { 'r': 2,  'e': 0xFFFFFFFF },
+         { 'r': 14, 'e': 0xFFFFFFFF }
+       ],
+  # Testcase 14: -1 + 1 = 0
+  65:  [
+         { 'r': 1,  'e': 0xFFFFFFFF },
+         { 'r': 2,  'e': 0x00000001 },
+         { 'r': 14, 'e': 0x00000000 }
+       ],
+  # Testcase 15: -1 + (-1) = -2
+  70:  [
+         { 'r': 1,  'e': 0xFFFFFFFF },
+         { 'r': 2,  'e': 0xFFFFFFFF },
+         { 'r': 14, 'e': 0xFFFFFFFE }
+       ],
+  # Testcase 16: 1 + max = min
+  75:  [
+         { 'r': 1,  'e': 0x00000001 },
+         { 'r': 2,  'e': 0x7FFFFFFF },
+         { 'r': 14, 'e': 0x80000000 }
+       ],
+  # Source/Destination tests (r1 or r2 double as result register)
+  # Testcase 17:
+  77:  [ { 'r': 1, 'e': 13 } ],
+  80:  [
+         { 'r': 1,  'e': 24 },
+         { 'r': 2,  'e': 11 }
+       ],
+  # Testcase 18:
+  82:  [ { 'r': 1, 'e': 14 } ],
+  84:  [ { 'r': 2, 'e': 11 } ],
+  85:  [ { 'r': 2, 'e': 25 } ],
+  # Testcase 19:
+  87:  [ { 'r': 1, 'e': 13 } ],
+  88:  [ { 'r': 1, 'e': 26 } ],
+  # 'Destination Bypass' tests:
+  # Testcase 20:
+  110: [
+         { 'r': 6,  'e': 24 },
+         { 'r': 14, 'e': 24 }
+       ],
+  # Testcase 21:
+  134: [
+         { 'r': 6,  'e': 25 },
+         { 'r': 14, 'e': 25 }
+       ],
+  # Testcase 22:
+  160: [
+         { 'r': 6,  'e': 26 },
+         { 'r': 14, 'e': 26 }
+       ],
+  # 'Source Bypass' tests:
+  # Testcase 23:
+  180: [ { 'r': 14, 'e': 24 } ],
+  # Testcase 24:
+  202: [ { 'r': 14, 'e': 25 } ],
+  # Testcase 25:
+  226: [ { 'r': 14, 'e': 26 } ],
+  # Testcase 26:
+  248: [ { 'r': 14, 'e': 24 } ],
+  # Testcase 27:
+  272: [ { 'r': 14, 'e': 25 } ],
+  # Testcase 28:
+  296: [ { 'r': 14, 'e': 26 } ],
+  # Testcase 29:
+  316: [ { 'r': 14, 'e': 24 } ],
+  # Testcase 30:
+  338: [ { 'r': 14, 'e': 25 } ],
+  # Testcase 31:
+  362: [ { 'r': 14, 'e': 26 } ],
+  # Testcase 32:
+  384: [ { 'r': 14, 'e': 24 } ],
+  # Testcase 33:
+  408: [ { 'r': 14, 'e': 25 } ],
+  # Testcase 34:
+  432: [ { 'r': 14, 'e': 25 } ],
+  # 'Zero Source' tests:
+  # Testcase 35:
+  435: [ { 'r': 2, 'e': 15 } ],
+  # Testcase 36:
+  438: [ { 'r': 2, 'e': 32 } ],
+  # Testcase 37:
+  439: [ { 'r': 1, 'e': 0 } ],
+  # 'Zero Destination' tests:
+  444: [ { 'r': 0, 'e': 0 } ],
+  # Testcase 38:
+  'end': 444
+}
+
 # Expected runtime values for the "ADDI instruction" test program.
 addi_exp = {
   # Standard immediate tests (r1 = 'a', r14 = result)
   # Testcase 2:  0 + 0 = 0
-  3:  [ { 'r': 1, 'e': 0x00000000 }, { 'r': 14, 'e': 0x00000000 } ],
+  3:   [ { 'r': 1, 'e': 0x00000000 }, { 'r': 14, 'e': 0x00000000 } ],
   # Testcase 3:  1 + 1 = 2
-  6:  [ { 'r': 1, 'e': 0x00000001 }, { 'r': 14, 'e': 0x00000002 } ],
+  6:   [ { 'r': 1, 'e': 0x00000001 }, { 'r': 14, 'e': 0x00000002 } ],
   # Testcase 4:  3 + 7 = 10
-  9:  [ { 'r': 1, 'e': 0x00000003 }, { 'r': 14, 'e': 0x0000000a } ],
+  9:   [ { 'r': 1, 'e': 0x00000003 }, { 'r': 14, 'e': 0x0000000a } ],
   # Testcase 5:  0 + 0x800 = 0xFFFFF800
-  12: [ { 'r': 1, 'e': 0x00000000 }, { 'r': 14, 'e': 0xFFFFF800 } ],
+  12:  [ { 'r': 1, 'e': 0x00000000 }, { 'r': 14, 'e': 0xFFFFF800 } ],
   # Testcase 6:  min + 0 = min
-  15: [ { 'r': 1, 'e': 0x80000000 }, { 'r': 14, 'e': 0x80000000 } ],
+  15:  [ { 'r': 1, 'e': 0x80000000 }, { 'r': 14, 'e': 0x80000000 } ],
   # Testcase 7:  min + 0x800 = 0x7FFFF800
-  18: [ { 'r': 1, 'e': 0x80000000 }, { 'r': 14, 'e': 0x7FFFF800 } ],
+  18:  [ { 'r': 1, 'e': 0x80000000 }, { 'r': 14, 'e': 0x7FFFF800 } ],
   # Testcase 8:  0 + 0x7FF = 0x000007FF
-  21: [ { 'r': 1, 'e': 0x00000000 }, { 'r': 14, 'e': 0x000007FF } ],
+  21:  [ { 'r': 1, 'e': 0x00000000 }, { 'r': 14, 'e': 0x000007FF } ],
   # Testcase 9:  max + 0 = max
-  24: [ { 'r': 1, 'e': 0x7FFFFFFF }, { 'r': 14, 'e': 0x7FFFFFFF } ],
+  24:  [ { 'r': 1, 'e': 0x7FFFFFFF }, { 'r': 14, 'e': 0x7FFFFFFF } ],
   # Testcase 10: max + 0x7FF = 0x800007FE
-  27: [ { 'r': 1, 'e': 0x7FFFFFFF }, { 'r': 14, 'e': 0x800007FE } ],
+  27:  [ { 'r': 1, 'e': 0x7FFFFFFF }, { 'r': 14, 'e': 0x800007FE } ],
   # Testcase 11: min + 0x7FF = 0x800007FF
-  30: [ { 'r': 1, 'e': 0x80000000 }, { 'r': 14, 'e': 0x800007FF } ],
+  30:  [ { 'r': 1, 'e': 0x80000000 }, { 'r': 14, 'e': 0x800007FF } ],
   # Testcase 12: max + 0x800 = 0x7FFFF7FF
-  33: [ { 'r': 1, 'e': 0x7FFFFFFF }, { 'r': 14, 'e': 0x7FFFF7FF } ],
+  33:  [ { 'r': 1, 'e': 0x7FFFFFFF }, { 'r': 14, 'e': 0x7FFFF7FF } ],
   # Testcase 13: 0 + -1 = -1
-  36: [ { 'r': 1, 'e': 0x00000000 }, { 'r': 14, 'e': 0xFFFFFFFF } ],
+  36:  [ { 'r': 1, 'e': 0x00000000 }, { 'r': 14, 'e': 0xFFFFFFFF } ],
   # Testcase 14: -1 + 1 = 0
-  39: [ { 'r': 1, 'e': 0xFFFFFFFF }, { 'r': 14, 'e': 0x00000000 } ],
+  39:  [ { 'r': 1, 'e': 0xFFFFFFFF }, { 'r': 14, 'e': 0x00000000 } ],
   # Testcase 15: -1 + -1 = -2
-  42: [ { 'r': 1, 'e': 0xFFFFFFFF }, { 'r': 14, 'e': 0xFFFFFFFE } ],
+  42:  [ { 'r': 1, 'e': 0xFFFFFFFF }, { 'r': 14, 'e': 0xFFFFFFFE } ],
   # Testcase 16: max + 1 = min
-  45: [ { 'r': 1, 'e': 0x7FFFFFFF }, { 'r': 14, 'e': 0x80000000 } ],
+  45:  [ { 'r': 1, 'e': 0x7FFFFFFF }, { 'r': 14, 'e': 0x80000000 } ],
   # Source/Destination tests (r1 = 'a', r1 = result)
   # Testcase 17: 13 + 11 = 24
-  47: [ { 'r': 1, 'e': 13 } ],
-  48: [ { 'r': 1, 'e': 24 } ],
+  47:  [ { 'r': 1, 'e': 13 } ],
+  48:  [ { 'r': 1, 'e': 24 } ],
   # 'Destination Bypass' tests with 0, 1, 2 nops:
   # Testcase 18: 13 + 11 = 24
-  66: [ { 'r': 6, 'e': 24 }, { 'r': 14, 'e': 24 } ],
+  66:  [ { 'r': 6, 'e': 24 }, { 'r': 14, 'e': 24 } ],
   # Testcase 19: 13 + 10 = 23
-  86: [ { 'r': 6, 'e': 23 }, { 'r': 14, 'e': 23 } ],
+  86:  [ { 'r': 6, 'e': 23 }, { 'r': 14, 'e': 23 } ],
   # Testcase 20: 13 + 9 = 22
   108: [ { 'r': 6, 'e': 22 }, { 'r': 14, 'e': 22 } ],
   # 'Source Bypass' tests with 0, 1, 2 nops:
@@ -238,4 +497,5 @@ addi_exp = {
 
 loop_test  = [ 'inifinite loop test', 'cpu_loop', loop_rom, loop_exp ]
 quick_test = [ 'quick test', 'cpu_quick', quick_rom, quick_exp ]
+add_test   = [ 'ADD test cases', 'cpu_add', add_rom, add_exp ]
 addi_test  = [ 'ADDI test cases', 'cpu_addi', addi_rom, addi_exp ]

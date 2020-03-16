@@ -311,25 +311,31 @@ class CPU( Elaboratable ):
                     m.d.nsync += self.pc.eq( self.pc + imm )
                     m.next = "CPU_PC_ROM_FETCH"
                 # "Branch if Less Than" operation:
-                # TODO: Currently performs unsigned comparison...
-                with m.Elif( f == F_BLT ):
-                  with m.If( self.r[ i ] < self.r[ j ] ):
+                with m.Elif( ( f == F_BLT ) &
+                         ( ( ( self.r[ j ].bit_select( 31, 1 ) ==
+                               self.r[ i ].bit_select( 31, 1 ) ) &
+                             ( self.r[ i ] < self.r[ j ] ) ) |
+                             ( self.r[ i ].bit_select( 31, 1 ) >
+                               self.r[ j ].bit_select( 31, 1 ) ) ) ):
                     m.d.nsync += self.pc.eq( self.pc + imm )
                     m.next = "CPU_PC_ROM_FETCH"
                 # "Branch if Greater or Equal" operation:
-                # TODO: Currently performs unsigned comparison...
-                with m.Elif( f == F_BGE ):
-                  with m.If( self.r[ j ] < self.r[ i ] ):
+                with m.Elif( ( f == F_BGE ) &
+                         ( ( ( self.r[ j ].bit_select( 31, 1 ) ==
+                               self.r[ i ].bit_select( 31, 1 ) ) &
+                             ( self.r[ i ] >= self.r[ j ] ) ) |
+                             ( self.r[ j ].bit_select( 31, 1 ) >
+                               self.r[ i ].bit_select( 31, 1 ) ) ) ):
                     m.d.nsync += self.pc.eq( self.pc + imm )
                     m.next = "CPU_PC_ROM_FETCH"
                 # "Branch if Less Than (Unsigned)" operation:
-                with m.Elif( f == F_BLTU ):
-                  with m.If( self.r[ i ] < self.r[ j ] ):
+                with m.Elif( ( f == F_BLTU ) &
+                             ( self.r[ i ] < self.r[ j ] ) ):
                     m.d.nsync += self.pc.eq( self.pc + imm )
                     m.next = "CPU_PC_ROM_FETCH"
                 # "Branch if Greater or Equal (Unsigned)" operation:
-                with m.Elif( f == F_BGEU ):
-                  with m.If( self.r[ j ] < self.r[ i ] ):
+                with m.Elif( ( f == F_BGEU ) &
+                             ( self.r[ i ] >= self.r[ j ] ) ):
                     m.d.nsync += self.pc.eq( self.pc + imm )
                     m.next = "CPU_PC_ROM_FETCH"
                 with m.Else():

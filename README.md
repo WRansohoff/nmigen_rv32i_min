@@ -42,10 +42,10 @@ Each test suite also creates a `.vcd` file containing the waveform results, so y
 | `ANDI`      |:green_heart: |
 | `AUIPC`     |:green_heart: |
 | `BEQ`       |:green_heart: |
-| `BGE`       |:broken_heart:|
-| `BGEU`      |:broken_heart:|
-| `BLT`       |:broken_heart:|
-| `BLTU`      |:broken_heart:|
+| `BGE`       |:green_heart: |
+| `BGEU`      |:green_heart: |
+| `BLT`       |:green_heart: |
+| `BLTU`      |:green_heart: |
 | `BNE`       |:green_heart: |
 | `FENCE`     |:broken_heart:|
 | `JAL`       |:green_heart: |

@@ -260,7 +260,7 @@ def JAL( c, i ):
 # Assembly pseudo-ops:
 def LI( c, i ):
   if ( ( i & 0x0FFF ) & 0x0800 ):
-    return LUI( c, ( ( i >> 12 ) + 1 ) << 12 ),
+    return LUI( c, ( ( i >> 12 ) + 1 ) << 12 ), \
            ADDI( c, c, ( i & 0x0FFF ) )
   else:
     return LUI( c, i ), ADDI( c, c, ( i & 0x0FFF ) )

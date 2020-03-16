@@ -191,7 +191,7 @@ class CPU( Elaboratable ):
         # 21-bit value, with its bits scattered to the four winds.
         with m.Elif( self.rom.out.bit_select( 0, 7 ) == OP_JAL ):
           with m.If( self.rom.out[ 31 ] ):
-            m.d.sync += imm.eq( 0xFFF00000 |
+            m.d.sync += imm.eq( 0xFFE00000 |
               ( self.rom.out.bit_select( 21, 10 ) << 1 ) |
               ( self.rom.out.bit_select( 20, 1 ) << 11 ) |
               ( self.rom.out.bit_select( 12, 8 ) << 12 ) |
@@ -279,10 +279,12 @@ class CPU( Elaboratable ):
             for j in range( 32 ):
               with m.If( ( ra == i ) & ( rb == j ) ):
                 # "Branch if EQual" operation:
-                with m.If( ( f == F_BEQ ) &
-                           ( self.r[ i ] == self.r[ j ] ) ):
+                with m.If( f == F_BEQ ):
+                  with m.If( self.r[ i ] == self.r[ j ] ):
                     m.d.nsync += self.pc.eq( self.pc + imm )
                     m.next = "CPU_PC_ROM_FETCH"
+                  with m.Else():
+                    m.next = "CPU_PC_LOAD"
                 # "Branch if Not Equal" operation:
                 with m.Elif( ( f == F_BNE ) &
                              ( self.r[ i ] != self.r[ j ] ) ):
@@ -349,8 +351,9 @@ class CPU( Elaboratable ):
           self.alu_imm_op( m, rc, ra, imm, ff, f )
           m.next = "CPU_PC_LOAD"
         # TODO: "System / Exception" instructions:
+        # (For now, halt execution at ECALL/EBREAK instructions.)
         with m.Elif( opcode == OP_SYSTEM ):
-          m.next = "CPU_PC_LOAD"
+          m.next = "CPU_PC_ROM_FETCH"
         # TODO: "Memory Fence" instruction:
         with m.Elif( opcode == OP_FENCE ):
           m.next = "CPU_PC_LOAD"
@@ -426,18 +429,25 @@ def check_vals( expected, ni, cpu ):
 def cpu_run( cpu, expected ):
   # Record how many CPU instructions have executed.
   ni = 0
+  # Watch for timeouts if the CPU gets into a bad state.
+  timeout = 0
   # Check initial values, if any.
   yield from check_vals( expected, 0, cpu )
   # Let the CPU run for N ticks.
   while ni <= expected[ 'end' ]:
     # Let combinational logic settle before checking values.
     yield Settle()
+    timeout = timeout + 1
     # Only check expected values once per instruction.
     fsm_state = yield cpu.fsms
     if fsm_state == CPU_PC_ROM_FETCH:
       ni += 1
+      timeout = 0
       # Check expected values, if any.
       yield from check_vals( expected, ni, cpu )
+    elif timeout > 1000:
+      print( "\033[31mFAIL: Timeout\033[0m" )
+      break
     # Step the simulation.
     yield Tick()
 
@@ -466,14 +476,92 @@ def cpu_sim( test ):
 
 # 'main' method to run a basic testbench.
 if __name__ == "__main__":
-  # RV32I operation RISC-V tests.
-  # Simulate the 'ADD test' ROM.
+  # Auto-generated RV32I tests.
+  from tests.test_roms.rv32i_add import *
   cpu_sim( add_test )
-  # Simulate the 'ADDI test' ROM.
+  from tests.test_roms.rv32i_addi import *
   cpu_sim( addi_test )
+  from tests.test_roms.rv32i_and import *
+  cpu_sim( and_test )
+  from tests.test_roms.rv32i_andi import *
+  cpu_sim( andi_test )
+  from tests.test_roms.rv32i_auipc import *
+  cpu_sim( auipc_test )
+  from tests.test_roms.rv32i_beq import *
+  cpu_sim( beq_test )
+  from tests.test_roms.rv32i_bge import *
+  cpu_sim( bge_test )
+  from tests.test_roms.rv32i_bgeu import *
+  cpu_sim( bgeu_test )
+  from tests.test_roms.rv32i_blt import *
+  cpu_sim( blt_test )
+  from tests.test_roms.rv32i_bltu import *
+  cpu_sim( bltu_test )
+  from tests.test_roms.rv32i_bne import *
+  cpu_sim( bne_test )
+  from tests.test_roms.rv32i_fence_i import *
+  cpu_sim( fence_i_test )
+  from tests.test_roms.rv32i_jal import *
+  cpu_sim( jal_test )
+  from tests.test_roms.rv32i_jalr import *
+  cpu_sim( jalr_test )
+  from tests.test_roms.rv32i_lb import *
+  cpu_sim( lb_test )
+  from tests.test_roms.rv32i_lbu import *
+  cpu_sim( lbu_test )
+  from tests.test_roms.rv32i_lh import *
+  cpu_sim( lh_test )
+  from tests.test_roms.rv32i_lhu import *
+  cpu_sim( lhu_test )
+  from tests.test_roms.rv32i_lui import *
+  cpu_sim( lui_test )
+  from tests.test_roms.rv32i_lw import *
+  cpu_sim( lw_test )
+  from tests.test_roms.rv32i_or import *
+  cpu_sim( or_test )
+  from tests.test_roms.rv32i_ori import *
+  cpu_sim( ori_test )
+  from tests.test_roms.rv32i_sb import *
+  cpu_sim( sb_test )
+  from tests.test_roms.rv32i_sh import *
+  cpu_sim( sh_test )
+  from tests.test_roms.rv32i_sll import *
+  cpu_sim( sll_test )
+  from tests.test_roms.rv32i_slli import *
+  cpu_sim( slli_test )
+  from tests.test_roms.rv32i_slt import *
+  cpu_sim( slt_test )
+  from tests.test_roms.rv32i_slti import *
+  cpu_sim( slti_test )
+  from tests.test_roms.rv32i_sltu import *
+  cpu_sim( sltu_test )
+  from tests.test_roms.rv32i_sltiu import *
+  cpu_sim( sltiu_test )
+  from tests.test_roms.rv32i_sra import *
+  cpu_sim( sra_test )
+  from tests.test_roms.rv32i_srai import *
+  cpu_sim( srai_test )
+  from tests.test_roms.rv32i_srl import *
+  cpu_sim( srl_test )
+  from tests.test_roms.rv32i_srli import *
+  cpu_sim( srli_test )
+  from tests.test_roms.rv32i_sub import *
+  cpu_sim( sub_test )
+  from tests.test_roms.rv32i_sw import *
+  cpu_sim( sw_test )
+  from tests.test_roms.rv32i_xor import *
+  cpu_sim( xor_test )
+  from tests.test_roms.rv32i_xori import *
+  cpu_sim( xori_test )
+
+  # RV32I operation RISC-V tests.
+  # Simulate the 'ADDI test' ROM.
+  cpu_sim( addiu_test )
+  # Simulate the 'ADD test' ROM.
+  cpu_sim( addu_test )
 
   # Miscellaneous tests which are not part of the RV32I test suite.
-  # Simulate the 'quick test' ROM.
-  cpu_sim( quick_test )
   # Simulate the 'infinite loop test' ROM.
   cpu_sim( loop_test )
+  # Simulate the 'quick test' ROM.
+  cpu_sim( quick_test )

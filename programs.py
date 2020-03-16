@@ -1,5 +1,4 @@
 from nmigen import *
-from nmigen.back.pysim import *
 
 from isa import *
 from rom import *
@@ -497,5 +496,5 @@ addi_exp = {
 
 loop_test  = [ 'inifinite loop test', 'cpu_loop', loop_rom, loop_exp ]
 quick_test = [ 'quick test', 'cpu_quick', quick_rom, quick_exp ]
-add_test   = [ 'ADD test cases', 'cpu_add', add_rom, add_exp ]
-addi_test  = [ 'ADDI test cases', 'cpu_addi', addi_rom, addi_exp ]
+addu_test  = [ 'ADD test cases', 'cpu_addu', add_rom, add_exp ]
+addiu_test = [ 'ADDI test cases', 'cpu_addiu', addi_rom, addi_exp ]

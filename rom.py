@@ -10,7 +10,12 @@ class ROM( Elaboratable ):
     # Address bits to select up to `len( data )` words by byte.
     self.addr = Signal( range( len( data * 4 ) ), reset = 0 )
     # Data word output.
-    self.out  = Signal( 32, reset = data[ 0 ] )
+    # TODO: This little-endian mishandling is getting out of hand.
+    self.out  = Signal( 32, reset = (
+      ( ( data[ 0 ] & 0x000000FF ) << 24 ) |
+      ( ( data[ 0 ] & 0x0000FF00 ) << 8  ) |
+      ( ( data[ 0 ] & 0x00FF0000 ) >> 8  ) |
+      ( ( data[ 0 ] & 0xFF000000 ) >> 24 ) ) )
     # Data storage.
     self.data = [
       Signal( 32, reset = data[ i ], name = "rom(0x%08X)"%( i * 4 ) )

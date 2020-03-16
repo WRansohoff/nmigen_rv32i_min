@@ -509,7 +509,6 @@ def cpu_mux_sim( tests ):
   print( "\033[33mSTART\033[0m running '%s' program:"%tests[ 0 ] )
   # Create the CPU device.
   cpu = CPU( tests[ 2 ] )
-  yield cpu.ws.eq( 0b001 )
   num_i = 0
   for t in tests[ 3 ]:
     num_i = num_i + t[ 'end' ]
@@ -518,6 +517,9 @@ def cpu_mux_sim( tests ):
   sim_name = "%s.vcd"%tests[ 1 ]
   with Simulator( cpu, vcd_file = open( sim_name, 'w' ) ) as sim:
     def proc():
+      # Set one wait state for ROM access, to allow the ROM address
+      # and data to propagate through the multiplexer.
+      yield cpu.ws.eq( 0b001 )
       # Run the programs and print pass/fail for individual tests.
       for i in range( len( tests[ 3 ] ) ):
         yield cpu.alu.clk_rst.eq( 1 )

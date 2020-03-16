@@ -3,6 +3,7 @@ from nmigen.back.pysim import *
 
 from alu import *
 from isa import *
+from mux_rom import *
 from rom import *
 from ram import *
 
@@ -12,9 +13,10 @@ from ram import *
 
 # FSM state definitions. TODO: Remove after figuring out how to
 # access the internal FSM from tests. Also, consolidate these steps...
-CPU_PC_LOAD      = 0
-CPU_PC_ROM_FETCH = 1
-CPU_PC_DECODE    = 2
+CPU_RESET        = 0
+CPU_PC_LOAD      = 1
+CPU_PC_ROM_FETCH = 2
+CPU_PC_DECODE    = 3
 CPU_LD           = 4
 CPU_ST           = 5
 CPU_STATES_MAX   = 5
@@ -31,9 +33,12 @@ class CPU( Elaboratable ):
       Signal( 32, reset = 0x00000000, name = "r%d"%i )
       for i in range( 32 )
     ]
+    # ROM wait states.
+    self.ws  = Signal( 3, reset = 0b000 )
     # The ALU submodule which performs logical operations.
     self.alu = ALU()
-    # The ROM submodule which acts as simulated program data storage.
+    # The ROM submodule (or multiplexed test ROMs) which act as
+    # simulated program data storage for the CPU.
     self.rom = rom_module
     # The RAM submodule which simulates re-writable data storage.
     # (1KB of RAM = 256 words)
@@ -138,6 +143,10 @@ class CPU( Elaboratable ):
     imm = Signal( shape = Shape( width = 32, signed = True ),
                   reset = 0x00000000 )
     ipc = Signal( 32, reset = 0x00000000 )
+    # Reset countdown.
+    rsc = Signal( 2, reset = 0b11 )
+    # ROM wait state countdown.
+    rws = Signal( 3, reset = 0b00 )
 
     # r0 is hard-wired to 0.
     m.d.comb += self.r[ 0 ].eq( 0x00000000 )
@@ -155,90 +164,101 @@ class CPU( Elaboratable ):
 
     # Main CPU FSM.
     with m.FSM() as fsm:
+      # "Reset state": Wait a few ticks after reset, to let ROM load.
+      with m.State( "CPU_RESET" ):
+        m.d.comb += self.fsms.eq( CPU_RESET ) #TODO: Remove
+        with m.If( rsc > 0 ):
+          m.d.sync += rsc.eq( rsc - 1 )
+        with m.Else():
+          m.next = "CPU_PC_ROM_FETCH"
       # "ROM Fetch": Wait for the instruction to load from ROM, and
       #              populate register fields to prepare for decoding.
       with m.State( "CPU_PC_ROM_FETCH" ):
         m.d.comb += self.fsms.eq( CPU_PC_ROM_FETCH ) #TODO: Remove
-        # I-type operations have one cohesive 12-bit immediate.
-        with m.If( self.rom.out.bit_select( 0, 7 ) == OP_IMM ):
-          # ...But shift operations are a special case with a 5-bit
-          # unsigned immediate and 'funct7' bits in the MSbs.
-          with m.If( ( self.rom.out.bit_select( 12, 3 ) == F_SLLI ) |
-                     ( self.rom.out.bit_select( 12, 3 ) == F_SRLI ) ):
-            m.d.sync += imm.eq( self.rom.out.bit_select( 20, 5 ) )
-          with m.Else():
+        with m.If( rws < self.ws ):
+          m.d.sync += rws.eq( rws + 1 )
+        with m.Else():
+          m.d.sync += rws.eq( 0 )
+          # I-type operations have one cohesive 12-bit immediate.
+          with m.If( self.rom.out.bit_select( 0, 7 ) == OP_IMM ):
+            # ...But shift operations are a special case with a 5-bit
+            # unsigned immediate and 'funct7' bits in the MSbs.
+            with m.If( ( self.rom.out.bit_select( 12, 3 ) == F_SLLI ) |
+                       ( self.rom.out.bit_select( 12, 3 ) == F_SRLI ) ):
+              m.d.sync += imm.eq( self.rom.out.bit_select( 20, 5 ) )
+            with m.Else():
+              with m.If( self.rom.out[ 31 ] ):
+                m.d.sync += imm.eq( 0xFFFFF000 |
+                                    self.rom.out.bit_select( 20, 12 ) )
+              with m.Else():
+                m.d.sync += imm.eq( self.rom.out.bit_select( 20, 12 ) )
+          # S-type instructions have 12-bit immediates in two fields.
+          with m.Elif( self.rom.out.bit_select( 0, 7 ) == OP_STORE ):
             with m.If( self.rom.out[ 31 ] ):
               m.d.sync += imm.eq( 0xFFFFF000 |
-                                  self.rom.out.bit_select( 20, 12 ) )
+                self.rom.out.bit_select( 7, 4 ) |
+                ( self.rom.out.bit_select( 25, 7 ) << 5 ) )
             with m.Else():
-              m.d.sync += imm.eq( self.rom.out.bit_select( 20, 12 ) )
-        # S-type instructions have 12-bit immediates in two fields.
-        with m.Elif( self.rom.out.bit_select( 0, 7 ) == OP_STORE ):
-          with m.If( self.rom.out[ 31 ] ):
-            m.d.sync += imm.eq( 0xFFFFF000 |
-              self.rom.out.bit_select( 7, 4 ) |
-              ( self.rom.out.bit_select( 25, 7 ) << 5 ) )
+              m.d.sync += imm.eq(
+                ( self.rom.out.bit_select( 7,  4 ) ) |
+                ( self.rom.out.bit_select( 25, 7 ) << 5 ) )
+          # U-type instructions just have a single 20-bit immediate,
+          # with the register's remaining 12 LSbs padded with 0s.
+          with m.Elif( ( self.rom.out.bit_select( 0, 7 ) == OP_LUI ) |
+                       ( self.rom.out.bit_select( 0, 7 ) == OP_AUIPC ) ):
+            m.d.sync += imm.eq( self.rom.out & 0xFFFFF000 )
+          # J-type instructions have a 20-bit immediate encoding a
+          # 21-bit value, with its bits scattered to the four winds.
+          with m.Elif( self.rom.out.bit_select( 0, 7 ) == OP_JAL ):
+            with m.If( self.rom.out[ 31 ] ):
+              m.d.sync += imm.eq( 0xFFE00000 |
+                ( self.rom.out.bit_select( 21, 10 ) << 1 ) |
+                ( self.rom.out.bit_select( 20, 1 ) << 11 ) |
+                ( self.rom.out.bit_select( 12, 8 ) << 12 ) |
+                ( self.rom.out.bit_select( 31, 1 ) << 20 ) )
+            with m.Else():
+              m.d.sync += imm.eq(
+                ( self.rom.out.bit_select( 21, 10 ) << 1 ) |
+                ( self.rom.out.bit_select( 20, 1  ) << 11 ) |
+                ( self.rom.out.bit_select( 12, 8  ) << 12 ) |
+                ( self.rom.out.bit_select( 31, 1  ) << 20 ) )
+          # B-type instructions have a 12-bit immediate encoding a
+          # 13-bit value, with bits scattered around the instruction.
+          with m.Elif( self.rom.out.bit_select( 0, 7 ) == OP_BRANCH ):
+            with m.If( self.rom.out[ 31 ] ):
+              m.d.sync += imm.eq( 0xFFFFE000 |
+                ( self.rom.out.bit_select( 8,  4 ) << 1 ) |
+                ( self.rom.out.bit_select( 25, 6 ) << 5 ) |
+                ( self.rom.out.bit_select( 7,  1 ) << 11 ) |
+                ( self.rom.out.bit_select( 31, 1 ) << 12 ) )
+            with m.Else():
+              m.d.sync += imm.eq(
+                ( self.rom.out.bit_select( 8,  4 ) << 1 ) |
+                ( self.rom.out.bit_select( 25, 6 ) << 5 ) |
+                ( self.rom.out.bit_select( 7,  1 ) << 11 ) |
+                ( self.rom.out.bit_select( 31, 1 ) << 12 ) )
+          # R-type operations have no immediates.
+          with m.Elif( self.rom.out.bit_select( 0, 7 ) == OP_REG ):
+            m.d.sync += imm.eq( 0x00000000 )
+          # TODO: support 'FENCE' and 'SYSTEM' instructions.
+          # Unrecognized opcodes set the immediate value to 0.
           with m.Else():
-            m.d.sync += imm.eq(
-              ( self.rom.out.bit_select( 7,  4 ) ) |
-              ( self.rom.out.bit_select( 25, 7 ) << 5 ) )
-        # U-type instructions just have a single 20-bit immediate,
-        # with the register's remaining 12 LSbs padded with 0s.
-        with m.Elif( ( self.rom.out.bit_select( 0, 7 ) == OP_LUI ) |
-                     ( self.rom.out.bit_select( 0, 7 ) == OP_AUIPC ) ):
-          m.d.sync += imm.eq( self.rom.out & 0xFFFFF000 )
-        # J-type instructions have a 20-bit immediate encoding a
-        # 21-bit value, with its bits scattered to the four winds.
-        with m.Elif( self.rom.out.bit_select( 0, 7 ) == OP_JAL ):
-          with m.If( self.rom.out[ 31 ] ):
-            m.d.sync += imm.eq( 0xFFE00000 |
-              ( self.rom.out.bit_select( 21, 10 ) << 1 ) |
-              ( self.rom.out.bit_select( 20, 1 ) << 11 ) |
-              ( self.rom.out.bit_select( 12, 8 ) << 12 ) |
-              ( self.rom.out.bit_select( 31, 1 ) << 20 ) )
-          with m.Else():
-            m.d.sync += imm.eq(
-              ( self.rom.out.bit_select( 21, 10 ) << 1 ) |
-              ( self.rom.out.bit_select( 20, 1  ) << 11 ) |
-              ( self.rom.out.bit_select( 12, 8  ) << 12 ) |
-              ( self.rom.out.bit_select( 31, 1  ) << 20 ) )
-        # B-type instructions have a 12-bit immediate encoding a
-        # 13-bit value, with bits scattered around the instruction.
-        with m.Elif( self.rom.out.bit_select( 0, 7 ) == OP_BRANCH ):
-          with m.If( self.rom.out[ 31 ] ):
-            m.d.sync += imm.eq( 0xFFFFE000 |
-              ( self.rom.out.bit_select( 8,  4 ) << 1 ) |
-              ( self.rom.out.bit_select( 25, 6 ) << 5 ) |
-              ( self.rom.out.bit_select( 7,  1 ) << 11 ) |
-              ( self.rom.out.bit_select( 31, 1 ) << 12 ) )
-          with m.Else():
-            m.d.sync += imm.eq(
-              ( self.rom.out.bit_select( 8,  4 ) << 1 ) |
-              ( self.rom.out.bit_select( 25, 6 ) << 5 ) |
-              ( self.rom.out.bit_select( 7,  1 ) << 11 ) |
-              ( self.rom.out.bit_select( 31, 1 ) << 12 ) )
-        # R-type operations have no immediates.
-        with m.Elif( self.rom.out.bit_select( 0, 7 ) == OP_REG ):
-          m.d.sync += imm.eq( 0x00000000 )
-        # TODO: support 'FENCE' and 'SYSTEM' instructions.
-        # Unrecognized opcodes set the immediate value to 0.
-        with m.Else():
-          m.d.sync += imm.eq( 0x00000000 )
-        # Populate "opcode, funct3, funct7, r1, r2, rd". I call them
-        # "opcode, f, ff, ra, rb, rc", respectively. Why? Because
-        # I can't name a variable '1' for 'r1'; 'a' is easier.
-        # Not every type of operation uses every value, but at least
-        # they're placed in consistent locations when they are used.
-        m.d.sync += [
-          opcode.eq( self.rom.out.bit_select( 0, 7 ) ),
-          rc.eq( self.rom.out.bit_select( 7,  5 ) ),
-          f.eq( self.rom.out.bit_select( 12, 3 ) ),
-          ra.eq( self.rom.out.bit_select( 15, 5 ) ),
-          rb.eq( self.rom.out.bit_select( 20, 5 ) ),
-          ff.eq( self.rom.out.bit_select( 25, 7 ) ),
-          ipc.eq( self.pc )
-        ]
-        m.next = "CPU_PC_DECODE"
+            m.d.sync += imm.eq( 0x00000000 )
+          # Populate "opcode, funct3, funct7, r1, r2, rd". I call them
+          # "opcode, f, ff, ra, rb, rc", respectively. Why? Because
+          # I can't name a variable '1' for 'r1'; 'a' is easier.
+          # Not every type of operation uses every value, but at least
+          # they're placed in consistent locations when they are used.
+          m.d.sync += [
+            opcode.eq( self.rom.out.bit_select( 0, 7 ) ),
+            rc.eq( self.rom.out.bit_select( 7,  5 ) ),
+            f.eq( self.rom.out.bit_select( 12, 3 ) ),
+            ra.eq( self.rom.out.bit_select( 15, 5 ) ),
+            rb.eq( self.rom.out.bit_select( 20, 5 ) ),
+            ff.eq( self.rom.out.bit_select( 25, 7 ) ),
+            ipc.eq( self.pc )
+          ]
+          m.next = "CPU_PC_DECODE"
       # "Decode PC": Figure out what sort of instruction to execute,
       #              and prepare associated registers.
       with m.State( "CPU_PC_DECODE" ):
@@ -428,11 +448,10 @@ def check_vals( expected, ni, cpu ):
 # and verify its expected register values over time.
 def cpu_run( cpu, expected ):
   # Record how many CPU instructions have executed.
-  ni = 0
+  ni = -1
+  am_fetching = False
   # Watch for timeouts if the CPU gets into a bad state.
   timeout = 0
-  # Check initial values, if any.
-  yield from check_vals( expected, 0, cpu )
   # Let the CPU run for N ticks.
   while ni <= expected[ 'end' ]:
     # Let combinational logic settle before checking values.
@@ -440,7 +459,8 @@ def cpu_run( cpu, expected ):
     timeout = timeout + 1
     # Only check expected values once per instruction.
     fsm_state = yield cpu.fsms
-    if fsm_state == CPU_PC_ROM_FETCH:
+    if fsm_state == CPU_PC_ROM_FETCH and not am_fetching:
+      am_fetching = True
       ni += 1
       timeout = 0
       # Check expected values, if any.
@@ -448,6 +468,8 @@ def cpu_run( cpu, expected ):
     elif timeout > 1000:
       print( "\033[31mFAIL: Timeout\033[0m" )
       break
+    elif fsm_state != CPU_PC_ROM_FETCH:
+      am_fetching = False
     # Step the simulation.
     yield Tick()
 
@@ -469,6 +491,36 @@ def cpu_sim( test ):
       yield from cpu_run( cpu, test[ 3 ] )
       print( "\033[35mDONE\033[0m running %s: executed %d instructions"
              %( test[ 0 ], test[ 3 ][ 'end' ] ) )
+    sim.add_clock( 24e-6 )
+    sim.add_clock( 24e-6, domain = "nsync" )
+    sim.add_sync_process( proc )
+    sim.run()
+
+# Helper method to simulate running multiple ROM modules in sequence.
+def cpu_mux_sim( tests ):
+  print( "\033[33mSTART\033[0m running '%s' program:"%tests[ 0 ] )
+  # Create the CPU device.
+  cpu = CPU( tests[ 2 ] )
+  yield cpu.ws.eq( 0b001 )
+  num_i = 0
+  for t in tests[ 3 ]:
+    num_i = num_i + t[ 'end' ]
+
+  # Run the simulation.
+  sim_name = "%s.vcd"%tests[ 1 ]
+  with Simulator( cpu, vcd_file = open( sim_name, 'w' ) ) as sim:
+    def proc():
+      # Run the programs and print pass/fail for individual tests.
+      for i in range( len( tests[ 3 ] ) ):
+        yield cpu.alu.clk_rst.eq( 1 )
+        yield Tick()
+        yield cpu.alu.clk_rst.eq( 0 )
+        yield Tick()
+        yield cpu.rom.select.eq( i )
+        yield Settle()
+        yield from cpu_run( cpu, tests[ 3 ][ i ] )
+      print( "\033[35mDONE\033[0m running %s: executed %d instructions"
+             %( tests[ 0 ], num_i ) )
     sim.add_clock( 24e-6 )
     sim.add_clock( 24e-6, domain = "nsync" )
     sim.add_sync_process( proc )
@@ -513,10 +565,10 @@ if __name__ == "__main__":
   cpu_sim( lh_test )
   from tests.test_roms.rv32i_lhu import *
   cpu_sim( lhu_test )
-  from tests.test_roms.rv32i_lui import *
-  cpu_sim( lui_test )
   from tests.test_roms.rv32i_lw import *
   cpu_sim( lw_test )
+  from tests.test_roms.rv32i_lui import *
+  cpu_sim( lui_test )
   from tests.test_roms.rv32i_or import *
   cpu_sim( or_test )
   from tests.test_roms.rv32i_ori import *
@@ -525,6 +577,8 @@ if __name__ == "__main__":
   cpu_sim( sb_test )
   from tests.test_roms.rv32i_sh import *
   cpu_sim( sh_test )
+  from tests.test_roms.rv32i_sw import *
+  cpu_sim( sw_test )
   from tests.test_roms.rv32i_sll import *
   cpu_sim( sll_test )
   from tests.test_roms.rv32i_slli import *
@@ -547,21 +601,17 @@ if __name__ == "__main__":
   cpu_sim( srli_test )
   from tests.test_roms.rv32i_sub import *
   cpu_sim( sub_test )
-  from tests.test_roms.rv32i_sw import *
-  cpu_sim( sw_test )
   from tests.test_roms.rv32i_xor import *
   cpu_sim( xor_test )
   from tests.test_roms.rv32i_xori import *
   cpu_sim( xori_test )
-
-  # RV32I operation RISC-V tests.
-  # Simulate the 'ADDI test' ROM.
-  cpu_sim( addiu_test )
-  # Simulate the 'ADD test' ROM.
-  cpu_sim( addu_test )
+  # Alternate option: Run with multiplexed ROM.
+  #cpu_mux_sim( rv32i_tests )
 
   # Miscellaneous tests which are not part of the RV32I test suite.
-  # Simulate the 'infinite loop test' ROM.
-  cpu_sim( loop_test )
+  # Simulate the ADD and ADDI test ROMs.
+  cpu_mux_sim( add_mux_test )
   # Simulate the 'quick test' ROM.
   cpu_sim( quick_test )
+  # Simulate the 'infinite loop test' ROM.
+  cpu_sim( loop_test )

@@ -430,6 +430,7 @@ add_exp = {
 
 # Expected runtime values for the "ADDI instruction" test program.
 addi_exp = {
+  0:   [ { 'r': 'pc', 'e': 0x00000000 } ],
   # Standard immediate tests (r1 = 'a', r14 = result)
   # Testcase 2:  0 + 0 = 0
   3:   [ { 'r': 1, 'e': 0x00000000 }, { 'r': 14, 'e': 0x00000000 } ],
@@ -496,5 +497,65 @@ addi_exp = {
 
 loop_test  = [ 'inifinite loop test', 'cpu_loop', loop_rom, loop_exp ]
 quick_test = [ 'quick test', 'cpu_quick', quick_rom, quick_exp ]
+add_mux_test = [ 'ADD/ADDI test cases', 'cpu_mux_add',
+                 MUXROM( [ add_rom, addi_rom ] ),
+                 [ add_exp, addi_exp ] ]
 addu_test  = [ 'ADD test cases', 'cpu_addu', add_rom, add_exp ]
 addiu_test = [ 'ADDI test cases', 'cpu_addiu', addi_rom, addi_exp ]
+
+# Multiplexed ROM image for the collected RV32I instruction tests.
+from tests.test_roms.rv32i_add import *
+from tests.test_roms.rv32i_addi import *
+from tests.test_roms.rv32i_and import *
+from tests.test_roms.rv32i_andi import *
+from tests.test_roms.rv32i_auipc import *
+from tests.test_roms.rv32i_beq import *
+from tests.test_roms.rv32i_bge import *
+from tests.test_roms.rv32i_bgeu import *
+from tests.test_roms.rv32i_blt import *
+from tests.test_roms.rv32i_bltu import *
+from tests.test_roms.rv32i_bne import *
+from tests.test_roms.rv32i_fence_i import *
+from tests.test_roms.rv32i_jal import *
+from tests.test_roms.rv32i_jalr import *
+from tests.test_roms.rv32i_lb import *
+from tests.test_roms.rv32i_lbu import *
+from tests.test_roms.rv32i_lh import *
+from tests.test_roms.rv32i_lhu import *
+from tests.test_roms.rv32i_lw import *
+from tests.test_roms.rv32i_lui import *
+from tests.test_roms.rv32i_or import *
+from tests.test_roms.rv32i_ori import *
+from tests.test_roms.rv32i_sb import *
+from tests.test_roms.rv32i_sh import *
+from tests.test_roms.rv32i_sw import *
+from tests.test_roms.rv32i_sll import *
+from tests.test_roms.rv32i_slli import *
+from tests.test_roms.rv32i_slt import *
+from tests.test_roms.rv32i_slti import *
+from tests.test_roms.rv32i_sltu import *
+from tests.test_roms.rv32i_sltiu import *
+from tests.test_roms.rv32i_sra import *
+from tests.test_roms.rv32i_srai import *
+from tests.test_roms.rv32i_srl import *
+from tests.test_roms.rv32i_srli import *
+from tests.test_roms.rv32i_sub import *
+from tests.test_roms.rv32i_xor import *
+from tests.test_roms.rv32i_xori import *
+rv32i_tests = [ 'RV32I instruction test cases', 'rv32i_tests',
+  MUXROM( [
+    add_rom, addi_rom, and_rom, andi_rom, auipc_rom, beq_rom,
+    bge_rom, bgeu_rom, blt_rom, bltu_rom, bne_rom, fence_i_rom,
+    jal_rom, jalr_rom, lb_rom, lbu_rom, lh_rom, lhu_rom,
+    lw_rom, lui_rom, or_rom, ori_rom, sb_rom, sh_rom, sw_rom,
+    sll_rom, slli_rom, slt_rom, slti_rom, sltiu_rom, sltu_rom,
+    sra_rom, srai_rom, srl_rom, srli_rom, sub_rom, xor_rom, xori_rom
+  ] ),
+  [
+    add_exp, addi_exp, and_exp, andi_exp, auipc_exp, beq_exp,
+    bge_exp, bgeu_exp, blt_exp, bltu_exp, bne_exp, fence_i_exp,
+    jal_exp, jalr_exp, lb_exp, lbu_exp, lh_exp, lhu_exp,
+    lw_exp, lui_exp, or_exp, ori_exp, sb_exp, sh_exp, sw_exp,
+    sll_exp, slli_exp, slt_exp, slti_exp, sltiu_exp, sltu_exp,
+    sra_exp, srai_exp, srl_exp, srli_exp, sub_exp, xor_exp, xori_exp
+] ]

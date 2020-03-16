@@ -21,6 +21,8 @@ class ALU( Elaboratable ):
                      reset = 0x00000000 )
     # 'Start' signal to latch inputs.
     self.start = Signal( reset = 0b0 )
+    # 'Reset' signal for clock domains.
+    self.clk_rst = Signal( reset = 0b0, reset_less = True )
     # (RISC-V does not have ALU condition flags)
 
   def elaborate( self, platform ):
@@ -31,7 +33,9 @@ class ALU( Elaboratable ):
     # which says that the domain names and dictionary keys must match.
     # But it would be nice to use both edges of one 'sync' domain...
     clock = ClockDomain( "sync", clk_edge = "pos" )
+    clock.rst = self.clk_rst
     nclock = ClockDomain( "nsync", clk_edge = "neg" )
+    nclock.rst = self.clk_rst
     m.domains += clock
     m.domains += nclock
 

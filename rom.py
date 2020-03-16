@@ -1,6 +1,8 @@
 from nmigen import *
 from nmigen.back.pysim import *
 
+from isa import *
+
 ###############
 # ROM module: #
 ###############
@@ -8,7 +10,7 @@ from nmigen.back.pysim import *
 class ROM( Elaboratable ):
   def __init__( self, data ):
     # Address bits to select up to `len( data )` words by byte.
-    self.addr = Signal( range( len( data * 4 ) ), reset = 0 )
+    self.addr = Signal( range( len( data ) * 4 ), reset = 0 )
     # Data word output.
     # TODO: This little-endian mishandling is getting out of hand.
     self.out  = Signal( 32, reset = (
@@ -85,10 +87,14 @@ def rom_test( rom ):
   print( "--- ROM Tests ---" )
 
   # Test the ROM's "happy path" (reading valid data).
-  yield from rom_read_ut( rom, 0x0, ( yield rom.data[ 0 ] ) )
-  yield from rom_read_ut( rom, 0x4, ( yield rom.data[ 1 ] ) )
-  yield from rom_read_ut( rom, 0x8, ( yield rom.data[ 2 ] ) )
-  yield from rom_read_ut( rom, 0xC, ( yield rom.data[ 3 ] ) )
+  yield from rom_read_ut( rom, 0x0,
+    LITTLE_END( ( yield rom.data[ 0 ] ) ) )
+  yield from rom_read_ut( rom, 0x4,
+    LITTLE_END( ( yield rom.data[ 1 ] ) ) )
+  yield from rom_read_ut( rom, 0x8,
+    LITTLE_END( ( yield rom.data[ 2 ] ) ) )
+  yield from rom_read_ut( rom, 0xC,
+    LITTLE_END( ( yield rom.data[ 3 ] ) ) )
   # Test mis-aligned addresses.
   yield from rom_read_ut( rom, 0x1, 0 )
   yield from rom_read_ut( rom, 0x2, 0 )

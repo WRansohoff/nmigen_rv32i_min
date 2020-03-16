@@ -7,7 +7,7 @@ from nmigen import *
 from alu import *
 
 # ALU operation definitions. These implement the logic behind math
-# instructions, e.g. 'ADD' covers 'ADD', 'ADDI', 'SUB', and 'SUBI'.
+# instructions, e.g. 'ADD' covers 'ADD', 'ADDI', etc.
 ALU_ADD   = 0b0001
 ALU_SUB   = 0b0010
 ALU_SLT   = 0b0011
@@ -142,7 +142,7 @@ def RV32I_S( sop, a, b, i ):
 # B-type operation: Branch to (PC + Immediate) if Ra ? Rb.
 # The '?' compare operation depends on the funct3 bits.
 # Note: the 12-bit immediate represents a 13-bit value with LSb = 0.
-# This function accepts the 13-bit representation as an argument.
+# This function accepts the 12-bit representation as an argument.
 def RV32I_B( bop, a, b, i ):
   op = bop[ 0 ]
   f  = bop[ 1 ]
@@ -167,7 +167,7 @@ def RV32I_U( op, c, i ):
 # J-type operation: In the base RV32I spec, this is only used by JAL.
 # Jumps to (PC + Immediate) and stores (PC + 4) in Rc. The 20-bit
 # immediate value represents a 21-bit value with LSb = 0; this
-# function takes the 21-bit representation as an argument.
+# function takes the 20-bit representation as an argument.
 def RV32I_J( op, c, i ):
   return LITTLE_END( ( op & 0x7F ) |
          ( ( c  & 0x1F ) << 7 ) |
@@ -260,7 +260,8 @@ def JAL( c, i ):
 # Assembly pseudo-ops:
 def LI( c, i ):
   if ( ( i & 0x0FFF ) & 0x0800 ):
-    return LUI( c, ( ( i >> 12 ) + 1 ) << 12 ), ADDI( c, c, ( i & 0x0FFF ) )
+    return LUI( c, ( ( i >> 12 ) + 1 ) << 12 ),
+           ADDI( c, c, ( i & 0x0FFF ) )
   else:
     return LUI( c, i ), ADDI( c, c, ( i & 0x0FFF ) )
 def NOP():

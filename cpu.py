@@ -295,6 +295,7 @@ class CPU( Elaboratable ):
                 m.d.sync += self.r[ i ].eq( ipc + 4 )
           m.next = "CPU_PC_ROM_FETCH"
         # "Conditional Branch" instructions:
+        # TODO: Should these defer to the ALU for compare operations?
         with m.Elif( opcode == OP_BRANCH ):
           for i in range( 32 ):
             for j in range( 32 ):
@@ -535,90 +536,54 @@ def cpu_mux_sim( tests ):
 
 # 'main' method to run a basic testbench.
 if __name__ == "__main__":
-  # Auto-generated RV32I tests.
-  from tests.test_roms.rv32i_add import *
+  # Run auto-generated RV32I tests one-by-one.
   cpu_sim( add_test )
-  from tests.test_roms.rv32i_addi import *
   cpu_sim( addi_test )
-  from tests.test_roms.rv32i_and import *
   cpu_sim( and_test )
-  from tests.test_roms.rv32i_andi import *
   cpu_sim( andi_test )
-  from tests.test_roms.rv32i_auipc import *
   cpu_sim( auipc_test )
-  from tests.test_roms.rv32i_beq import *
   cpu_sim( beq_test )
-  from tests.test_roms.rv32i_bge import *
   cpu_sim( bge_test )
-  from tests.test_roms.rv32i_bgeu import *
   cpu_sim( bgeu_test )
-  from tests.test_roms.rv32i_blt import *
   cpu_sim( blt_test )
-  from tests.test_roms.rv32i_bltu import *
   cpu_sim( bltu_test )
-  from tests.test_roms.rv32i_bne import *
   cpu_sim( bne_test )
-  from tests.test_roms.rv32i_fence_i import *
   cpu_sim( fence_i_test )
-  from tests.test_roms.rv32i_jal import *
   cpu_sim( jal_test )
-  from tests.test_roms.rv32i_jalr import *
   cpu_sim( jalr_test )
-  from tests.test_roms.rv32i_lb import *
   cpu_sim( lb_test )
-  from tests.test_roms.rv32i_lbu import *
   cpu_sim( lbu_test )
-  from tests.test_roms.rv32i_lh import *
   cpu_sim( lh_test )
-  from tests.test_roms.rv32i_lhu import *
   cpu_sim( lhu_test )
-  from tests.test_roms.rv32i_lw import *
   cpu_sim( lw_test )
-  from tests.test_roms.rv32i_lui import *
   cpu_sim( lui_test )
-  from tests.test_roms.rv32i_or import *
   cpu_sim( or_test )
-  from tests.test_roms.rv32i_ori import *
   cpu_sim( ori_test )
-  from tests.test_roms.rv32i_sb import *
   cpu_sim( sb_test )
-  from tests.test_roms.rv32i_sh import *
   cpu_sim( sh_test )
-  from tests.test_roms.rv32i_sw import *
   cpu_sim( sw_test )
-  from tests.test_roms.rv32i_sll import *
   cpu_sim( sll_test )
-  from tests.test_roms.rv32i_slli import *
   cpu_sim( slli_test )
-  from tests.test_roms.rv32i_slt import *
   cpu_sim( slt_test )
-  from tests.test_roms.rv32i_slti import *
   cpu_sim( slti_test )
-  from tests.test_roms.rv32i_sltu import *
   cpu_sim( sltu_test )
-  from tests.test_roms.rv32i_sltiu import *
   cpu_sim( sltiu_test )
-  from tests.test_roms.rv32i_sra import *
   cpu_sim( sra_test )
-  from tests.test_roms.rv32i_srai import *
   cpu_sim( srai_test )
-  from tests.test_roms.rv32i_srl import *
   cpu_sim( srl_test )
-  from tests.test_roms.rv32i_srli import *
   cpu_sim( srli_test )
-  from tests.test_roms.rv32i_sub import *
   cpu_sim( sub_test )
-  from tests.test_roms.rv32i_xor import *
   cpu_sim( xor_test )
-  from tests.test_roms.rv32i_xori import *
   cpu_sim( xori_test )
   # Alternate option: Run with multiplexed ROM.
+  # But this doesn't seem to speed up the tests like I'd hoped :/
   #cpu_mux_sim( rv32i_tests )
 
   # Miscellaneous tests which are not part of the RV32I test suite.
-  # Simulate the ADD and ADDI test ROMs.
+  # Simulate the ADD and ADDI test ROMs, using a multiplexed ROM
+  # module and checking every expected value along the way.
   cpu_mux_sim( add_mux_test )
-  # Simulate the 'quick test' ROM.
+  # Simulate a basic 'quick test' ROM.
   cpu_sim( quick_test )
   # Simulate the 'infinite loop test' ROM.
   cpu_sim( loop_test )

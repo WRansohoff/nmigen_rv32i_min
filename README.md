@@ -49,7 +49,7 @@ Each test suite also creates a `.vcd` file containing the waveform results, so y
 | `BNE`       |:green_heart: |
 | `FENCE`     |:broken_heart:|
 | `JAL`       |:green_heart: |
-| `JALR`      |:broken_heart:|
+| `JALR`      |:green_heart: |
 | `LB`        |:broken_heart:|
 | `LBU`       |:broken_heart:|
 | `LH`        |:broken_heart:|

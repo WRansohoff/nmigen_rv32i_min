@@ -180,7 +180,8 @@ class CPU( Elaboratable ):
         with m.Else():
           m.d.sync += rws.eq( 0 )
           # I-type operations have one cohesive 12-bit immediate.
-          with m.If( self.rom.out.bit_select( 0, 7 ) == OP_IMM ):
+          with m.If( ( self.rom.out.bit_select( 0, 7 ) == OP_IMM ) |
+                     ( self.rom.out.bit_select( 0, 7 ) == OP_JALR ) ):
             # ...But shift operations are a special case with a 5-bit
             # unsigned immediate and 'funct7' bits in the MSbs.
             with m.If( ( self.rom.out.bit_select( 12, 3 ) == F_SLLI ) |

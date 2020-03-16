@@ -34,6 +34,10 @@ Each test suite also creates a `.vcd` file containing the waveform results, so y
 
 # Test Coverage
 
+Note: `ECALL` and `EBREAK` instructions are not implemented, and the corresponding lack of "CSR" instructions means that these tests only work when the usual startup code is skipped over.
+
+So even though this table of test coverage doesn't look too bad, there's plenty more work to do before the design will actually work with real-world programs.
+
 | Instruction | Pass / Fail? |
 |:-----------:|:------------:|
 | `ADD`       |:green_heart: |
@@ -61,15 +65,15 @@ Each test suite also creates a `.vcd` file containing the waveform results, so y
 | `SB`        |:broken_heart:|
 | `SH`        |:broken_heart:|
 | `SW`        |:broken_heart:|
-| `SLL`       |:broken_heart:|
+| `SLL`       |:green_heart:|
 | `SLLI`      |:green_heart: |
 | `SLT`       |:green_heart: |
 | `SLTI`      |:green_heart: |
 | `SLTU`      |:green_heart: |
 | `SLTUI`     |:green_heart: |
-| `SRL`       |:broken_heart:|
+| `SRL`       |:green_heart:|
 | `SRLI`      |:green_heart: |
-| `SRA`       |:broken_heart:|
+| `SRA`       |:green_heart:|
 | `SRAI`      |:green_heart: |
 | `SUB`       |:green_heart: |
 | `XOR`       |:green_heart: |

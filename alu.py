@@ -78,15 +78,16 @@ class ALU( Elaboratable ):
     # Y = ( A <  B ) (unsigned)
     with m.Elif( fn == ALU_SLTU ):
       m.d.comb += self.y.eq( ua < ub )
+    # Note: Shift operations cannot shift more than XLEN (32) bits.
     # Y = A << B
     with m.Elif( fn == ALU_SLL ):
-      m.d.comb += self.y.eq( xa << ub )
+      m.d.comb += self.y.eq( xa << ( ub & 0x1F ) )
     # Y = A >> B (no sign extend)
     with m.Elif( fn == ALU_SRL ):
-      m.d.comb += self.y.eq( ua >> ub )
+      m.d.comb += self.y.eq( ua >> ( ub & 0x1F ) )
     # Y = A >> B (with sign extend)
     with m.Elif( fn == ALU_SRA ):
-      m.d.comb += self.y.eq( xa >> ub )
+      m.d.comb += self.y.eq( xa >> ( ub & 0x1F ) )
     # Return 0 after one clock cycle for unrecognized commands.
     with m.Else():
       m.d.comb += self.y.eq( 0x00000000 )

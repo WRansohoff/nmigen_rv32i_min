@@ -13,6 +13,7 @@ ASFLAGS += -march=rv32i
 ASFLAGS += -nostartfiles
 ASFLAGS += -nostdlib
 ASFLAGS += --specs=nosys.specs
+ASFLAGS += -Wl,-Ttubul.ld
 
 # Source files.
 SRC  = ./add.S

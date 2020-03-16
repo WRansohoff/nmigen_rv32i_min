@@ -36,8 +36,8 @@ class CPU( Elaboratable ):
     # The ROM submodule which acts as simulated program data storage.
     self.rom = rom_module
     # The RAM submodule which simulates re-writable data storage.
-    # (512 bytes of RAM = 128 words)
-    self.ram = RAM( 128 )
+    # (1KB of RAM = 256 words)
+    self.ram = RAM( 256 )
 
     # Debugging signal(s):
     # Track FSM state. TODO: There must be a way to access this
@@ -252,8 +252,8 @@ class CPU( Elaboratable ):
         # "Add Upper Immediate to PC" instruction:
         with m.Elif( opcode == OP_AUIPC ):
           for i in range( 1, 32 ):
-            with m.If( ra == i ):
-              m.d.sync += self.r[ i ].eq( imm + self.pc )
+            with m.If( rc == i ):
+              m.d.sync += self.r[ i ].eq( imm + ipc )
           m.next = "CPU_PC_LOAD"
         # "Jump And Link" instruction:
         with m.Elif( opcode == OP_JAL ):

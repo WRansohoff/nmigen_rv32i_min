@@ -181,11 +181,13 @@ class CPU( Elaboratable ):
           m.d.sync += rws.eq( 0 )
           # I-type operations have one cohesive 12-bit immediate.
           with m.If( ( self.rom.out.bit_select( 0, 7 ) == OP_IMM ) |
-                     ( self.rom.out.bit_select( 0, 7 ) == OP_JALR ) ):
+                     ( self.rom.out.bit_select( 0, 7 ) == OP_JALR ) |
+                     ( self.rom.out.bit_select( 0, 7 ) == OP_LOAD ) ):
             # ...But shift operations are a special case with a 5-bit
             # unsigned immediate and 'funct7' bits in the MSbs.
-            with m.If( ( self.rom.out.bit_select( 12, 3 ) == F_SLLI ) |
-                       ( self.rom.out.bit_select( 12, 3 ) == F_SRLI ) ):
+            with m.If( ( self.rom.out.bit_select( 0, 7 ) == OP_IMM ) &
+                     ( ( self.rom.out.bit_select( 12, 3 ) == F_SLLI ) |
+                     ( self.rom.out.bit_select( 12, 3 ) == F_SRLI ) ) ):
               m.d.sync += imm.eq( self.rom.out.bit_select( 20, 5 ) )
             with m.Else():
               with m.If( self.rom.out[ 31 ] ):
@@ -342,23 +344,24 @@ class CPU( Elaboratable ):
                     m.next = "CPU_PC_ROM_FETCH"
                 with m.Else():
                   m.next = "CPU_PC_LOAD"
-        # TODO: "Load from Memory" instructions:
+        # "Load from Memory" instructions:
+        # Addresses in 0x2xxxxxxx memory space are treated as RAM.
+        # There are no alignment requirements (yet).
         with m.Elif( opcode == OP_LOAD ):
-          # "Load Byte" operation:
-          with m.If( f == F_LB ):
-            m.next = "CPU_PC_LOAD"
-          # "Load Halfword" operation:
-          with m.Elif( f == F_LH ):
-            m.next = "CPU_PC_LOAD"
-          # "Load Word" operation:
-          with m.Elif( f == F_LW ):
-            m.next = "CPU_PC_LOAD"
-          # "Load Byte" (without sign extension) operation:
-          with m.Elif( f == F_LBU ):
-            m.next = "CPU_PC_LOAD"
-          # "Load Halfword" (without sign extension) operation:
-          with m.Elif( f == F_LHU ):
-            m.next = "CPU_PC_LOAD"
+          # Populate 'mp' with the memory address to load from.
+          for i in range( 32 ):
+            with m.If( ra == i ):
+              m.d.comb += self.mp.eq( self.r[ i ] + imm )
+          with m.If( ( self.mp & 0xE0000000 ) == 0x20000000 ):
+            m.d.comb += [
+              self.ram.addr.eq( self.mp & 0x1FFFFFFF ),
+              self.ram.ren.eq( 0b1 )
+            ]
+          with m.Else():
+            m.d.comb += self.rom.addr.eq( self.mp )
+          # Memory access is not instantaneous, so the next state is
+          # 'CPU_LD' which allows time for the data to arrive.
+          m.next = "CPU_LD"
         # TODO: "Store to Memory" instructions:
         with m.Elif( opcode == OP_STORE ):
           # "Store Byte" operation:
@@ -390,6 +393,75 @@ class CPU( Elaboratable ):
         # should trigger an error.
         with m.Else():
           m.next = "CPU_PC_LOAD"
+      # "Load operation" - wait for a load instruction to finish
+      # fetching data from memory.
+      with m.State( "CPU_LD" ):
+        # Maintain the cominatorial logic holding the memory
+        # address at the 'mp' (memory pointer) value.
+        for i in range( 32 ):
+          with m.If( ra == i ):
+            m.d.comb += self.mp.eq( self.r[ i ] + imm )
+        with m.If( ( self.mp & 0xE0000000 ) == 0x20000000 ):
+          m.d.comb += [
+            self.ram.addr.eq( self.mp & 0x1FFFFFFF ),
+            self.ram.ren.eq( 0b1 )
+          ]
+        with m.Else():
+          m.d.comb += self.rom.addr.eq( self.mp )
+        # "Load Byte" operation:
+        with m.If( f == F_LB ):
+          for i in range( 1, 32 ):
+            with m.If( rc == i ):
+              with m.If( ( self.mp & 0xE0000000 ) == 0x20000000 ):
+                with m.If( self.ram.dout[ 7 ] ):
+                  m.d.sync += self.r[ i ].eq( ( self.ram.dout & 0xFF ) | 0xFFFFFF00 )
+                with m.Else():
+                  m.d.sync += self.r[ i ].eq( self.ram.dout & 0xFF )
+              with m.Else():
+                with m.If( self.rom.out[ 7 ] ):
+                  m.d.sync += self.r[ i ].eq( ( self.rom.out & 0xFF ) | 0xFFFFFF00 )
+                with m.Else():
+                  m.d.sync += self.r[ i ].eq( self.rom.out & 0xFF )
+        # "Load Halfword" operation:
+        with m.Elif( f == F_LH ):
+          for i in range( 1, 32 ):
+            with m.If( rc == i ):
+              with m.If( ( self.mp & 0xE0000000 ) == 0x20000000 ):
+                with m.If( self.ram.dout[ 15 ] ):
+                  m.d.sync += self.r[ i ].eq( ( self.ram.dout & 0xFFFF ) | 0xFFFF0000 )
+                with m.Else():
+                  m.d.sync += self.r[ i ].eq( self.ram.dout & 0xFFFF )
+              with m.Else():
+                with m.If( self.rom.out[ 15 ] ):
+                  m.d.sync += self.r[ i ].eq( ( self.rom.out & 0xFFFF ) | 0xFFFF0000 )
+                with m.Else():
+                  m.d.sync += self.r[ i ].eq( self.rom.out & 0xFFFF )
+        # "Load Word" operation:
+        with m.Elif( f == F_LW ):
+          for i in range( 1, 32 ):
+            with m.If( rc == i ):
+              with m.If( ( self.mp & 0xE0000000 ) == 0x20000000 ):
+                m.d.sync += self.r[ i ].eq( self.ram.dout )
+              with m.Else():
+                m.d.sync += self.r[ i ].eq( self.rom.out )
+        # "Load Byte" (without sign extension) operation:
+        with m.Elif( f == F_LBU ):
+          for i in range( 1, 32 ):
+            with m.If( rc == i ):
+              with m.If( ( self.mp & 0xE0000000 ) == 0x20000000 ):
+                m.d.sync += self.r[ i ].eq( self.ram.dout & 0xFF )
+              with m.Else():
+                m.d.sync += self.r[ i ].eq( self.rom.out & 0xFF )
+        # "Load Halfword" (without sign extension) operation:
+        with m.Elif( f == F_LHU ):
+          for i in range( 1, 32 ):
+            with m.If( rc == i ):
+              with m.If( ( self.mp & 0xE0000000 ) == 0x20000000 ):
+                m.d.sync += self.r[ i ].eq( self.ram.dout & 0xFFFF )
+              with m.Else():
+                m.d.sync += self.r[ i ].eq( self.rom.out & 0xFFFF )
+        m.next = "CPU_PC_LOAD"
+      # "PC Load Letter" - increment the PC.
       with m.State( "CPU_PC_LOAD" ):
         m.d.comb += self.fsms.eq( CPU_PC_LOAD ) # TODO: Remove
         m.d.nsync += self.pc.eq( self.pc + 4 )
@@ -495,16 +567,22 @@ def cpu_sim( test ):
   sim_name = "%s.vcd"%test[ 1 ]
   with Simulator( cpu, vcd_file = open( sim_name, 'w' ) ) as sim:
     def proc():
+      # Initialize RAM values. TODO: The application should do this,
+      # but I've removed a bunch of startup code from the tests to
+      # skip over CSR calls which I haven't implemented yet.
+      for i in range( len( test[ 3 ] ) ):
+        yield cpu.ram.data[ i ].eq( test[ 3 ][ i ] )
       # Run the program and print pass/fail for individual tests.
-      yield from cpu_run( cpu, test[ 3 ] )
+      yield from cpu_run( cpu, test[ 4 ] )
       print( "\033[35mDONE\033[0m running %s: executed %d instructions"
-             %( test[ 0 ], test[ 3 ][ 'end' ] ) )
+             %( test[ 0 ], test[ 4 ][ 'end' ] ) )
     sim.add_clock( 24e-6 )
     sim.add_clock( 24e-6, domain = "nsync" )
     sim.add_sync_process( proc )
     sim.run()
 
 # Helper method to simulate running multiple ROM modules in sequence.
+# TODO: Does not currently support initialized RAM values.
 def cpu_mux_sim( tests ):
   print( "\033[33mSTART\033[0m running '%s' program:"%tests[ 0 ] )
   # Create the CPU device.

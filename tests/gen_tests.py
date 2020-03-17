@@ -14,9 +14,8 @@ test_path = "%s/"%( os.path.dirname( sys.argv[ 0 ] ) )
 # Helper method to get raw hex out of an object file's `.text`
 # section. This basically returns the compiled machine code for one
 # of the RISC-V assembly test files.
-# TODO: Load/store tests will probably also use .data sections?
-def get_test_hex( op ):
-  hdump = subprocess.run( [ od, '-s', '-j', '.text',
+def get_section_hex( op, sect ):
+  hdump = subprocess.run( [ od, '-s', '-j', sect,
                             '%s/rv64ui_tests/%s.o'
                             %( test_path, op ) ],
                           stdout = subprocess.PIPE
@@ -38,8 +37,8 @@ def get_test_hex( op ):
 
 # Helper method to write a Python file containing a simulated ROM
 # test image and testbench condition to verify that it ran correclty.
-def write_py_tests( op, hexl ):
-  instrs = len( hexl )
+def write_py_tests( op, hext, hexd ):
+  instrs = len( hext )
   opp = op
   while len( opp ) < 5:
     opp = opp + ' '
@@ -57,13 +56,25 @@ def write_py_tests( op, hexl ):
     # Write the ROM image.
     py.write( '# Simulated ROM image:\r\n'
               '%s_rom = ROM( rom_img( ['%op )
-    for x in range( len( hexl ) ):
+    for x in range( len( hext ) ):
       if ( x % 4 ) == 0:
         py.write( '\r\n  ' )
-      py.write( '%s'%hexl[ x ] )
-      if x < ( len( hexl ) - 1 ):
+      py.write( '%s'%hext[ x ] )
+      if x < ( len( hext ) - 1 ):
         py.write( ', ' )
     py.write( '\r\n] ) )\r\n' )
+    # Write the inirialized RAM values.
+    py.write( '\r\n# Simulated initialized RAM image:\r\n'
+              '# TODO: RAM should eventually be initialized '
+              'by the application\r\n'
+              '%s_ram = rom_img( ['%op )
+    for x in range( len( hexd ) ):
+      if ( x % 4 ) == 0:
+        py.write( '\r\n  ' )
+      py.write( '%s'%hexd[ x ] )
+      if x < ( len( hexd ) - 1 ):
+        py.write( ', ' )
+    py.write( '\r\n] )\r\n' )
     # Write the 'expected' value for the testbench to check
     # after tests finish.
     py.write( "\r\n# Expected 'pass' register values.\r\n"
@@ -72,8 +83,8 @@ def write_py_tests( op, hexl ):
               "  'end': %d\r\n}\r\n"%( op, instrs * 2, instrs * 2 ) )
     # Write the test struct.
     py.write( "\r\n# Collected test program definition:\r\n%s_test = "
-              "[ '%s test cases', 'cpu_%s', %s_rom, %s_exp ]"
-              %( op, op.upper(), op, op, op ) )
+              "[ '%s test cases', 'cpu_%s', %s_rom, %s_ram, %s_exp ]"
+              %( op, op.upper(), op, op, op, op ) )
   print( "Done!" )
 
 # Run 'make clean && make' to re-compile the files.
@@ -86,7 +97,9 @@ for fn in os.listdir( '%s/rv64ui_tests'%test_path ):
   if fn[ -1 ] == 'o':
     op = fn[ :-2 ]
     # Get machine code instructions for the operation's tests.
-    hexl = get_test_hex( op )
+    hext = get_section_hex( op, '.text' )
+    # Get initialized RAM data for the operation's tests.
+    hexd = get_section_hex( op, '.data' )
     # Write a Python file with the test ROM image and a simple
     # "expect r7 = 93, r10 = 0 after running all tests" condition.
-    write_py_tests( op, hexl )
+    write_py_tests( op, hext, hexd )

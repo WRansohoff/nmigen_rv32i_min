@@ -496,13 +496,13 @@ addi_exp = {
 # ROM images, and expected runtime values. #
 ############################################
 
-loop_test  = [ 'inifinite loop test', 'cpu_loop', loop_rom, loop_exp ]
-quick_test = [ 'quick test', 'cpu_quick', quick_rom, quick_exp ]
+loop_test  = [ 'inifinite loop test', 'cpu_loop', loop_rom, [], loop_exp ]
+quick_test = [ 'quick test', 'cpu_quick', quick_rom, [], quick_exp ]
 add_mux_test = [ 'ADD/ADDI test cases', 'cpu_mux_add',
                  MUXROM( [ add_rom, addi_rom ] ),
                  [ add_exp, addi_exp ] ]
-addu_test  = [ 'ADD test cases', 'cpu_addu', add_rom, add_exp ]
-addiu_test = [ 'ADDI test cases', 'cpu_addiu', addi_rom, addi_exp ]
+addu_test  = [ 'ADD test cases', 'cpu_addu', add_rom, [], add_exp ]
+addiu_test = [ 'ADDI test cases', 'cpu_addiu', addi_rom, [], addi_exp ]
 
 # Multiplexed ROM image for the collected RV32I instruction tests.
 from tests.test_roms.rv32i_add import *

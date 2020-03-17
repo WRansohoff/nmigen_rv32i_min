@@ -10,17 +10,16 @@ from isa import *
 class ROM( Elaboratable ):
   def __init__( self, data ):
     # Address bits to select up to `len( data )` words by byte.
-    self.addr = Signal( range( len( data ) * 4 ), reset = 0 )
+    self.addr = Signal( range( len( data ) ), reset = 0 )
     # Data word output.
-    # TODO: This little-endian mishandling is getting out of hand.
     self.out  = Signal( 32, reset = (
-      ( ( data[ 0 ] & 0x000000FF ) << 24 ) |
-      ( ( data[ 0 ] & 0x0000FF00 ) << 8  ) |
-      ( ( data[ 0 ] & 0x00FF0000 ) >> 8  ) |
-      ( ( data[ 0 ] & 0xFF000000 ) >> 24 ) ) )
+      ( data[ 0 ] ) |
+      ( ( data[ 1 ] if len( data ) > 1 else 0x00 ) << 8  ) |
+      ( ( data[ 2 ] if len( data ) > 2 else 0x00 ) << 16 ) |
+      ( ( data[ 3 ] if len( data ) > 3 else 0x00 ) << 24 ) ) )
     # Data storage.
     self.data = [
-      Signal( 32, reset = data[ i ], name = "rom(0x%08X)"%( i * 4 ) )
+      Signal( 8, reset = data[ i ], name = "rom(0x%08X)"%i )
       for i in range( len( data ) )
     ]
     # Record size.
@@ -30,23 +29,19 @@ class ROM( Elaboratable ):
     # Core ROM module.
     m = Module()
 
-    # Set the 'output' value to 0 if the address is not word-aligned.
-    with m.If( ( self.addr & 0b11 ) != 0 ):
-      m.d.sync += self.out.eq( 0 )
     # Set the 'output' value to 0 if it is out of bounds.
-    with m.Elif( self.addr >= ( self.size * 4 ) ):
+    with m.If( self.addr >= self.size ):
       m.d.sync += self.out.eq( 0 )
     # Set the 'output' value to the requested 'data' array index.
-    # Decode words as little-endian values.
-    # 0xCDAB3412 -> 0x1234ABCD
-    # TODO: Do this in the CPU's decode stage instead of ROM output.
+    # If a read would 'spill over' into an out-of-bounds data byte,
+    # set that byte to 0x00.
     for i in range( self.size ):
-      with m.Elif( self.addr == ( i * 4 ) ):
+      with m.Elif( self.addr == i ):
         m.d.sync += self.out.eq(
-          ( ( self.data[ i ] & 0x000000FF ) << 24 ) |
-          ( ( self.data[ i ] & 0x0000FF00 ) << 8  ) |
-          ( ( self.data[ i ] & 0x00FF0000 ) >> 8  ) |
-          ( ( self.data[ i ] & 0xFF000000 ) >> 24 ) )
+          ( self.data[ i ] ) |
+          ( ( self.data[ i + 1 ] if ( i + 1 ) < self.size else 0x00 ) << 8  ) |
+          ( ( self.data[ i + 2 ] if ( i + 2 ) < self.size else 0x00 ) << 16 ) |
+          ( ( self.data[ i + 3 ] if ( i + 3 ) < self.size else 0x00 ) << 24 ) )
 
     # End of ROM module definition.
     return m
@@ -87,18 +82,14 @@ def rom_test( rom ):
   print( "--- ROM Tests ---" )
 
   # Test the ROM's "happy path" (reading valid data).
-  yield from rom_read_ut( rom, 0x0,
-    LITTLE_END( ( yield rom.data[ 0 ] ) ) )
-  yield from rom_read_ut( rom, 0x4,
-    LITTLE_END( ( yield rom.data[ 1 ] ) ) )
-  yield from rom_read_ut( rom, 0x8,
-    LITTLE_END( ( yield rom.data[ 2 ] ) ) )
-  yield from rom_read_ut( rom, 0xC,
-    LITTLE_END( ( yield rom.data[ 3 ] ) ) )
-  # Test mis-aligned addresses.
-  yield from rom_read_ut( rom, 0x1, 0 )
-  yield from rom_read_ut( rom, 0x2, 0 )
-  yield from rom_read_ut( rom, 0x3, 0 )
+  yield from rom_read_ut( rom, 0x0, LITTLE_END( 0x01234567 ) )
+  yield from rom_read_ut( rom, 0x4, LITTLE_END( 0x89ABCDEF ) )
+  yield from rom_read_ut( rom, 0x8, LITTLE_END( 0x42424242 ) )
+  yield from rom_read_ut( rom, 0xC, LITTLE_END( 0xDEADBEEF ) )
+  # Test byte-aligned and halfword-aligned addresses.
+  yield from rom_read_ut( rom, 0x1, LITTLE_END( 0x23456789 ) )
+  yield from rom_read_ut( rom, 0x2, LITTLE_END( 0x456789AB ) )
+  yield from rom_read_ut( rom, 0x3, LITTLE_END( 0x6789ABCD ) )
 
   # Done.
   yield Tick()
@@ -107,7 +98,7 @@ def rom_test( rom ):
 # 'main' method to run a basic testbench.
 if __name__ == "__main__":
   # Instantiate a test ROM module with 16 bytes of data.
-  dut = ROM( [ 0x01234567, 0x89ABCDEF, 0x42424242, 0xDEADBEEF ] )
+  dut = ROM( rom_img( [ 0x01234567, 0x89ABCDEF, 0x42424242, 0xDEADBEEF ] ) )
 
   # Run the ROM tests.
   with Simulator( dut, vcd_file = open( 'rom.vcd', 'w' ) ) as sim:

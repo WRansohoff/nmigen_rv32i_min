@@ -10,12 +10,13 @@ from cpu import *
 
 # "Infinite Loop" program: I think this is the simplest error-free
 # application that you could write, equivalent to "while(1){};".
-loop_rom = ROM( [ JAL( 1, 0x00000 ) ] )
+loop_rom = ROM( rom_img( [ JAL( 1, 0x00000 ) ] ) )
 
 # "Quick Test" program: this application contains at least one of
 # each supported machine code instruction, but it does not perform
 # exhaustive tests for any particular instruction.
-quick_rom = ROM( [
+# (TODO: It doesn't contain at least one of each instruction yet)
+quick_rom = ROM( rom_img( [
   # ADDI, ADD (expect r1 = 0x0000123, r2 = 0x0000246)
   ADDI( 1, 0, 0x123 ), ADD( 2, 1, 1 ),
   # BNE (PC should skip over the following dummy data)
@@ -33,7 +34,7 @@ quick_rom = ROM( [
   ADDI( 5, 0, 0xFFE ), SUB( 6, 1, 5 ),
   # Done; infinite loop.
   JAL( 1, 0x00000 )
-] )
+] ) )
 
 #####################################################################
 # RISC-V test cases. The assembly files for the 'rv32ui' tests are  #

@@ -56,14 +56,14 @@ def write_py_tests( op, hexl ):
               '\r\n'%opp )
     # Write the ROM image.
     py.write( '# Simulated ROM image:\r\n'
-              '%s_rom = ROM( ['%op )
+              '%s_rom = ROM( rom_img( ['%op )
     for x in range( len( hexl ) ):
       if ( x % 4 ) == 0:
         py.write( '\r\n  ' )
       py.write( '%s'%hexl[ x ] )
       if x < ( len( hexl ) - 1 ):
         py.write( ', ' )
-    py.write( '\r\n] )\r\n' )
+    py.write( '\r\n] ) )\r\n' )
     # Write the 'expected' value for the testbench to check
     # after tests finish.
     py.write( "\r\n# Expected 'pass' register values.\r\n"

@@ -6,6 +6,7 @@ from isa import *
 from mux_rom import *
 from rom import *
 from ram import *
+from cpu_helpers import *
 
 ###############
 # CPU module: #
@@ -59,161 +60,6 @@ class CPU( Elaboratable ):
     self.fsms = Signal( range( CPU_STATES_MAX ),
                         reset = CPU_PC_ROM_FETCH )
 
-  # Helper method to define shared logic for 'Rc = Ra ? Rb' ALU
-  # operations such as 'ADD', 'AND', 'SLT', etc.
-  def alu_reg_op( self, cpu ):
-    # Set the ALU 'function select' bits.
-    with cpu.If( self.f == F_ADD ):
-      with cpu.If( self.ff == FF_SUB ):
-        cpu.d.comb += self.alu.f.eq( ALU_SUB )
-      with cpu.Else():
-        cpu.d.comb += self.alu.f.eq( ALU_ADD )
-    with cpu.Elif( self.f == F_SLL ):
-      cpu.d.comb += self.alu.f.eq( ALU_SLL )
-    with cpu.Elif( self.f == F_SLT ):
-      cpu.d.comb += self.alu.f.eq( ALU_SLT )
-    with cpu.Elif( self.f == F_SLTU ):
-      cpu.d.comb += self.alu.f.eq( ALU_SLTU )
-    with cpu.Elif( self.f == F_XOR ):
-      cpu.d.comb += self.alu.f.eq( ALU_XOR )
-    with cpu.Elif( self.f == F_SRL ):
-      with cpu.If( self.ff == FF_SRA ):
-        cpu.d.comb += self.alu.f.eq( ALU_SRA )
-      with cpu.Else():
-        cpu.d.comb += self.alu.f.eq( ALU_SRL )
-    with cpu.Elif( self.f == F_OR ):
-      cpu.d.comb += self.alu.f.eq( ALU_OR )
-    with cpu.Elif( self.f == F_AND ):
-      cpu.d.comb += self.alu.f.eq( ALU_AND )
-    # (No 'Else' is needed; all 8 'funct3' options are accounted for)
-    # Set the ALU 'start' bit and connect appropriate
-    # registers to the ALU inputs and output.
-    cpu.d.comb += [
-      self.alu.start.eq( 1 ),
-      self.alu.a.eq( self.r[ self.ra ] ),
-      self.alu.b.eq( self.r[ self.rb ] )
-    ]
-    with cpu.If( self.rc > 0 ):
-      cpu.d.sync += self.r[ self.rc ].eq( self.alu.y )
-
-  # Helper method to define shared logic for 'Rc = Ra ? Immediate'
-  # ALU operations such as 'ADDI', 'ANDI', 'SLTI', etc.
-  def alu_imm_op( self, cpu ):
-    # Set the ALU 'function select' bits.
-    with cpu.If( self.f == F_ADDI ):
-      cpu.d.comb += self.alu.f.eq( ALU_ADD )
-    with cpu.Elif( self.f == F_SLTI ):
-      cpu.d.comb += self.alu.f.eq( ALU_SLT )
-    with cpu.Elif( self.f == F_SLTIU ):
-      cpu.d.comb += self.alu.f.eq( ALU_SLTU )
-    with cpu.Elif( self.f == F_XORI ):
-      cpu.d.comb += self.alu.f.eq( ALU_XOR )
-    with cpu.Elif( self.f == F_ORI ):
-      cpu.d.comb += self.alu.f.eq( ALU_OR )
-    with cpu.Elif( self.f == F_ANDI ):
-      cpu.d.comb += self.alu.f.eq( ALU_AND )
-    with cpu.Elif( self.f == F_SLLI ):
-      cpu.d.comb += self.alu.f.eq( ALU_SLL )
-    with cpu.Elif( self.f == F_SRLI ):
-      with cpu.If( self.ff == FF_SRAI ):
-        cpu.d.comb += self.alu.f.eq( ALU_SRA )
-      with cpu.Else():
-        cpu.d.comb += self.alu.f.eq( ALU_SRL )
-    # Set the ALU 'start' bit, and the constant 'immediate' value.
-    cpu.d.comb += [
-      self.alu.a.eq( self.r[ self.ra ] ),
-      self.alu.b.eq( self.imm ),
-      self.alu.start.eq( 1 )
-    ]
-    # Connect appropriate registers to the ALU inputs and output.
-    with cpu.If( self.rc > 0 ):
-      cpu.d.sync += self.r[ self.rc ].eq( self.alu.y )
-
-  # Helper method to decode an instruction into individual fields.
-  def rv32i_decode( self, cpu, instr ):
-    # I-type operations have one cohesive 12-bit immediate.
-    with cpu.If( ( instr.bit_select( 0, 7 ) == OP_IMM ) |
-                 ( instr.bit_select( 0, 7 ) == OP_JALR ) |
-                 ( instr.bit_select( 0, 7 ) == OP_LOAD ) ):
-      # ...But shift operations are a special case with a 5-bit
-      # unsigned immediate and 'funct7' bits in the MSbs.
-      with cpu.If( ( instr.bit_select( 0, 7 ) == OP_IMM ) &
-                 ( ( instr.bit_select( 12, 3 ) == F_SLLI ) |
-                 ( instr.bit_select( 12, 3 ) == F_SRLI ) ) ):
-        cpu.d.sync += self.imm.eq( instr.bit_select( 20, 5 ) )
-      with cpu.Else():
-        with cpu.If( instr[ 31 ] ):
-          cpu.d.sync += self.imm.eq(
-            ( 0xFFFFF000 | instr.bit_select( 20, 12 ) ) )
-        with cpu.Else():
-          cpu.d.sync += self.imm.eq( instr.bit_select( 20, 12 ) )
-    # S-type instructions have 12-bit immediates in two fields.
-    with cpu.Elif( instr.bit_select( 0, 7 ) == OP_STORE ):
-      with cpu.If( instr[ 31 ] ):
-        cpu.d.sync += self.imm.eq(
-          ( 0xFFFFF000 | instr.bit_select( 7, 5 ) ) |
-          ( instr.bit_select( 25, 7 ) << 5 ) )
-      with cpu.Else():
-        cpu.d.sync += self.imm.eq(
-          ( instr.bit_select( 7,  5 ) ) |
-          ( instr.bit_select( 25, 7 ) << 5 ) )
-    # U-type instructions just have a single 20-bit immediate,
-    # with the register's remaining 12 LSbs padded with 0s.
-    with cpu.Elif( ( instr.bit_select( 0, 7 ) == OP_LUI ) |
-                 ( instr.bit_select( 0, 7 ) == OP_AUIPC ) ):
-      cpu.d.sync += self.imm.eq( instr & 0xFFFFF000 )
-    # J-type instructions have a 20-bit immediate encoding a
-    # 21-bit value, with its bits scattered to the four winds.
-    with cpu.Elif( instr.bit_select( 0, 7 ) == OP_JAL ):
-      with cpu.If( instr[ 31 ] ):
-        cpu.d.sync += self.imm.eq( 0xFFE00000 |
-          ( instr.bit_select( 21, 10 ) << 1 ) |
-          ( instr.bit_select( 20, 1 ) << 11 ) |
-          ( instr.bit_select( 12, 8 ) << 12 ) |
-          ( instr.bit_select( 31, 1 ) << 20 ) )
-      with cpu.Else():
-        cpu.d.sync += self.imm.eq(
-          ( instr.bit_select( 21, 10 ) << 1 ) |
-          ( instr.bit_select( 20, 1  ) << 11 ) |
-          ( instr.bit_select( 12, 8  ) << 12 ) |
-          ( instr.bit_select( 31, 1  ) << 20 ) )
-    # B-type instructions have a 12-bit immediate encoding a
-    # 13-bit value, with bits scattered around the instruction.
-    with cpu.Elif( instr.bit_select( 0, 7 ) == OP_BRANCH ):
-      with cpu.If( instr[ 31 ] ):
-        cpu.d.sync += self.imm.eq( 0xFFFFE000 |
-          ( instr.bit_select( 8,  4 ) << 1 ) |
-          ( instr.bit_select( 25, 6 ) << 5 ) |
-          ( instr.bit_select( 7,  1 ) << 11 ) |
-          ( instr.bit_select( 31, 1 ) << 12 ) )
-      with cpu.Else():
-        cpu.d.sync += self.imm.eq(
-          ( instr.bit_select( 8,  4 ) << 1 ) |
-          ( instr.bit_select( 25, 6 ) << 5 ) |
-          ( instr.bit_select( 7,  1 ) << 11 ) |
-          ( instr.bit_select( 31, 1 ) << 12 ) )
-    # R-type operations have no immediates.
-    with cpu.Elif( instr.bit_select( 0, 7 ) == OP_REG ):
-      cpu.d.sync += self.imm.eq( 0x00000000 )
-    # TODO: support 'SYSTEM' instructions.
-    # Unrecognized opcodes set the immediate value to 0.
-    with cpu.Else():
-      cpu.d.sync += self.imm.eq( 0x00000000 )
-    # Populate "opcode, funct3, funct7, r1, r2, rd". I call them
-    # "opcode, f, ff, ra, rb, rc", respectively. Why? Because
-    # I can't name a variable '1' for 'r1'; 'a' is easier.
-    # Not every type of operation uses every value, but at least
-    # they're placed in consistent locations when they are used.
-    cpu.d.sync += [
-      self.opcode.eq( instr.bit_select( 0, 7 ) ),
-      self.rc.eq( instr.bit_select( 7,  5 ) ),
-      self.f.eq( instr.bit_select( 12, 3 ) ),
-      self.ra.eq( instr.bit_select( 15, 5 ) ),
-      self.rb.eq( instr.bit_select( 20, 5 ) ),
-      self.ff.eq( instr.bit_select( 25, 7 ) ),
-      self.ipc.eq( self.pc )
-    ]
-
   # CPU object's 'elaborate' method to generate the hardware logic.
   def elaborate( self, platform ):
     # Core CPU module.
@@ -230,8 +76,8 @@ class CPU( Elaboratable ):
 
     # r0 should always be 0.
     m.d.sync += self.r[ 0 ].eq( 0x00000000 )
-    # Set the program counter to the simulated ROM address by default.
-    # (Load operations can temporarily override this)
+    # Set the program counter to the simulated memory addresses
+    # by default. Load operations temporarily override this.
     m.d.comb += self.rom.addr.eq( self.pc )
 
     # Set the simulated RAM address to 0 by default, and set
@@ -255,14 +101,26 @@ class CPU( Elaboratable ):
       #              populate register fields to prepare for decoding.
       with m.State( "CPU_PC_ROM_FETCH" ):
         m.d.comb += self.fsms.eq( CPU_PC_ROM_FETCH ) #TODO: Remove
-        with m.If( rws < self.ws ):
-          m.d.sync += rws.eq( rws + 1 )
-        with m.Else():
-          # Reset the 'ROM wait-states' counter.
-          m.d.sync += rws.eq( 0 )
-          # Decode the fetched instruction.
-          self.rv32i_decode( m, self.rom.out )
+        # If the PC address is in RAM, maintain combinatorial
+        # logic to read the instruction from RAM.
+        with m.If( ( ( self.pc ) & 0xE0000000 ) == 0x20000000 ):
+          m.d.comb += [
+            self.ram.addr.eq( ( self.pc ) & 0x1FFFFFFF ),
+            self.ram.ren.eq( 1 )
+          ]
+          # Decode the fetched instruction and move on to run it.
+          rv32i_decode( self, m, self.ram.dout )
           m.next = "CPU_PC_DECODE"
+        # Otherwise, read from ROM.
+        with m.Else():
+          with m.If( rws < self.ws ):
+            m.d.sync += rws.eq( rws + 1 )
+          with m.Else():
+            # Reset the 'ROM wait-states' counter.
+            m.d.sync += rws.eq( 0 )
+            # Decode the fetched instruction and move on to run it.
+            rv32i_decode( self, m, self.rom.out )
+            m.next = "CPU_PC_DECODE"
       # "Decode PC": Figure out what sort of instruction to execute,
       #              and prepare associated registers.
       with m.State( "CPU_PC_DECODE" ):
@@ -281,13 +139,28 @@ class CPU( Elaboratable ):
         with m.Elif( self.opcode == OP_JAL ):
           with m.If( self.rc > 0 ):
             m.d.sync += self.r[ self.rc ].eq( self.ipc + 4 )
-          m.d.nsync += self.pc.eq( self.pc + self.imm )
+          m.d.nsync += self.pc.eq( self.ipc + self.imm )
+          # Read PC from RAM if the address is in that memory space.
+          with m.If( ( ( self.ipc + self.imm )
+                         & 0xE0000000 ) == 0x20000000 ):
+            m.d.comb += [
+              self.ram.addr.eq( ( self.ipc + self.imm ) & 0x1FFFFFFF ),
+              self.ram.ren.eq( 1 )
+            ]
           m.next = "CPU_PC_ROM_FETCH"
         # "Jump And Link from Register" instruction:
         # TODO: verify that funct3 bits == 0b000?
         with m.Elif( self.opcode == OP_JALR ):
           m.d.nsync += self.pc.eq( ( self.r[ self.ra ] + self.imm ) &
                                    ( 0xFFFFFFFE ) )
+          # Read PC from RAM if the address is in that memory space.
+          with m.If( ( ( ( self.r[ self.ra ] + self.imm )
+                     & 0xFFFFFFFE ) & 0xE0000000 ) == 0x20000000 ):
+            m.d.comb += [
+              self.ram.addr.eq( ( ( self.r[ self.ra ] + self.imm )
+                                & 0xFFFFFFFE ) & 0x1FFFFFFF ),
+              self.ram.ren.eq( 1 )
+            ]
           with m.If( self.rc > 0 ):
             m.d.sync += self.r[ self.rc ].eq( self.ipc + 4 )
           m.next = "CPU_PC_ROM_FETCH"
@@ -297,14 +170,30 @@ class CPU( Elaboratable ):
           # "Branch if EQual" operation:
           with m.If( self.f == F_BEQ ):
             with m.If( self.r[ self.ra ] == self.r[ self.rb ] ):
-              m.d.nsync += self.pc.eq( self.pc + self.imm )
+              m.d.nsync += self.pc.eq( self.ipc + self.imm )
+              # Read PC from RAM if the address is in that memory space.
+              with m.If( ( ( self.ipc + self.imm )
+                             & 0xE0000000 ) == 0x20000000 ):
+                m.d.comb += [
+                  self.ram.addr.eq( ( self.ipc + self.imm )
+                                    & 0x1FFFFFFF ),
+                  self.ram.ren.eq( 1 )
+                ]
               m.next = "CPU_PC_ROM_FETCH"
             with m.Else():
               m.next = "CPU_PC_LOAD"
           # "Branch if Not Equal" operation:
           with m.Elif( ( self.f == F_BNE ) &
                        ( self.r[ self.ra ] != self.r[ self.rb ] ) ):
-              m.d.nsync += self.pc.eq( self.pc + self.imm )
+              m.d.nsync += self.pc.eq( self.ipc + self.imm )
+              # Read PC from RAM if the address is in that memory space.
+              with m.If( ( ( self.ipc + self.imm )
+                             & 0xE0000000 ) == 0x20000000 ):
+                m.d.comb += [
+                  self.ram.addr.eq( ( self.ipc + self.imm )
+                                    & 0x1FFFFFFF ),
+                  self.ram.ren.eq( 1 )
+                ]
               m.next = "CPU_PC_ROM_FETCH"
           # "Branch if Less Than" operation:
           with m.Elif( ( self.f == F_BLT ) &
@@ -313,7 +202,15 @@ class CPU( Elaboratable ):
                        ( self.r[ self.ra ] < self.r[ self.rb ] ) ) |
                        ( self.r[ self.ra ].bit_select( 31, 1 ) >
                          self.r[ self.rb ].bit_select( 31, 1 ) ) ) ):
-              m.d.nsync += self.pc.eq( self.pc + self.imm )
+              m.d.nsync += self.pc.eq( self.ipc + self.imm )
+              # Read PC from RAM if the address is in that memory space.
+              with m.If( ( ( self.ipc + self.imm )
+                             & 0xE0000000 ) == 0x20000000 ):
+                m.d.comb += [
+                  self.ram.addr.eq( ( self.ipc + self.imm )
+                                    & 0x1FFFFFFF ),
+                  self.ram.ren.eq( 1 )
+                ]
               m.next = "CPU_PC_ROM_FETCH"
           # "Branch if Greater or Equal" operation:
           with m.Elif( ( self.f == F_BGE ) &
@@ -322,17 +219,41 @@ class CPU( Elaboratable ):
                        ( self.r[ self.ra ] >= self.r[ self.rb ] ) ) |
                        ( self.r[ self.rb ].bit_select( 31, 1 ) >
                          self.r[ self.ra ].bit_select( 31, 1 ) ) ) ):
-              m.d.nsync += self.pc.eq( self.pc + self.imm )
+              m.d.nsync += self.pc.eq( self.ipc + self.imm )
+              # Read PC from RAM if the address is in that memory space.
+              with m.If( ( ( self.ipc + self.imm )
+                             & 0xE0000000 ) == 0x20000000 ):
+                m.d.comb += [
+                  self.ram.addr.eq( ( self.ipc + self.imm )
+                                    & 0x1FFFFFFF ),
+                  self.ram.ren.eq( 1 )
+                ]
               m.next = "CPU_PC_ROM_FETCH"
           # "Branch if Less Than (Unsigned)" operation:
           with m.Elif( ( self.f == F_BLTU ) &
                        ( self.r[ self.ra ] < self.r[ self.rb ] ) ):
-              m.d.nsync += self.pc.eq( self.pc + self.imm )
+              m.d.nsync += self.pc.eq( self.ipc + self.imm )
+              # Read PC from RAM if the address is in that memory space.
+              with m.If( ( ( self.ipc + self.imm )
+                             & 0xE0000000 ) == 0x20000000 ):
+                m.d.comb += [
+                  self.ram.addr.eq( ( self.ipc + self.imm )
+                                    & 0x1FFFFFFF ),
+                  self.ram.ren.eq( 1 )
+                ]
               m.next = "CPU_PC_ROM_FETCH"
           # "Branch if Greater or Equal (Unsigned)" operation:
           with m.Elif( ( self.f == F_BGEU ) &
                        ( self.r[ self.ra ] >= self.r[ self.rb ] ) ):
-              m.d.nsync += self.pc.eq( self.pc + self.imm )
+              m.d.nsync += self.pc.eq( self.ipc + self.imm )
+              # Read PC from RAM if the address is in that memory space.
+              with m.If( ( ( self.ipc + self.imm )
+                             & 0xE0000000 ) == 0x20000000 ):
+                m.d.comb += [
+                  self.ram.addr.eq( ( self.ipc + self.imm )
+                                    & 0x1FFFFFFF ),
+                  self.ram.ren.eq( 1 )
+                ]
               m.next = "CPU_PC_ROM_FETCH"
           with m.Else():
             m.next = "CPU_PC_LOAD"
@@ -378,15 +299,22 @@ class CPU( Elaboratable ):
           m.next = "CPU_PC_LOAD"
         # "Register-Based" instructions:
         with m.Elif( self.opcode == OP_REG ):
-          self.alu_reg_op( m )
+          alu_reg_op( self, m )
           m.next = "CPU_PC_LOAD"
         # "Immediate-Based" instructions:
         with m.Elif( self.opcode == OP_IMM ):
-          self.alu_imm_op( m )
+          alu_imm_op( self, m )
           m.next = "CPU_PC_LOAD"
         # TODO: "System / Exception" instructions:
         # (For now, halt execution at ECALL/EBREAK instructions.)
         with m.Elif( self.opcode == OP_SYSTEM ):
+          # Read PC from RAM if the address is in that memory space.
+          with m.If( ( self.pc & 0xE0000000 ) == 0x20000000 ):
+            m.d.comb += [
+              self.ram.addr.eq( self.pc & 0x1FFFFFFF ),
+              self.ram.ren.eq( 1 )
+            ]
+          # Loop back without moving the Program Counter.
           m.next = "CPU_PC_ROM_FETCH"
         # "Memory Fence" instruction:
         # For now, this doesn't actually need to do anything.
@@ -477,7 +405,13 @@ class CPU( Elaboratable ):
       # "PC Load Letter" - increment the PC.
       with m.State( "CPU_PC_LOAD" ):
         m.d.comb += self.fsms.eq( CPU_PC_LOAD ) # TODO: Remove
-        m.d.nsync += self.pc.eq( self.pc + 4 )
+        m.d.nsync += self.pc.eq( self.ipc + 4 )
+        # Read PC from RAM if the address is in that memory space.
+        with m.If( ( ( self.ipc + 4 ) & 0xE0000000 ) == 0x20000000 ):
+          m.d.comb += [
+            self.ram.addr.eq( ( self.ipc + 4 ) & 0x1FFFFFFF ),
+            self.ram.ren.eq( 1 )
+          ]
         m.next = "CPU_PC_ROM_FETCH"
 
     # End of CPU module definition.
@@ -515,7 +449,14 @@ def check_vals( expected, ni, cpu ):
                  " after %d operations (mis-aligned address)"
                  %( hexs( ex[ 'e' ] ), rama, ni ) )
         else:
-          cpd = yield cpu.ram.data[ rama // 4 ]
+          cpda = yield cpu.ram.data[ rama ]
+          cpdb = yield cpu.ram.data[ rama + 1 ]
+          cpdc = yield cpu.ram.data[ rama + 2 ]
+          cpdd = yield cpu.ram.data[ rama + 3 ]
+          cpd  = ( cpda |
+                 ( cpdb << 8  ) |
+                 ( cpdc << 16 ) |
+                 ( cpdd << 24 ) )
           if hexs( cpd ) == hexs( ex[ 'e' ] ):
             print( "  \033[32mPASS:\033[0m RAM == %s @ 0x%08X"
                    " after %d operations"
@@ -629,7 +570,8 @@ def cpu_mux_sim( tests ):
 
 # 'main' method to run a basic testbench.
 if __name__ == "__main__":
-  cpu_sim( fence_i_test )
+  # Simulate the 'run from RAM' test ROM.
+  cpu_sim( ram_pc_test )
   # Run auto-generated RV32I tests one-by-one.
   cpu_sim( add_test )
   cpu_sim( addi_test )

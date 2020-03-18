@@ -14,10 +14,10 @@ class ROM( Elaboratable ):
     # Data word output.
     self.out  = Signal( 32, reset = LITTLE_END( data[ 0 ] ) )
     # Data storage.
-    self.data = [
+    self.data = Array(
       Signal( 32, reset = data[ i ], name = "rom(0x%08X)"%( i * 4 ) )
       for i in range( len( data ) )
-    ]
+    )
     # Record size.
     self.size = len( data )
 
@@ -33,39 +33,35 @@ class ROM( Elaboratable ):
     # set that byte to 0x00.
     # Word-aligned reads
     with m.Elif( ( self.addr & 0b11 ) == 0b00 ):
-      # Dummy 'if' so the loop can have all elifs.
-      with m.If( self.size == 0 ):
-        m.d.sync = m.d.sync
-      for i in range( self.size ):
-        with m.Elif( self.addr == ( i * 4 ) ):
-          m.d.sync += self.out.eq( LITTLE_END( self.data[ i ] ) )
+      m.d.sync += self.out.eq(
+        LITTLE_END( self.data[ self.addr // 4 ] ) )
     # Halfword-aligned reads
     with m.Elif( ( self.addr & 0b11 ) == 0b10 ):
-      # Dummy 'if' so the loop can have all elifs.
-      with m.If( self.size == 0 ):
-        m.d.sync = m.d.sync
-      for i in range( self.size ):
-        with m.Elif( ( self.addr - 2 ) == ( i * 4 ) ):
-          m.d.sync += self.out.eq( LITTLE_END(
-            ( self.data[ i ] << 16 ) |
-            ( ( self.data[ i + 1 ] >> 16 )
-            if ( i + 1 ) < self.size else 0 ) ) )
-    # Byte-aligned reads
-    with m.Else():
-      # Dummy 'if' so the loop can have all elifs.
-      with m.If( self.size == 0 ):
-        m.d.sync = m.d.sync
-      for i in range( self.size ):
-        with m.Elif( ( self.addr - 1 ) == ( i * 4 ) ):
-          m.d.sync += self.out.eq( LITTLE_END(
-            ( self.data[ i ] << 8 ) |
-            ( ( self.data[ i + 1 ] >> 24 )
-            if ( i + 1 ) < self.size else 0 ) ) )
-        with m.Elif( ( self.addr - 3 ) == ( i * 4 ) ):
-          m.d.sync += self.out.eq( LITTLE_END(
-            ( self.data[ i ] << 24 ) |
-            ( ( self.data[ i + 1 ] >> 8 )
-            if ( i + 1 ) < self.size else 0 ) ) )
+      with m.If( ( ( ( self.addr - 2 ) // 4 ) + 1 < self.size ) ):
+        m.d.sync += self.out.eq( LITTLE_END(
+          ( self.data[ ( self.addr - 2 ) // 4 ] << 16 ) |
+          ( self.data[ ( ( self.addr - 2 ) // 4 ) + 1 ] >> 16 ) ) )
+      with m.Else():
+        m.d.sync += self.out.eq( LITTLE_END(
+          ( self.data[ ( self.addr - 2 ) // 4 ] << 16 ) ) )
+    # Byte-aligned reads (&1)
+    with m.Elif( ( self.addr & 0b11 ) == 0b01 ):
+      with m.If( ( ( ( self.addr - 1 ) // 4 ) + 1 < self.size ) ):
+        m.d.sync += self.out.eq( LITTLE_END(
+          ( self.data[ ( self.addr - 1 ) // 4 ] << 8 ) |
+          ( self.data[ ( ( self.addr - 1 ) // 4 ) + 1 ] >> 24 ) ) )
+      with m.Else():
+        m.d.sync += self.out.eq( LITTLE_END(
+          ( self.data[ ( self.addr - 1 ) // 4 ] << 8 ) ) )
+    # Byte-aligned reads (&3)
+    with m.Elif( ( self.addr & 0b11 ) == 0b11 ):
+      with m.If( ( ( ( self.addr - 3 ) // 4 ) + 1 < self.size ) ):
+        m.d.sync += self.out.eq( LITTLE_END(
+          ( self.data[ ( self.addr - 3 ) // 4 ] << 24 ) |
+          ( self.data[ ( ( self.addr - 3 ) // 4 ) + 1 ] >> 8 ) ) )
+      with m.Else():
+        m.d.sync += self.out.eq( LITTLE_END(
+          ( self.data[ ( self.addr - 3 ) // 4 ] << 24 ) ) )
 
     # End of ROM module definition.
     return m

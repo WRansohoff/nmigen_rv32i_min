@@ -18,8 +18,7 @@ CPU_PC_LOAD      = 1
 CPU_PC_ROM_FETCH = 2
 CPU_PC_DECODE    = 3
 CPU_LD           = 4
-CPU_ST           = 5
-CPU_STATES_MAX   = 5
+CPU_STATES_MAX   = 4
 
 # CPU module.
 class CPU( Elaboratable ):
@@ -199,11 +198,11 @@ class CPU( Elaboratable ):
           with m.Elif( self.rom.out.bit_select( 0, 7 ) == OP_STORE ):
             with m.If( self.rom.out[ 31 ] ):
               m.d.sync += imm.eq( 0xFFFFF000 |
-                self.rom.out.bit_select( 7, 4 ) |
+                self.rom.out.bit_select( 7, 5 ) |
                 ( self.rom.out.bit_select( 25, 7 ) << 5 ) )
             with m.Else():
               m.d.sync += imm.eq(
-                ( self.rom.out.bit_select( 7,  4 ) ) |
+                ( self.rom.out.bit_select( 7,  5 ) ) |
                 ( self.rom.out.bit_select( 25, 7 ) << 5 ) )
           # U-type instructions just have a single 20-bit immediate,
           # with the register's remaining 12 LSbs padded with 0s.
@@ -362,17 +361,34 @@ class CPU( Elaboratable ):
           # Memory access is not instantaneous, so the next state is
           # 'CPU_LD' which allows time for the data to arrive.
           m.next = "CPU_LD"
-        # TODO: "Store to Memory" instructions:
+        # "Store to Memory" instructions:
+        # Addresses in 0x2xxxxxxx memory space are treated as RAM.
+        # Writes to other addresses are ignored because,
+        # surprise surprise, ROM is read-only.
+        # There are no alignment requirements (yet).
         with m.Elif( opcode == OP_STORE ):
-          # "Store Byte" operation:
-          with m.If( f == F_SB ):
-            m.next = "CPU_PC_LOAD"
-          # "Store Halfword" operation:
-          with m.Elif( f == F_SH ):
-            m.next = "CPU_PC_LOAD"
-          # "Store Word" operation:
-          with m.Elif( f == F_SW ):
-            m.next = "CPU_PC_LOAD"
+          # Populate 'mp' with the memory address to load from.
+          for i in range( 32 ):
+            with m.If( ra == i ):
+              m.d.comb += self.mp.eq( self.r[ i ] + imm )
+          with m.If( ( self.mp & 0xE0000000 ) == 0x20000000 ):
+            m.d.comb += [
+              self.ram.addr.eq( self.mp & 0x1FFFFFFF ),
+              self.ram.wen.eq( 0b1 )
+            ]
+            for i in range( 1, 32 ):
+              with m.If( rb == i ):
+                m.d.comb += self.ram.din.eq( self.r[ i ] )
+                # "Store Byte" operation:
+              with m.If( f == F_SB ):
+                m.d.comb += self.ram.dw.eq( 0b00 )
+              # "Store Halfword" operation:
+              with m.Elif( f == F_SH ):
+                m.d.comb += self.ram.dw.eq( 0b01 )
+              # "Store Word" operation:
+              with m.Elif( f == F_SW ):
+                m.d.comb += self.ram.dw.eq( 0b11 )
+          m.next = "CPU_PC_LOAD"
         # "Register-Based" instructions:
         with m.Elif( opcode == OP_REG ):
           self.alu_reg_op( m, rc, ra, rb, ff, f )
@@ -396,6 +412,7 @@ class CPU( Elaboratable ):
       # "Load operation" - wait for a load instruction to finish
       # fetching data from memory.
       with m.State( "CPU_LD" ):
+        m.d.comb += self.fsms.eq( CPU_LD ) # TODO: Remove
         # Maintain the cominatorial logic holding the memory
         # address at the 'mp' (memory pointer) value.
         for i in range( 32 ):

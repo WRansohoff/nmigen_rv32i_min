@@ -18,7 +18,7 @@ The ALU, RAM, and ROM Python files each have their own testbench to run some bas
 
 The CPU module's testbench runs the standard `rv32ui` [`RISC-V` instruction set tests](https://github.com/riscv/riscv-tests) for each operation, compiled with GCC.
 
-Not all of the `RV32I` tests pass, but that's expected; I haven't implemented stores, memory fences, system calls, or traps yet. I had to comment out some of the startup code in `riscv_test.h`, or the simulation wouldn't even make it to the start of the tests...
+Out of the core `RV32I` operation tests, only the `FENCE` tests fail. But I still haven't implemented system calls or traps yet, and I had to comment out some of the startup code in `riscv_test.h`, or the simulation wouldn't even make it to the start of the tests. So there's still plenty of work to do.
 
 The `tests/rv64ui_tests/` directory contains assembly code for those test cases, copied [from the `isa/` directory of the `riscv-tests` repository](https://github.com/riscv/riscv-tests/tree/master/isa). And the `tests/test_roms/` directory contains auto-generated Python files with corresponding machine code instructions in a format that the CPU testbenches can interpret.
 
@@ -34,50 +34,50 @@ Each test simulation also creates a `.vcd` file containing the waveform results,
 
 # Test Coverage
 
-Note: `ECALL` and `EBREAK` instructions are not implemented, and the corresponding lack of "CSR" instructions means that these tests only work when the usual startup code is skipped over. And that includes the logic which loads initial RAM values, which means that the 'load' tests need to manually set starting RAM values from the `.data` section.
+Note: `ECALL` and `EBREAK` instructions are not implemented, and the corresponding lack of "CSR" instructions means that these tests only work when the usual startup code is skipped over. And that includes the logic which loads initial RAM values, which means that the 'load' and 'store' tests need to manually set starting RAM values from the `.data` section.
 
 So even though this table of test coverage doesn't look too bad, there's plenty more work to do before the design will actually work with real-world programs.
 
 | Instruction | Pass / Fail? |
 |:-----------:|:------------:|
-| `ADD`       |:green_heart: |
-| `ADDI`      |:green_heart: |
-| `AND`       |:green_heart: |
-| `ANDI`      |:green_heart: |
-| `AUIPC`     |:green_heart: |
-| `BEQ`       |:green_heart: |
-| `BGE`       |:green_heart: |
-| `BGEU`      |:green_heart: |
-| `BLT`       |:green_heart: |
-| `BLTU`      |:green_heart: |
-| `BNE`       |:green_heart: |
-| `FENCE`     |:broken_heart:|
-| `JAL`       |:green_heart: |
-| `JALR`      |:green_heart: |
-| `LB`        |:green_heart: |
-| `LBU`       |:green_heart: |
-| `LH`        |:green_heart: |
-| `LHU`       |:green_heart: |
-| `LW`        |:green_heart: |
-| `LUI`       |:green_heart: |
-| `OR`        |:green_heart: |
-| `ORI`       |:green_heart: |
-| `SB`        |:broken_heart:|
-| `SH`        |:broken_heart:|
-| `SW`        |:broken_heart:|
-| `SLL`       |:green_heart: |
-| `SLLI`      |:green_heart: |
-| `SLT`       |:green_heart: |
-| `SLTI`      |:green_heart: |
-| `SLTU`      |:green_heart: |
-| `SLTUI`     |:green_heart: |
-| `SRL`       |:green_heart: |
-| `SRLI`      |:green_heart: |
-| `SRA`       |:green_heart: |
-| `SRAI`      |:green_heart: |
-| `SUB`       |:green_heart: |
-| `XOR`       |:green_heart: |
-| `XORI`      |:green_heart: |
+| `ADD`       |:ballot_box_with_check:|
+| `ADDI`      |:ballot_box_with_check:|
+| `AND`       |:ballot_box_with_check:|
+| `ANDI`      |:ballot_box_with_check:|
+| `AUIPC`     |:ballot_box_with_check:|
+| `BEQ`       |:ballot_box_with_check:|
+| `BGE`       |:ballot_box_with_check:|
+| `BGEU`      |:ballot_box_with_check:|
+| `BLT`       |:ballot_box_with_check:|
+| `BLTU`      |:ballot_box_with_check:|
+| `BNE`       |:ballot_box_with_check:|
+| `FENCE`     |:x:|
+| `JAL`       |:ballot_box_with_check:|
+| `JALR`      |:ballot_box_with_check:|
+| `LB`        |:ballot_box_with_check:|
+| `LBU`       |:ballot_box_with_check:|
+| `LH`        |:ballot_box_with_check:|
+| `LHU`       |:ballot_box_with_check:|
+| `LW`        |:ballot_box_with_check:|
+| `LUI`       |:ballot_box_with_check:|
+| `OR`        |:ballot_box_with_check:|
+| `ORI`       |:ballot_box_with_check:|
+| `SB`        |:ballot_box_with_check:|
+| `SH`        |:ballot_box_with_check:|
+| `SW`        |:ballot_box_with_check:|
+| `SLL`       |:ballot_box_with_check:|
+| `SLLI`      |:ballot_box_with_check:|
+| `SLT`       |:ballot_box_with_check:|
+| `SLTI`      |:ballot_box_with_check:|
+| `SLTU`      |:ballot_box_with_check:|
+| `SLTUI`     |:ballot_box_with_check:|
+| `SRL`       |:ballot_box_with_check:|
+| `SRLI`      |:ballot_box_with_check:|
+| `SRA`       |:ballot_box_with_check:|
+| `SRAI`      |:ballot_box_with_check:|
+| `SUB`       |:ballot_box_with_check:|
+| `XOR`       |:ballot_box_with_check:|
+| `XORI`      |:ballot_box_with_check:|
 
 # Notes to Self
 

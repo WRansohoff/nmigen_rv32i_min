@@ -139,28 +139,13 @@ class CPU( Elaboratable ):
         with m.Elif( self.opcode == OP_JAL ):
           with m.If( self.rc > 0 ):
             m.d.sync += self.r[ self.rc ].eq( self.ipc + 4 )
-          m.d.nsync += self.pc.eq( self.ipc + self.imm )
-          # Read PC from RAM if the address is in that memory space.
-          with m.If( ( ( self.ipc + self.imm )
-                         & 0xE0000000 ) == 0x20000000 ):
-            m.d.comb += [
-              self.ram.addr.eq( ( self.ipc + self.imm ) & 0x1FFFFFFF ),
-              self.ram.ren.eq( 1 )
-            ]
+          jump_to( self, m, ( self.ipc + self.imm ) )
           m.next = "CPU_PC_ROM_FETCH"
         # "Jump And Link from Register" instruction:
         # TODO: verify that funct3 bits == 0b000?
         with m.Elif( self.opcode == OP_JALR ):
-          m.d.nsync += self.pc.eq( ( self.r[ self.ra ] + self.imm ) &
-                                   ( 0xFFFFFFFE ) )
-          # Read PC from RAM if the address is in that memory space.
-          with m.If( ( ( ( self.r[ self.ra ] + self.imm )
-                     & 0xFFFFFFFE ) & 0xE0000000 ) == 0x20000000 ):
-            m.d.comb += [
-              self.ram.addr.eq( ( ( self.r[ self.ra ] + self.imm )
-                                & 0xFFFFFFFE ) & 0x1FFFFFFF ),
-              self.ram.ren.eq( 1 )
-            ]
+          jump_to( self, m,
+                   ( self.r[ self.ra ] + self.imm ) & 0xFFFFFFFE )
           with m.If( self.rc > 0 ):
             m.d.sync += self.r[ self.rc ].eq( self.ipc + 4 )
           m.next = "CPU_PC_ROM_FETCH"
@@ -170,30 +155,14 @@ class CPU( Elaboratable ):
           # "Branch if EQual" operation:
           with m.If( self.f == F_BEQ ):
             with m.If( self.r[ self.ra ] == self.r[ self.rb ] ):
-              m.d.nsync += self.pc.eq( self.ipc + self.imm )
-              # Read PC from RAM if the address is in that memory space.
-              with m.If( ( ( self.ipc + self.imm )
-                             & 0xE0000000 ) == 0x20000000 ):
-                m.d.comb += [
-                  self.ram.addr.eq( ( self.ipc + self.imm )
-                                    & 0x1FFFFFFF ),
-                  self.ram.ren.eq( 1 )
-                ]
+              jump_to( self, m, ( self.ipc + self.imm ) )
               m.next = "CPU_PC_ROM_FETCH"
             with m.Else():
               m.next = "CPU_PC_LOAD"
           # "Branch if Not Equal" operation:
           with m.Elif( ( self.f == F_BNE ) &
                        ( self.r[ self.ra ] != self.r[ self.rb ] ) ):
-              m.d.nsync += self.pc.eq( self.ipc + self.imm )
-              # Read PC from RAM if the address is in that memory space.
-              with m.If( ( ( self.ipc + self.imm )
-                             & 0xE0000000 ) == 0x20000000 ):
-                m.d.comb += [
-                  self.ram.addr.eq( ( self.ipc + self.imm )
-                                    & 0x1FFFFFFF ),
-                  self.ram.ren.eq( 1 )
-                ]
+              jump_to( self, m, ( self.ipc + self.imm ) )
               m.next = "CPU_PC_ROM_FETCH"
           # "Branch if Less Than" operation:
           with m.Elif( ( self.f == F_BLT ) &
@@ -202,15 +171,7 @@ class CPU( Elaboratable ):
                        ( self.r[ self.ra ] < self.r[ self.rb ] ) ) |
                        ( self.r[ self.ra ].bit_select( 31, 1 ) >
                          self.r[ self.rb ].bit_select( 31, 1 ) ) ) ):
-              m.d.nsync += self.pc.eq( self.ipc + self.imm )
-              # Read PC from RAM if the address is in that memory space.
-              with m.If( ( ( self.ipc + self.imm )
-                             & 0xE0000000 ) == 0x20000000 ):
-                m.d.comb += [
-                  self.ram.addr.eq( ( self.ipc + self.imm )
-                                    & 0x1FFFFFFF ),
-                  self.ram.ren.eq( 1 )
-                ]
+              jump_to( self, m, ( self.ipc + self.imm ) )
               m.next = "CPU_PC_ROM_FETCH"
           # "Branch if Greater or Equal" operation:
           with m.Elif( ( self.f == F_BGE ) &
@@ -219,41 +180,17 @@ class CPU( Elaboratable ):
                        ( self.r[ self.ra ] >= self.r[ self.rb ] ) ) |
                        ( self.r[ self.rb ].bit_select( 31, 1 ) >
                          self.r[ self.ra ].bit_select( 31, 1 ) ) ) ):
-              m.d.nsync += self.pc.eq( self.ipc + self.imm )
-              # Read PC from RAM if the address is in that memory space.
-              with m.If( ( ( self.ipc + self.imm )
-                             & 0xE0000000 ) == 0x20000000 ):
-                m.d.comb += [
-                  self.ram.addr.eq( ( self.ipc + self.imm )
-                                    & 0x1FFFFFFF ),
-                  self.ram.ren.eq( 1 )
-                ]
+              jump_to( self, m, ( self.ipc + self.imm ) )
               m.next = "CPU_PC_ROM_FETCH"
           # "Branch if Less Than (Unsigned)" operation:
           with m.Elif( ( self.f == F_BLTU ) &
                        ( self.r[ self.ra ] < self.r[ self.rb ] ) ):
-              m.d.nsync += self.pc.eq( self.ipc + self.imm )
-              # Read PC from RAM if the address is in that memory space.
-              with m.If( ( ( self.ipc + self.imm )
-                             & 0xE0000000 ) == 0x20000000 ):
-                m.d.comb += [
-                  self.ram.addr.eq( ( self.ipc + self.imm )
-                                    & 0x1FFFFFFF ),
-                  self.ram.ren.eq( 1 )
-                ]
+              jump_to( self, m, ( self.ipc + self.imm ) )
               m.next = "CPU_PC_ROM_FETCH"
           # "Branch if Greater or Equal (Unsigned)" operation:
           with m.Elif( ( self.f == F_BGEU ) &
                        ( self.r[ self.ra ] >= self.r[ self.rb ] ) ):
-              m.d.nsync += self.pc.eq( self.ipc + self.imm )
-              # Read PC from RAM if the address is in that memory space.
-              with m.If( ( ( self.ipc + self.imm )
-                             & 0xE0000000 ) == 0x20000000 ):
-                m.d.comb += [
-                  self.ram.addr.eq( ( self.ipc + self.imm )
-                                    & 0x1FFFFFFF ),
-                  self.ram.ren.eq( 1 )
-                ]
+              jump_to( self, m, ( self.ipc + self.imm ) )
               m.next = "CPU_PC_ROM_FETCH"
           with m.Else():
             m.next = "CPU_PC_LOAD"
@@ -405,13 +342,7 @@ class CPU( Elaboratable ):
       # "PC Load Letter" - increment the PC.
       with m.State( "CPU_PC_LOAD" ):
         m.d.comb += self.fsms.eq( CPU_PC_LOAD ) # TODO: Remove
-        m.d.nsync += self.pc.eq( self.ipc + 4 )
-        # Read PC from RAM if the address is in that memory space.
-        with m.If( ( ( self.ipc + 4 ) & 0xE0000000 ) == 0x20000000 ):
-          m.d.comb += [
-            self.ram.addr.eq( ( self.ipc + 4 ) & 0x1FFFFFFF ),
-            self.ram.ren.eq( 1 )
-          ]
+        jump_to( self, m, ( self.ipc + 4 ) )
         m.next = "CPU_PC_ROM_FETCH"
 
     # End of CPU module definition.

@@ -151,3 +151,15 @@ def rv32i_decode( self, cpu, instr ):
     self.ff.eq( instr.bit_select( 25, 7 ) ),
     self.ipc.eq( self.pc )
   ]
+
+# Helper method to generate logic which moves the CPU's
+# Program Counter to a different memory location.
+def jump_to( self, cpu, npc ):
+  # Set the new PC value at the next falling clock edge.
+  cpu.d.nsync += self.pc.eq( npc )
+  # Read PC from RAM if the address is in that memory space.
+  with cpu.If( ( npc & 0xE0000000 ) == 0x20000000 ):
+    cpu.d.comb += [
+      self.ram.addr.eq( npc & 0x1FFFFFFF ),
+      self.ram.ren.eq( 1 )
+    ]

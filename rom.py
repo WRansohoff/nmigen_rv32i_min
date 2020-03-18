@@ -10,16 +10,12 @@ from isa import *
 class ROM( Elaboratable ):
   def __init__( self, data ):
     # Address bits to select up to `len( data )` words by byte.
-    self.addr = Signal( range( len( data ) ), reset = 0 )
+    self.addr = Signal( range( len( data ) * 4 ), reset = 0 )
     # Data word output.
-    self.out  = Signal( 32, reset = (
-      ( data[ 0 ] ) |
-      ( ( data[ 1 ] if len( data ) > 1 else 0x00 ) << 8  ) |
-      ( ( data[ 2 ] if len( data ) > 2 else 0x00 ) << 16 ) |
-      ( ( data[ 3 ] if len( data ) > 3 else 0x00 ) << 24 ) ) )
+    self.out  = Signal( 32, reset = LITTLE_END( data[ 0 ] ) )
     # Data storage.
     self.data = [
-      Signal( 8, reset = data[ i ], name = "rom(0x%08X)"%i )
+      Signal( 32, reset = data[ i ], name = "rom(0x%08X)"%( i * 4 ) )
       for i in range( len( data ) )
     ]
     # Record size.
@@ -30,18 +26,46 @@ class ROM( Elaboratable ):
     m = Module()
 
     # Set the 'output' value to 0 if it is out of bounds.
-    with m.If( self.addr >= self.size ):
+    with m.If( self.addr >= ( self.size * 4 ) ):
       m.d.sync += self.out.eq( 0 )
     # Set the 'output' value to the requested 'data' array index.
     # If a read would 'spill over' into an out-of-bounds data byte,
     # set that byte to 0x00.
-    for i in range( self.size ):
-      with m.Elif( self.addr == i ):
-        m.d.sync += self.out.eq(
-          ( self.data[ i ] ) |
-          ( ( self.data[ i + 1 ] if ( i + 1 ) < self.size else 0x00 ) << 8  ) |
-          ( ( self.data[ i + 2 ] if ( i + 2 ) < self.size else 0x00 ) << 16 ) |
-          ( ( self.data[ i + 3 ] if ( i + 3 ) < self.size else 0x00 ) << 24 ) )
+    # Word-aligned reads
+    with m.Elif( ( self.addr & 0b11 ) == 0b00 ):
+      # Dummy 'if' so the loop can have all elifs.
+      with m.If( self.size == 0 ):
+        m.d.sync = m.d.sync
+      for i in range( self.size ):
+        with m.Elif( self.addr == ( i * 4 ) ):
+          m.d.sync += self.out.eq( LITTLE_END( self.data[ i ] ) )
+    # Halfword-aligned reads
+    with m.Elif( ( self.addr & 0b11 ) == 0b10 ):
+      # Dummy 'if' so the loop can have all elifs.
+      with m.If( self.size == 0 ):
+        m.d.sync = m.d.sync
+      for i in range( self.size ):
+        with m.Elif( ( self.addr - 2 ) == ( i * 4 ) ):
+          m.d.sync += self.out.eq( LITTLE_END(
+            ( self.data[ i ] << 16 ) |
+            ( ( self.data[ i + 1 ] >> 16 )
+            if ( i + 1 ) < self.size else 0 ) ) )
+    # Byte-aligned reads
+    with m.Else():
+      # Dummy 'if' so the loop can have all elifs.
+      with m.If( self.size == 0 ):
+        m.d.sync = m.d.sync
+      for i in range( self.size ):
+        with m.Elif( ( self.addr - 1 ) == ( i * 4 ) ):
+          m.d.sync += self.out.eq( LITTLE_END(
+            ( self.data[ i ] << 8 ) |
+            ( ( self.data[ i + 1 ] >> 24 )
+            if ( i + 1 ) < self.size else 0 ) ) )
+        with m.Elif( ( self.addr - 3 ) == ( i * 4 ) ):
+          m.d.sync += self.out.eq( LITTLE_END(
+            ( self.data[ i ] << 24 ) |
+            ( ( self.data[ i + 1 ] >> 8 )
+            if ( i + 1 ) < self.size else 0 ) ) )
 
     # End of ROM module definition.
     return m

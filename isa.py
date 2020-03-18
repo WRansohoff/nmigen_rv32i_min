@@ -275,20 +275,25 @@ def hexs( h ):
     return "0x%08X"%( ( h + ( 1 << 32 ) ) % ( 1 << 32 ) )
 
 # Helper method to assemble a ROM image from a mix of instructions
-# and assembly pseudo-operations. This assumes that all instructions
-# are 32 bits wide, which...should be true for the RV32I ISA. Right?
+# and assembly pseudo-operations.
 def rom_img( arr ):
   a = []
   for i in arr:
     if type( i ) == tuple:
       for j in i:
-        a.append( ( j & 0xFF000000 ) >> 24 )
-        a.append( ( j & 0x00FF0000 ) >> 16 )
-        a.append( ( j & 0x0000FF00 ) >> 8  )
-        a.append( j & 0x000000FF )
+        a.append( j )
     else:
-      a.append( ( i & 0xFF000000 ) >> 24 )
-      a.append( ( i & 0x00FF0000 ) >> 16 )
-      a.append( ( i & 0x0000FF00 ) >> 8  )
-      a.append( i & 0x000000FF )
+      a.append( i )
+  return a
+
+# Helper method to assemble a little-endian RAM image with byte
+# addressing. This assumes that all instructions are
+# 32 bits wide, which...should be true for the RV32I ISA. Right?
+def ram_img( arr ):
+  a = []
+  for i in arr:
+    a.append( ( i & 0xFF000000 ) >> 24 )
+    a.append( ( i & 0x00FF0000 ) >> 16 )
+    a.append( ( i & 0x0000FF00 ) >> 8  )
+    a.append( i & 0x000000FF )
   return a

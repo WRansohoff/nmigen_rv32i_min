@@ -242,17 +242,27 @@ class CPU( Elaboratable ):
         with m.Elif( self.opcode == OP_IMM ):
           alu_imm_op( self, m )
           m.next = "CPU_PC_LOAD"
-        # TODO: "System / Exception" instructions:
-        # (For now, halt execution at ECALL/EBREAK instructions.)
         with m.Elif( self.opcode == OP_SYSTEM ):
-          # Read PC from RAM if the address is in that memory space.
-          with m.If( ( self.pc & 0xE0000000 ) == 0x20000000 ):
-            m.d.comb += [
-              self.ram.addr.eq( self.pc & 0x1FFFFFFF ),
-              self.ram.ren.eq( 1 )
-            ]
-          # Loop back without moving the Program Counter.
-          m.next = "CPU_PC_ROM_FETCH"
+          # "EBREAK" instruction: For now, halt execution of the
+          # program. It sounds like this is usually used to hand off
+          # control of the program to a debugger, but this CPU has no
+          # debugging interface yet. And apparently compilers sometimes
+          # use this instruction to mark invalid code paths, so...yeah.
+          with m.If( ( self.ra  == 0 )
+                   & ( self.rb  == 0 )
+                   & ( self.f   == 0 )
+                   & ( self.imm == 0x001 ) ):
+            # Read PC from RAM if the address is in that memory space.
+            with m.If( ( self.pc & 0xE0000000 ) == 0x20000000 ):
+              m.d.comb += [
+                self.ram.addr.eq( self.pc & 0x1FFFFFFF ),
+                self.ram.ren.eq( 1 )
+              ]
+            # Loop back without moving the Program Counter.
+            m.next = "CPU_PC_ROM_FETCH"
+          # TODO: "Environment Call" instructions:
+          with m.Else():
+            m.next = "CPU_PC_LOAD"
         # "Memory Fence" instruction:
         # For now, this doesn't actually need to do anything.
         # Memory operations are globally visible as soon as they

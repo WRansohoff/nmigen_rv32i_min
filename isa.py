@@ -89,6 +89,45 @@ ALU_STRS = {
   ALU_SLL: "<<", ALU_SRL: ">>", ALU_SRA: ">>"
 }
 
+# CSR definitions, for 'ECALL' system instructions.
+# Like with other "I-type" instructions, the 'funct3' bits select
+# between different types of environment calls.
+F_CSRRW  = 0b001
+F_CSRRS  = 0b010
+F_CSRRC  = 0b011
+F_CSRRWI = 0b101
+F_CSRRSI = 0b110
+F_CSRRCI = 0b111
+# CSR Addresses for the supported subste of 'Machine-Level ISA' CSRs.
+# (Supervisor and Hypervisor CSRs are not implemented.)
+# Machine information registers:
+CSRM_VENDORID  = 0xF11
+CSRM_ARCHID    = 0xF12
+CSRM_IMPID     = 0xF13
+CSRM_HARTID    = 0xF14
+# Machine trap setup (Note - traps are not implemented yet):
+CSRM_STATUS    = 0x300
+CSRM_ISA       = 0x301
+CSRM_EDELEG    = 0x302
+CSRM_IDELEG    = 0x303
+CSRM_IE        = 0x304
+CSRM_TVEC      = 0x305
+CSRM_COUNTEREN = 0x306
+CSRM_STATUSH   = 0x310
+# Machine memory protection: not impemented
+# Machine counter / timers: not implemented
+# Machine counter setup: not implemented
+# Debug / trace registers (Note - no debugging interface exists yet):
+CSRT_SELECT    = 0x7A0
+CSRT_DATA1     = 0x7A1
+CSRT_DATA2     = 0x7A2
+CSRT_DATA3     = 0x7A3
+# Debug mode registers (Note - no debugging interface exists yet):
+CSRD_CSR       = 0x7B0
+CSRD_PC        = 0x7B1
+CSRD_SCRATCH0  = 0x7B2
+CSRD_SCRATCH1  = 0x7B3
+
 ##############################################################
 # Helper methods to generate machine code for instructions.  #
 # I'm using 'Ra, Rb, Rc' for the 'R1, R2, Rd' register names #

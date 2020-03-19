@@ -1,10 +1,16 @@
 from isa import *
 
+####################################################
+# 'CPU Helper Methods' file. This contains logic   #
+# for long or repetitive bits of CPU logic.        #
+# There is no testbench associated with this file. #
+####################################################
+
 # Helper method to define shared logic for 'Rc = Ra ? Rb' ALU
 # operations such as 'ADD', 'AND', 'SLT', etc.
 def alu_reg_op( self, cpu ):
   # Set the ALU 'function select' bits.
-  with cpu.If( self.f == F_SLT ):
+  with cpu.If( self.f == F_ADD ):
     with cpu.If( self.ff == FF_SUB ):
       cpu.d.comb += self.alu.f.eq( ALU_SUB )
     with cpu.Else():

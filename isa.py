@@ -88,26 +88,6 @@ ALU_STRS = {
   ALU_XOR:  "^", ALU_OR:   "|", ALU_AND:  "&",
   ALU_SLL: "<<", ALU_SRL: ">>", ALU_SRA: ">>"
 }
-ALU_R_FUNCS = {
-  F_SLL:  ALU_SLL,
-  F_SLT:  ALU_SLT,
-  F_SLTU: ALU_SLTU,
-  F_XOR:  ALU_XOR,
-  F_OR:   ALU_OR,
-  F_AND:  ALU_AND,
-  F_ADD:  { FF_SUB: ALU_SUB, FF_ADD: ALU_ADD },
-  F_SRL:  { FF_SRA: ALU_SRA, FF_SRL: ALU_SRL },
-}
-ALU_I_FUNCS = {
-  F_ADDI:  ALU_ADD,
-  F_SLTI:  ALU_SLT,
-  F_SLTIU: ALU_SLTU,
-  F_XORI:  ALU_XOR,
-  F_ORI:   ALU_OR,
-  F_ANDI:  ALU_AND,
-  F_SLLI:  ALU_SLL,
-  F_SRLI:  { FF_SRAI: ALU_SRA, FF_SRLI: ALU_SRL }
-}
 
 ##############################################################
 # Helper methods to generate machine code for instructions.  #

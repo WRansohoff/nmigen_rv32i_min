@@ -1,47 +1,31 @@
 from isa import *
 
-# Helper method to generate logic for setting the ALU operation
-# associated with given 'funct3' and 'funct7' bits.
-# This is a little verbose, but the extra Python logic
-# shouldn't translate to a more complex generated design.
-def ALU_FUNC( self, cpu, funcs ):
-  first = True
-  for k, v in funcs.items():
-    # Start with an 'If'.
-    if first:
-      first = False
-      with cpu.If( self.f == k ):
-        if type( v ) == dict:
-          ffirst = 0
-          for ki, vi in v.items():
-            if ffirst:
-              with cpu.If( self.ff == ki ):
-                cpu.d.comb += self.alu.f.eq( vi )
-            else:
-              with cpu.Elif( self.ff == ki ):
-                cpu.d.comb += self.alu.f.eq( vi )
-        else:
-          cpu.d.comb += self.alu.f.eq( v )
-    else:
-      with cpu.Elif( self.f == k ):
-        if type( v ) == dict:
-          ffirst = 0
-          for ki, vi in v.items():
-            if ffirst:
-              with cpu.If( self.ff == ki ):
-                cpu.d.comb += self.alu.f.eq( vi )
-            else:
-              with cpu.Elif( self.ff == ki ):
-                cpu.d.comb += self.alu.f.eq( vi )
-        else:
-          cpu.d.comb += self.alu.f.eq( v )
-
 # Helper method to define shared logic for 'Rc = Ra ? Rb' ALU
 # operations such as 'ADD', 'AND', 'SLT', etc.
 def alu_reg_op( self, cpu ):
   # Set the ALU 'function select' bits.
-  ALU_FUNC( self, cpu, ALU_R_FUNCS )
-  # (No 'Else' is needed; all 8 'funct3' options are accounted for)
+  with cpu.If( self.f == F_SLT ):
+    with cpu.If( self.ff == FF_SUB ):
+      cpu.d.comb += self.alu.f.eq( ALU_SUB )
+    with cpu.Else():
+      cpu.d.comb += self.alu.f.eq( ALU_ADD )
+  with cpu.Elif( self.f == F_SLL ):
+    cpu.d.comb += self.alu.f.eq( ALU_SLL )
+  with cpu.Elif( self.f == F_SLT ):
+    cpu.d.comb += self.alu.f.eq( ALU_SLT )
+  with cpu.Elif( self.f == F_SLTU ):
+    cpu.d.comb += self.alu.f.eq( ALU_SLTU )
+  with cpu.Elif( self.f == F_XOR ):
+    cpu.d.comb += self.alu.f.eq( ALU_XOR )
+  with cpu.Elif( self.f == F_OR ):
+    cpu.d.comb += self.alu.f.eq( ALU_OR )
+  with cpu.Elif( self.f == F_AND ):
+    cpu.d.comb += self.alu.f.eq( ALU_AND )
+  with cpu.Elif( self.f == F_SRL ):
+    with cpu.If( self.ff == FF_SRA ):
+      cpu.d.comb += self.alu.f.eq( ALU_SRA )
+    with cpu.Else():
+      cpu.d.comb += self.alu.f.eq( ALU_SRL )
   # Set the ALU 'start' bit and connect appropriate
   # registers to the ALU inputs and output.
   cpu.d.comb += [
@@ -56,7 +40,25 @@ def alu_reg_op( self, cpu ):
 # ALU operations such as 'ADDI', 'ANDI', 'SLTI', etc.
 def alu_imm_op( self, cpu ):
   # Set the ALU 'function select' bits.
-  ALU_FUNC( self, cpu, ALU_I_FUNCS )
+  with cpu.If( self.f == F_ADDI ):
+    cpu.d.comb += self.alu.f.eq( ALU_ADD )
+  with cpu.Elif( self.f == F_SLTI ):
+    cpu.d.comb += self.alu.f.eq( ALU_SLT )
+  with cpu.Elif( self.f == F_SLTIU ):
+    cpu.d.comb += self.alu.f.eq( ALU_SLTU )
+  with cpu.Elif( self.f == F_XORI ):
+    cpu.d.comb += self.alu.f.eq( ALU_XOR )
+  with cpu.Elif( self.f == F_ORI ):
+    cpu.d.comb += self.alu.f.eq( ALU_OR )
+  with cpu.Elif( self.f == F_ANDI ):
+    cpu.d.comb += self.alu.f.eq( ALU_AND )
+  with cpu.Elif( self.f == F_SLLI ):
+    cpu.d.comb += self.alu.f.eq( ALU_SLL )
+  with cpu.Elif( self.f == F_SRAI ):
+    with cpu.If( self.ff == FF_SRAI ):
+      cpu.d.comb += self.alu.f.eq( ALU_SRA )
+    with cpu.Else():
+      cpu.d.comb += self.alu.f.eq( ALU_SRL )
   # Set the ALU 'start' bit, and the constant 'immediate' value.
   cpu.d.comb += [
     self.alu.a.eq( self.r[ self.ra ] ),
@@ -79,7 +81,8 @@ def rv32i_decode( self, cpu, instr ):
     # unsigned immediate and 'funct7' bits in the MSbs.
     with cpu.If( ( instr.bit_select( 0,  7 ) == OP_IMM ) &
                ( ( instr.bit_select( 12, 3 ) == F_SLLI ) |
-                 ( instr.bit_select( 12, 3 ) == F_SRLI ) ) ):
+                 ( instr.bit_select( 12, 3 ) == F_SRLI ) |
+                 ( instr.bit_select( 12, 3 ) == F_SRAI ) ) ):
       cpu.d.sync += self.imm.eq( instr.bit_select( 20, 5 ) )
     with cpu.Else():
       with cpu.If( instr[ 31 ] ):

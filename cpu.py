@@ -262,7 +262,7 @@ class CPU( Elaboratable ):
             m.next = "CPU_PC_ROM_FETCH"
           # TODO: "Environment Call" instructions:
           with m.Else():
-            m.next = "CPU_PC_LOAD"
+            m.next = "CPU_PC_ROM_FETCH"
         # "Memory Fence" instruction:
         # For now, this doesn't actually need to do anything.
         # Memory operations are globally visible as soon as they
@@ -511,8 +511,6 @@ def cpu_mux_sim( tests ):
 
 # 'main' method to run a basic testbench.
 if __name__ == "__main__":
-  # Simulate the 'run from RAM' test ROM.
-  cpu_sim( ram_pc_test )
   # Run auto-generated RV32I tests one-by-one.
   cpu_sim( add_test )
   cpu_sim( addi_test )
@@ -560,6 +558,8 @@ if __name__ == "__main__":
   # Simulate the ADD and ADDI test ROMs, using a multiplexed ROM
   # module and checking every expected value along the way.
   cpu_mux_sim( add_mux_test )
+  # Simulate the 'run from RAM' test ROM.
+  cpu_sim( ram_pc_test )
   # Simulate a basic 'quick test' ROM.
   cpu_sim( quick_test )
   # Simulate the 'infinite loop test' ROM.

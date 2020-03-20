@@ -44,7 +44,7 @@ class RAM( Elaboratable ):
         m.d.sync += self.dout.eq( 0x00000000 )
       # Read the requested word of RAM. Fill in '0x00' for any bytes
       # which are out of range.
-      with m.If( ( self.addr + 3 ) >= self.size ):
+      with m.Elif( ( self.addr + 3 ) >= self.size ):
         m.d.sync += self.dout.eq( ( ( self.data[ self.addr ] ) |
           ( self.data[ self.addr + 1 ] << 8 ) |
           ( self.data[ self.addr + 2 ] << 16 ) ) &

@@ -30,7 +30,7 @@ To run a module's testbench, just run the corresponding `.py` file:
 
     python3 cpu.py
 
-Each test simulation also creates a `.vcd` file containing the waveform results, so you can check how each signal changes over time. The CPU tests produce multiple `.vcd` files; one for each test program.
+Each test simulation also creates a `.vcd` file containing the waveform results, so you can check how each signal changes over time.
 
 # Test Coverage
 

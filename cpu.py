@@ -551,7 +551,6 @@ if __name__ == "__main__":
 
   # Miscellaneous tests which are not part of the RV32I test suite.
   # Simulate hand-copied ADD and ADDI test ROMs.
-  # module and checking every expected value along the way.
   cpu_mux_sim( add_mux_test )
   # Simulate the 'run from RAM' test ROM.
   cpu_sim( ram_pc_test )

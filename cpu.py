@@ -265,23 +265,17 @@ class CPU( Elaboratable ):
           # These 'Control and Status Register' operations call
           # helper methods located in `csr.py`.
           with m.Elif( self.f == F_CSRRW ):
-            handle_csrrw( self, m )
-            m.next = "CPU_PC_LOAD"
+            m.next = handle_csrrw( self, m )
           with m.Elif( self.f == F_CSRRS ):
-            handle_csrrs( self, m )
-            m.next = "CPU_PC_LOAD"
+            m.next = handle_csrrs( self, m )
           with m.Elif( self.f == F_CSRRC ):
-            handle_csrrc( self, m )
-            m.next = "CPU_PC_LOAD"
+            m.next = handle_csrrc( self, m )
           with m.Elif( self.f == F_CSRRWI ):
-            handle_csrrwi( self, m )
-            m.next = "CPU_PC_LOAD"
+            m.next = handle_csrrwi( self, m )
           with m.Elif( self.f == F_CSRRSI ):
-            handle_csrrsi( self, m )
-            m.next = "CPU_PC_LOAD"
+            m.next = handle_csrrsi( self, m )
           with m.Elif( self.f == F_CSRRCI ):
-            handle_csrrci( self, m )
-            m.next = "CPU_PC_LOAD"
+            m.next = handle_csrrci( self, m )
           # Halt execution at an unrecognized 'SYSTEM' instruction.
           with m.Else():
             m.next = "CPU_PC_ROM_FETCH"

@@ -96,9 +96,9 @@ def muxrom_test( mrom ):
     LITTLE_END( ( yield mrom.roms[ 2 ].data[ 0 ] ) ) )
   yield from muxrom_read_ut( mrom, 2, 0x4,
     LITTLE_END( ( yield mrom.roms[ 2 ].data[ 1 ] ) ) )
-  # Test a mis-aligned read from the first two ROMs.
-  yield from muxrom_read_ut( mrom, 0, 0x1, 0x00000000 )
-  yield from muxrom_read_ut( mrom, 1, 0x2, 0x00000000 )
+  # Test byte-aligned and halfword-aligned reads.
+  yield from muxrom_read_ut( mrom, 0, 0x1, 0x89674523 )
+  yield from muxrom_read_ut( mrom, 1, 0x2, 0xAB896745 )
   # Test reading from an out-of-range ROM.
   yield from muxrom_read_ut( mrom, 3, 0x0, 0x00000000 )
 
@@ -109,10 +109,10 @@ def muxrom_test( mrom ):
 # 'main' method to run a basic testbench.
 if __name__ == "__main__":
   # Instantiate a test module with 3 ROMs.
-  dut = MUXROM( [
+  dut = MUXROM( Array( [
            ROM( [ 0x01234567, 0x89ABCDEF, 0x42424242, 0xDEC0FFEE ] ),
            ROM( [ 0x01234567, 0x89ABCDEF, 0x42424242, 0xBEEFFACE ] ),
-           ROM( [ 0x01234567, 0x89ABCDEF ] ) ] )
+           ROM( [ 0x01234567, 0x89ABCDEF ] ) ] ) )
 
   # Run the multiplexed ROM tests.
   with Simulator( dut, vcd_file = open( 'mux_rom.vcd', 'w' ) ) as sim:

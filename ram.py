@@ -28,10 +28,10 @@ class RAM( Elaboratable ):
     # the way up to 'size - 1' and still work. I'm not sure why,
     # but 'with m.If( ( i + n ) < self.size ):' doesn't seem to
     # work to prevent out-of-bounds byte writes.
-    self.data = [
+    self.data = Array(
       Signal( 8, reset = 0x00, name = "ram(0x%08X)"%i )
       for i in range( self.size + 4 )
-    ]
+    )
 
   def elaborate( self, platform ):
     # Core RAM module.
@@ -44,13 +44,22 @@ class RAM( Elaboratable ):
         m.d.sync += self.dout.eq( 0x00000000 )
       # Read the requested word of RAM. Fill in '0x00' for any bytes
       # which are out of range.
-      for i in range( self.size ):
-        with m.Elif( self.addr == i ):
-          m.d.sync += self.dout.eq(
-            ( self.data[ i ] ) |
-            ( ( self.data[ i + 1 ] if ( i + 1 ) < self.size else 0x00 ) << 8  ) |
-            ( ( self.data[ i + 2 ] if ( i + 2 ) < self.size else 0x00 ) << 16 ) |
-            ( ( self.data[ i + 3 ] if ( i + 3 ) < self.size else 0x00 ) << 24 ) )
+      with m.If( ( self.addr + 3 ) >= self.size ):
+        m.d.sync += self.dout.eq( ( ( self.data[ self.addr ] ) |
+          ( self.data[ self.addr + 1 ] << 8 ) |
+          ( self.data[ self.addr + 2 ] << 16 ) ) &
+          0x00FFFFFF )
+      with m.Elif( ( self.addr + 2 ) >= self.size ):
+        m.d.sync += self.dout.eq( ( ( self.data[ self.addr ] ) |
+          ( self.data[ self.addr + 1 ] << 8 ) ) &
+          0x0000FFFF )
+      with m.Elif( ( self.addr + 1 ) >= self.size ):
+        m.d.sync += self.dout.eq( self.data[ self.addr ] & 0x000000FF )
+      with m.Else():
+        m.d.sync += self.dout.eq( ( ( self.data[ self.addr ] ) |
+          ( self.data[ self.addr + 1 ] << 8 ) |
+          ( self.data[ self.addr + 2 ] << 16 ) |
+          ( self.data[ self.addr + 3 ] << 24 ) ) )
 
     # Write the 'din' value if 'wen' is set.
     with m.If( self.wen ):
@@ -58,18 +67,15 @@ class RAM( Elaboratable ):
       with m.If( self.addr >= self.size ):
         pass
       # Write the requested word of data.
-      for i in range( self.size ):
-        with m.Elif( self.addr == i ):
-          m.d.sync += self.data[ i ].eq( ( self.din & 0x000000FF ) )
-          with m.If( self.dw > 0 ):
-            m.d.sync += [
-              self.data[ i + 1 ].eq( ( self.din & 0x0000FF00 ) >> 8 )
-            ]
-          with m.If( self.dw > 1 ):
-            m.d.sync += [
-              self.data[ i + 2 ].eq( ( self.din & 0x00FF0000 ) >> 16 ),
-              self.data[ i + 3 ].eq( ( self.din & 0xFF000000 ) >> 24 )
-            ]
+      m.d.sync += self.data[ self.addr ].eq( self.din & 0x000000FF )
+      with m.If( self.dw > 0 ):
+        m.d.sync += self.data[ self.addr + 1 ].eq(
+          ( self.din & 0x0000FF00 ) >> 8 )
+      with m.If( self.dw > 1 ):
+        m.d.sync += [
+          self.data[ self.addr + 2 ].eq( ( self.din & 0x00FF0000 ) >> 16 ),
+          self.data[ self.addr + 3 ].eq( ( self.din & 0xFF000000 ) >> 24 )
+        ]
 
     # End of RAM module definition.
     return m
@@ -171,6 +177,12 @@ def ram_test( ram ):
   yield from ram_write_ut( ram, 0x20, 0x000000EF, 0, 1 )
   yield from ram_write_ut( ram, 0x40, 0xDEADBEEF, 1, 0 )
   yield from ram_write_ut( ram, 0x50, 0x0000BEEF, 1, 1 )
+  # Test reading from the last few bytes of RAM.
+  yield from ram_write_ut( ram, ram.size - 4, 0x01234567, 2, 1 )
+  yield from ram_read_ut( ram, ram.size - 4, 0x01234567 )
+  yield from ram_read_ut( ram, ram.size - 3, 0x00012345 )
+  yield from ram_read_ut( ram, ram.size - 2, 0x00000123 )
+  yield from ram_read_ut( ram, ram.size - 1, 0x00000001 )
 
   # Done.
   yield Tick()

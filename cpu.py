@@ -501,12 +501,13 @@ def cpu_sim( test ):
 # Helper method to simulate running multiple ROM modules in sequence.
 # TODO: Does not currently support initialized RAM values.
 def cpu_mux_sim( tests ):
-  print( "\033[33mSTART\033[0m running '%s' program:"%tests[ 0 ] )
+  print( "\033[33mSTART\033[0m running '%s' test suite:"%tests[ 0 ] )
   # Create the CPU device.
-  cpu = CPU( tests[ 2 ] )
+  cpu = CPU( MUXROM( Array( tests[ 2 ][ i ][ 2 ]
+             for i in range( len( tests[ 2 ] ) ) ) ) )
   num_i = 0
-  for t in tests[ 3 ]:
-    num_i = num_i + t[ 'end' ]
+  for i in range( len( tests[ 2 ] ) ):
+    num_i = num_i + tests[ 2 ][ i ][ 4 ][ 'end' ]
 
   # Run the simulation.
   sim_name = "%s.vcd"%tests[ 1 ]
@@ -516,14 +517,24 @@ def cpu_mux_sim( tests ):
       # and data to propagate through the multiplexer.
       yield cpu.ws.eq( 0b001 )
       # Run the programs and print pass/fail for individual tests.
-      for i in range( len( tests[ 3 ] ) ):
+      for i in range( len( tests[ 2 ] ) ):
+        print( "  \033[93mSTART\033[0m running '%s' ROM image:"
+               %tests[ 2 ][ i ][ 0 ] )
         yield cpu.alu.clk_rst.eq( 1 )
         yield Tick()
         yield cpu.alu.clk_rst.eq( 0 )
         yield Tick()
         yield cpu.rom.select.eq( i )
         yield Settle()
-        yield from cpu_run( cpu, tests[ 3 ][ i ] )
+        # Initialize RAM values. TODO: The application should do this,
+        # but I've removed a bunch of startup code from the tests to
+        # skip over CSR calls which I haven't implemented yet.
+        for j in range( len( tests[ 2 ][ i ][ 3 ] ) ):
+          yield cpu.ram.data[ j ].eq( tests[ 2 ][ i ][ 3 ][ j ] )
+        yield from cpu_run( cpu, tests[ 2 ][ i ][ 4 ] )
+        print( "  \033[34mDONE\033[0m running '%s' ROM image:"
+               " executed %d instructions"
+               %( tests[ 2 ][ i ][ 0 ], tests[ 2 ][ i ][ 4 ][ 'end' ] ) )
       print( "\033[35mDONE\033[0m running %s: executed %d instructions"
              %( tests[ 0 ], num_i ) )
     sim.add_clock( 24e-6 )
@@ -533,51 +544,13 @@ def cpu_mux_sim( tests ):
 
 # 'main' method to run a basic testbench.
 if __name__ == "__main__":
-  # Run auto-generated RV32I tests one-by-one.
-  cpu_sim( add_test )
-  cpu_sim( addi_test )
-  cpu_sim( and_test )
-  cpu_sim( andi_test )
-  cpu_sim( auipc_test )
-  cpu_sim( beq_test )
-  cpu_sim( bge_test )
-  cpu_sim( bgeu_test )
-  cpu_sim( blt_test )
-  cpu_sim( bltu_test )
-  cpu_sim( bne_test )
-  cpu_sim( fence_i_test )
-  cpu_sim( jal_test )
-  cpu_sim( jalr_test )
-  cpu_sim( lb_test )
-  cpu_sim( lbu_test )
-  cpu_sim( lh_test )
-  cpu_sim( lhu_test )
-  cpu_sim( lw_test )
-  cpu_sim( lui_test )
-  cpu_sim( or_test )
-  cpu_sim( ori_test )
-  cpu_sim( sb_test )
-  cpu_sim( sh_test )
-  cpu_sim( sw_test )
-  cpu_sim( sll_test )
-  cpu_sim( slli_test )
-  cpu_sim( slt_test )
-  cpu_sim( slti_test )
-  cpu_sim( sltu_test )
-  cpu_sim( sltiu_test )
-  cpu_sim( sra_test )
-  cpu_sim( srai_test )
-  cpu_sim( srl_test )
-  cpu_sim( srli_test )
-  cpu_sim( sub_test )
-  cpu_sim( xor_test )
-  cpu_sim( xori_test )
-  # Alternate option: Run with multiplexed ROM.
-  # But this doesn't seem to speed up the tests like I'd hoped :/
-  #cpu_mux_sim( rv32i_tests )
+  # Run auto-generated RV32I tests with a multiplexed ROM module
+  # containing a different program for each one.
+  # (The CPU gets reset between each program.)
+  cpu_mux_sim( rv32i_tests )
 
   # Miscellaneous tests which are not part of the RV32I test suite.
-  # Simulate the ADD and ADDI test ROMs, using a multiplexed ROM
+  # Simulate hand-copied ADD and ADDI test ROMs.
   # module and checking every expected value along the way.
   cpu_mux_sim( add_mux_test )
   # Simulate the 'run from RAM' test ROM.

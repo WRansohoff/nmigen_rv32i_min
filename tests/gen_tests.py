@@ -83,7 +83,7 @@ def write_py_tests( op, hext, hexd ):
               "  'end': %d\r\n}\r\n"%( op, instrs * 2, instrs * 2 ) )
     # Write the test struct.
     py.write( "\r\n# Collected test program definition:\r\n%s_test = "
-              "[ '%s test cases', 'cpu_%s', %s_rom, %s_ram, %s_exp ]"
+              "[ '%s tests', 'cpu_%s', %s_rom, %s_ram, %s_exp ]"
               %( op, op.upper(), op, op, op, op ) )
   print( "Done!" )
 

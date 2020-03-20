@@ -556,13 +556,12 @@ ram_pc_test  = [ 'run from RAM test', 'cpu_ram',
                  ram_rom, [], ram_exp ]
 quick_test   = [ 'quick test', 'cpu_quick',
                  quick_rom, [], quick_exp ]
-add_mux_test = [ 'ADD/ADDI test cases', 'cpu_mux_add',
-                  MUXROM( [ add_rom, addi_rom ] ),
-                  [ add_exp, addi_exp ] ]
 addu_test    = [ 'ADD test cases', 'cpu_addu',
                  add_rom, [], add_exp ]
 addiu_test   = [ 'ADDI test cases', 'cpu_addiu',
                  addi_rom, [], addi_exp ]
+add_mux_test = [ 'ADD/ADDI test cases', 'cpu_mux_add',
+                  [ addu_test, addiu_test ] ]
 
 # Multiplexed ROM image for the collected RV32I instruction tests.
 from tests.test_roms.rv32i_add import *
@@ -603,20 +602,14 @@ from tests.test_roms.rv32i_srli import *
 from tests.test_roms.rv32i_sub import *
 from tests.test_roms.rv32i_xor import *
 from tests.test_roms.rv32i_xori import *
-rv32i_tests = [ 'RV32I instruction test cases', 'rv32i_tests',
-  MUXROM( [
-    add_rom, addi_rom, and_rom, andi_rom, auipc_rom, beq_rom,
-    bge_rom, bgeu_rom, blt_rom, bltu_rom, bne_rom, fence_i_rom,
-    jal_rom, jalr_rom, lb_rom, lbu_rom, lh_rom, lhu_rom,
-    lw_rom, lui_rom, or_rom, ori_rom, sb_rom, sh_rom, sw_rom,
-    sll_rom, slli_rom, slt_rom, slti_rom, sltiu_rom, sltu_rom,
-    sra_rom, srai_rom, srl_rom, srli_rom, sub_rom, xor_rom, xori_rom
-  ] ),
+rv32i_tests = [ 'RV32I instructions', 'rv32i_tests',
   [
-    add_exp, addi_exp, and_exp, andi_exp, auipc_exp, beq_exp,
-    bge_exp, bgeu_exp, blt_exp, bltu_exp, bne_exp, fence_i_exp,
-    jal_exp, jalr_exp, lb_exp, lbu_exp, lh_exp, lhu_exp,
-    lw_exp, lui_exp, or_exp, ori_exp, sb_exp, sh_exp, sw_exp,
-    sll_exp, slli_exp, slt_exp, slti_exp, sltiu_exp, sltu_exp,
-    sra_exp, srai_exp, srl_exp, srli_exp, sub_exp, xor_exp, xori_exp
-] ]
+    add_test, addi_test, and_test, andi_test, auipc_test, beq_test,
+    bge_test, bgeu_test, blt_test, bltu_test, bne_test, fence_i_test,
+    jal_test, jalr_test, lb_test, lbu_test, lh_test, lhu_test,
+    lw_test, lui_test, or_test, ori_test, sb_test, sh_test,
+    sw_test, sll_test, slli_test, slt_test, slti_test, sltiu_test,
+    sltu_test, sra_test, srai_test, srl_test, srli_test, sub_test,
+    xor_test, xori_test
+  ]
+]

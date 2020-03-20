@@ -33,18 +33,13 @@ class MUXROM( Elaboratable ):
     for i in range( self.rlen ):
       m.submodules[ "rom_%d"%i ] = self.roms[ i ]
 
-    # Return 0 for an out-of-range or mis-aligned 'select' signal.
+    # Return 0 for an out-of-range 'select' signal.
     with m.If( self.select >= self.rlen ):
       m.d.sync += self.out.eq( 0x00000000 )
-    with m.Elif( self.addr & 0x3 ):
-      m.d.sync += self.out.eq( 0x00000000 )
     # Forward the 'address' and 'out' signals to the appropriate ROM.
-    for i in range( self.rlen ):
-      with m.Elif( self.select == i ):
-        m.d.comb += self.roms[ i ].addr.eq( self.addr )
-        m.d.sync += self.out.eq( self.roms[ i ].out )
     with m.Else():
-      m.d.sync += self.out.eq( 0x00000000 )
+      m.d.comb += self.roms[ self.select ].addr.eq( self.addr )
+      m.d.sync += self.out.eq( self.roms[ self.select ].out )
 
     # End of module definition.
     return m

@@ -6,13 +6,6 @@
 #
 # Test self-modifying code and the fence.i instruction.
 #
-# This has been modified from the `riscv-tests` repository to place
-# the self-modifying code in RAM, because the simulated CPU program
-# storage is read-only. I have a PR out to apply the change upstream,
-# but it may not be accepted because the `riscv-tests` repository
-# needs to consider a wider range of use cases than simple MCU cores.
-# Caveat emptor.
-#
 
 #include "riscv_test.h"
 #include "test_macros.h"

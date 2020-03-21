@@ -16,13 +16,11 @@ This project uses [nMigen](https://github.com/nmigen/nmigen), which is a super c
 
 The ALU, CSR, RAM, and ROM Python files each have their own testbench to run some basic unit tests.
 
-The CPU module's testbench runs the standard `rv32ui` [`RISC-V` instruction set tests](https://github.com/riscv/riscv-tests) for each operation, compiled with GCC.
+The CPU module's testbench runs the standard `rv32ui` [`RISC-V` instruction set tests](https://github.com/riscv/riscv-tests) for each operation, compiled with GCC. These tests cover most of the basic `RV32I` instructions, with the exception of `ECALL` and `EBREAK`.
 
-Out of the core `RV32UI` operation tests, only the `FENCE` tests fail. I believe that the failure is due to an expectation that the `riscv-tests` be run from re-writable memory (not a simulated ROM), and I've applied a patch which addresses that. But I don't want to say that the `FENCE` tests pass until (if) that patch gets accepted upstream.
+To test `ECALL`, I also included the `RV32SI` `CSR` tests for the most basic 'machine mode' implementation. They pass, but the `ECALL` instruction is still incomplete because I have not implemented all of the core 'machine mode' registers.
 
-I also included the `RV32SI` `CSR` tests, which are passing at the moment. But I have not implemented all of the core 'machine mode' registers, so the `ECALL` instruction is not all there yet.
-
-I also haven't implemented system calls or traps yet, and I had to comment out some of the startup code in `riscv_test.h`, or the simulation wouldn't even make it to the start of the tests. So there's still plenty of work to do.
+I also haven't implemented traps (interrupts and exceptions) yet, and I had to comment out some of the startup code in `riscv_test.h`, or the simulation wouldn't even make it to the start of the tests. So there's still plenty of work to do before this CPU can blink an LED.
 
 The `tests/rv64ui_tests/` directory contains assembly code for those test cases, copied [from the `isa/` directory of the `riscv-tests` repository](https://github.com/riscv/riscv-tests/tree/master/isa). And the `tests/test_roms/` directory contains auto-generated Python files with corresponding machine code instructions in a format that the CPU testbenches can interpret.
 
@@ -38,11 +36,11 @@ Each test simulation also creates a `.vcd` file containing the waveform results,
 
 # Test Coverage
 
-Note: `EBREAK` instructions are halt or crash the program, depending on your perspective.
+Note: `EBREAK` instructions currently halt or crash the program, depending on your perspective.
 
 `ECALL` instructions are also very incomplete, so these tests only work when the usual startup code is skipped over. And that startup code includes the logic which loads initial RAM values, which means that the 'load' and 'store' tests need to manually set starting RAM values from the `.data` section to pass.
 
-So even though this table of test coverage doesn't look too bad, there's plenty more work to do before the design will actually work with real-world programs.
+So even though this table of test coverage looks okay, there's plenty more work to do before the design will actually work with real-world programs.
 
 | Instruction |   Pass / Fail?   |
 |:-----------:|:----------------:|
@@ -57,8 +55,8 @@ So even though this table of test coverage doesn't look too bad, there's plenty 
 | `BLT`       |:heavy_check_mark:|
 | `BLTU`      |:heavy_check_mark:|
 | `BNE`       |:heavy_check_mark:|
-| `CSR`       |       :x:        |
-| `FENCE`     |       :x:        |
+| `CSR`       |:heavy_check_mark:|
+| `FENCE`     |:heavy_check_mark:|
 | `JAL`       |:heavy_check_mark:|
 | `JALR`      |:heavy_check_mark:|
 | `LB`        |:heavy_check_mark:|
@@ -92,6 +90,6 @@ So even though this table of test coverage doesn't look too bad, there's plenty 
 
 - I haven't implemented traps (interrupts / exceptions) yet.
 
-- `ECALL` and `EBREAK` System calls aren't quite working yet.
+- `ECALL` and `EBREAK` System calls aren't quite working properly yet.
 
 - The spec does not define behavior when an unspecified opcode is encountered. For now, I'll just skip to incrementing the PC if that happens. But once I implement traps, it might merit raising an exception.

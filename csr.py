@@ -24,66 +24,62 @@ class CSR( Elaboratable ):
     self.f    = Signal( 3,  reset = F_CSRRW )
     # Individual CSR modules.
     # (Read-only constants such as MVENDORID don't have modules)
-    self.misa = CSR_MISA()
+    self.misa    = CSR_MISA()
+    self.mstatus = CSR_MSTATUS()
   def elaborate( self, platform ):
     m = Module()
     # Register CSR submodules.
-    m.submodules.misa = self.misa
+    m.submodules.misa    = self.misa
+    m.submodules.mstatus = self.mstatus
 
-    # Dummy 'sync' logic to make the testbench happy.
+    # Dummy 'sync' and 'nsync' logic to make the testbench happy.
     # TODO: Figure out how to run tests without this.
+    bleg = Signal()
     blegh = Signal()
-    m.d.sync += blegh.eq( 1 )
+    m.d.sync += bleg.eq( 1 )
+    m.d.nsync += blegh.eq( 1 )
 
     # Handle CSR logic.
     with m.If( self.rsel == CSRA_MISA ):
       # MISA is 'WARL', so ignore writes.
-      m.d.nsync += self.rout.eq( self.misa.mxl << 30 |
-                                   self.misa.z << 25 |
-                                   self.misa.y << 24 |
-                                   self.misa.x << 23 |
-                                   self.misa.w << 22 |
-                                   self.misa.v << 21 |
-                                   self.misa.u << 20 |
-                                   self.misa.t << 19 |
-                                   self.misa.s << 18 |
-                                   self.misa.r << 17 |
-                                   self.misa.q << 16 |
-                                   self.misa.p << 15 |
-                                   self.misa.o << 14 |
-                                   self.misa.n << 13 |
-                                   self.misa.m << 12 |
-                                   self.misa.l << 11 |
-                                   self.misa.k << 10 |
-                                   self.misa.j << 9  |
-                                   self.misa.i << 8  |
-                                   self.misa.h << 7  |
-                                   self.misa.g << 6  |
-                                   self.misa.f << 5  |
-                                   self.misa.e << 4  |
-                                   self.misa.d << 3  |
-                                   self.misa.c << 2  |
-                                   self.misa.b << 1  |
-                                   self.misa.a << 0  )
+      m.d.comb += self.rout.eq( ( self.misa.mxl << 30 ) |
+          ( self.misa.z << 25 ) | ( self.misa.y << 24 ) |
+          ( self.misa.x << 23 ) | ( self.misa.w << 22 ) |
+          ( self.misa.v << 21 ) | ( self.misa.u << 20 ) |
+          ( self.misa.t << 19 ) | ( self.misa.s << 18 ) |
+          ( self.misa.r << 17 ) | ( self.misa.q << 16 ) |
+          ( self.misa.p << 15 ) | ( self.misa.o << 14 ) |
+          ( self.misa.n << 13 ) | ( self.misa.m << 12 ) |
+          ( self.misa.l << 11 ) | ( self.misa.k << 10 ) |
+          ( self.misa.j << 9  ) | ( self.misa.i << 8  ) |
+          ( self.misa.h << 7  ) | ( self.misa.g << 6  ) |
+          ( self.misa.f << 5  ) | ( self.misa.e << 4  ) |
+          ( self.misa.d << 3  ) | ( self.misa.c << 2  ) |
+          ( self.misa.b << 1  ) | ( self.misa.a << 0  ) )
     with m.Elif( self.rsel == CSRA_MVENDORID ):
       # Vendor ID is read-only, so ignore writes.
-      m.d.nsync += self.rout.eq( VENDOR_ID )
+      m.d.comb += self.rout.eq( VENDOR_ID )
     with m.Elif( self.rsel == CSRA_MARCHID ):
       # Architecture ID is read-only, so ignore writes.
-      m.d.nsync += self.rout.eq( ARCH_ID )
+      m.d.comb += self.rout.eq( ARCH_ID )
     with m.Elif( self.rsel == CSRA_MIMPID ):
       # Machine Implementation ID is read-only, so ignore writes.
-      m.d.nsync += self.rout.eq( MIMP_ID )
+      m.d.comb += self.rout.eq( MIMP_ID )
     with m.Elif( self.rsel == CSRA_MHARTID ):
       # Machine hardware thread ID; this read-only register returns
       # a unique ID representing the hart which is currently running
       # code, and there must be a hart with ID 0.
       # I only have one hart, so...
-      m.d.nsync += self.rout.eq( 0x00000000 )
+      m.d.comb += self.rout.eq( 0x00000000 )
+    #with m.Elif( self.rsel == CSRA_MSTATUS ):
+      # Lower 32 bits of the 'MSTATUS' register.
+    #with m.Elif( self.rsel == CSRA_MSTATUSH ):
+      # Upper 32 bits of the 'MSTATUS' register.
+      # TODO
     with m.Else():
       # Return 0 without action for an unrecognized CSR.
       # TODO: Am I supposed to throw an exception or something here?
-      m.d.nsync += self.rout.eq( 0x00000000 )
+      m.d.comb += self.rout.eq( 0x00000000 )
     return m
 
 # 'MISA' register. Contains information about supported ISA modules.
@@ -128,7 +124,40 @@ class CSR_MISA( Elaboratable ):
   def elaborate( self, platform ):
     m = Module()
     # CPU must implement one core ISA, so 'E' = not 'I'.
-    m.d.comb += self.e.eq( ~self.i )
+    m.d.nsync += self.e.eq( ~self.i )
+    return m
+
+# 'MSTATUS' CSR. These fields actually spans two 32-bit registers on
+# 32-bit platforms, with some 'WPRI' bits that are reserved for
+# future use and can be hard-wired to 0.
+class CSR_MSTATUS( Elaboratable ):
+  def __init__( self ):
+    # 'MSTATUS' fields:
+    self.sie  = Signal( 1, reset = 0b0 )
+    self.mie  = Signal( 1, reset = 0b0 )
+    self.spie = Signal( 1, reset = 0b0 )
+    self.ube  = Signal( 1, reset = 0b0 )
+    self.mpie = Signal( 1, reset = 0b0 )
+    self.spp  = Signal( 1, reset = 0b0 )
+    self.mpp  = Signal( 2, reset = 0b00 )
+    self.fs   = Signal( 2, reset = 0b00 )
+    self.xs   = Signal( 2, reset = 0b00 )
+    self.mprv = Signal( 1, reset = 0b0 )
+    self.sum  = Signal( 1, reset = 0b0 )
+    self.mxr  = Signal( 1, reset = 0b0 )
+    self.tvm  = Signal( 1, reset = 0b0 )
+    self.tw   = Signal( 1, reset = 0b0 )
+    self.tsr  = Signal( 1, reset = 0b0 )
+    self.uxl  = Signal( 2, reset = 0b00 )
+    self.sxl  = Signal( 2, reset = 0b00 )
+    self.sbe  = Signal( 1, reset = 0b0 )
+    self.mbe  = Signal( 1, reset = 0b0 )
+    self.sd   = Signal( 1, reset = 0b0 )
+    # 'MSTATUSH' fields:
+    self.sbe  = Signal( 1, reset = 0b0 )
+    self.mbe  = Signal( 1, reset = 0b0 )
+  def elaborate( self, platform ):
+    m = Module()
     return m
 
 ##################
@@ -171,7 +200,8 @@ def csr_test( csr ):
   yield from csr_ut( csr, CSRA_MISA, 0x00000000, F_CSRRSI, 0x40000100 )
   # Test writing the 'MISA' CSR. No bits should change, since
   # only one ISA configuration is supported.
-  yield from csr_ut( csr, CSRA_MISA, 0xC3FFFFFF, F_CSRRW, 0x40000100 )
+  yield from csr_ut( csr, CSRA_MISA, 0xC3FFFFFF, F_CSRRW,  0x40000100 )
+  yield from csr_ut( csr, CSRA_MISA, 0x00001234, F_CSRRWI, 0x40000100 )
 
   # Test reading / writing the 'MVENDORID' CSR. (Should be read-only)
   yield from csr_ut( csr, CSRA_MVENDORID, 0x00000000, F_CSRRW, VENDOR_ID )
@@ -194,13 +224,13 @@ def csr_test( csr ):
   yield from csr_ut( csr, 0x101, 0x89ABCDEF, F_CSRRW,  0x00000000 )
   yield from csr_ut( csr, 0x101, 0x89ABCDEF, F_CSRRC,  0x00000000 )
   yield from csr_ut( csr, 0x101, 0x89ABCDEF, F_CSRRS,  0x00000000 )
-  yield from csr_ut( csr, 0x101, 0x89ABCDEF, F_CSRRWI, 0x00000000 )
-  yield from csr_ut( csr, 0x101, 0x89ABCDEF, F_CSRRCI, 0x00000000 )
-  yield from csr_ut( csr, 0x101, 0x89ABCDEF, F_CSRRSI, 0x00000000 )
+  yield from csr_ut( csr, 0x101, 0xFFFFCDEF, F_CSRRWI, 0x00000000 )
+  yield from csr_ut( csr, 0x101, 0xFFFFCDEF, F_CSRRCI, 0x00000000 )
+  yield from csr_ut( csr, 0x101, 0xFFFFCDEF, F_CSRRSI, 0x00000000 )
 
   # Done.
   yield Tick()
-  print( "ALU Tests: %d Passed, %d Failed"%( p, f ) )
+  print( "CSR Tests: %d Passed, %d Failed"%( p, f ) )
 
 # 'main' method to run a basic testbench.
 if __name__ == "__main__":

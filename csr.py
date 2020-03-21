@@ -36,17 +36,10 @@ class CSR( Elaboratable ):
     m.submodules.misa    = self.misa
     m.submodules.mstatus = self.mstatus
 
-    # Dummy 'sync' and 'nsync' logic to make the testbench happy.
-    # TODO: Figure out how to run tests without this.
-    bleg = Signal()
-    blegh = Signal()
-    m.d.sync += bleg.eq( 1 )
-    m.d.nsync += blegh.eq( 1 )
-
     # Handle CSR logic.
     with m.If( self.rsel == CSRA_MISA ):
       # MISA is 'WARL', so ignore writes.
-      m.d.comb += self.rout.eq( ( self.misa.mxl << 30 ) |
+      m.d.nsync += self.rout.eq( ( self.misa.mxl << 30 ) |
           ( self.misa.z << 25 ) | ( self.misa.y << 24 ) |
           ( self.misa.x << 23 ) | ( self.misa.w << 22 ) |
           ( self.misa.v << 21 ) | ( self.misa.u << 20 ) |
@@ -62,23 +55,23 @@ class CSR( Elaboratable ):
           ( self.misa.b << 1  ) | ( self.misa.a << 0  ) )
     with m.Elif( self.rsel == CSRA_MVENDORID ):
       # Vendor ID is read-only, so ignore writes.
-      m.d.comb += self.rout.eq( VENDOR_ID )
+      m.d.nsync += self.rout.eq( VENDOR_ID )
     with m.Elif( self.rsel == CSRA_MARCHID ):
       # Architecture ID is read-only, so ignore writes.
-      m.d.comb += self.rout.eq( ARCH_ID )
+      m.d.nsync += self.rout.eq( ARCH_ID )
     with m.Elif( self.rsel == CSRA_MIMPID ):
       # Machine Implementation ID is read-only, so ignore writes.
-      m.d.comb += self.rout.eq( MIMP_ID )
+      m.d.nsync += self.rout.eq( MIMP_ID )
     with m.Elif( self.rsel == CSRA_MHARTID ):
       # Machine hardware thread ID; this read-only register returns
       # a unique ID representing the hart which is currently running
       # code, and there must be a hart with ID 0.
       # I only have one hart, so...
-      m.d.comb += self.rout.eq( 0x00000000 )
+      m.d.nsync += self.rout.eq( 0x00000000 )
     with m.Elif( self.rsel == CSRA_MSTATUS ):
       # Lower 32 bits of the 'MSTATUS' register.
       # TODO: Writes.
-      m.d.comb += self.rout.eq(
+      m.d.nsync += self.rout.eq(
         ( self.mstatus.sie  << 1  ) | ( self.mstatus.mie  << 3  ) |
         ( self.mstatus.spie << 5  ) | ( self.mstatus.ube  << 6  ) |
         ( self.mstatus.mpie << 7  ) | ( self.mstatus.spp  << 8  ) |
@@ -90,26 +83,26 @@ class CSR( Elaboratable ):
     with m.Elif( self.rsel == CSRA_MSTATUSH ):
       # Upper 32 bits of the 'MSTATUS' register.
       # TODO: Writes.
-      m.d.comb += self.rout.eq(
+      m.d.nsync += self.rout.eq(
         ( self.mstatus.sbe << 4 ) | ( self.mstatus.mbe << 5 ) )
     with m.Elif( self.rsel == CSRA_MSCRATCH ):
       # 'MSCRATCH' register, used to store a word of state.
       # Usually this is a memory address for a context to return to.
-      m.d.comb += self.rout.eq( self.mscratch )
-      # Apply writes on the next falling clock edge.
+      m.d.nsync += self.rout.eq( self.mscratch )
+      # Apply writes on the next rising clock edge - AFTER reads.
       with m.If( ( self.f & 0b11 ) == 0b01 ):
         # 'Write' - set the register to the input value.
-        m.d.nsync += self.mscratch.eq( self.rin )
+        m.d.sync += self.mscratch.eq( self.rin )
       with m.Elif( ( self.f & 0b11 ) == 0b10 ):
         # 'Set' - set bits which are set in the input value.
-        m.d.nsync += self.mscratch.eq( self.mscratch | self.rin )
+        m.d.sync += self.mscratch.eq( self.mscratch | self.rin )
       with m.Elif( ( self.f & 0b11 ) == 0b11 ):
         # 'Clear' - reset bits which are set in the input value.
-        m.d.nsync += self.mscratch.eq( self.mscratch & ~( self.rin ) )
+        m.d.sync += self.mscratch.eq( self.mscratch & ~( self.rin ) )
     with m.Else():
       # Return 0 without action for an unrecognized CSR.
       # TODO: Am I supposed to throw an exception or something here?
-      m.d.comb += self.rout.eq( 0x00000000 )
+      m.d.nsync += self.rout.eq( 0x00000000 )
     return m
 
 # 'MISA' register. Contains information about supported ISA modules.
@@ -154,7 +147,7 @@ class CSR_MISA( Elaboratable ):
   def elaborate( self, platform ):
     m = Module()
     # CPU must implement one core ISA, so 'E' = not 'I'.
-    m.d.nsync += self.e.eq( ~self.i )
+    m.d.comb += self.e.eq( ~self.i )
     return m
 
 # 'MSTATUS' CSR. These fields actually spans two 32-bit registers on
@@ -248,13 +241,15 @@ def csr_test( csr ):
 
   # TODO: Test reading / writing 'MSTATUS' CSR.
 
-  # Test reading / writing the 'MSCRATCH' CSR. (All bits R/W)
+  # Test reading / writing the 'MSCRATCH' CSR.
+  # All bits R/W, and reads reflect the previous state.
   yield from csr_ut( csr, CSRA_MSCRATCH, 0x00000000, F_CSRRS,  0x00000000 )
-  yield from csr_ut( csr, CSRA_MSCRATCH, 0xFFFFFFFF, F_CSRRSI, 0xFFFFFFFF )
-  yield from csr_ut( csr, CSRA_MSCRATCH, 0x01234567, F_CSRRC,  0xFEDCBA98 )
-  yield from csr_ut( csr, CSRA_MSCRATCH, 0x0C0FFEE0, F_CSRRW,  0x0C0FFEE0 )
-  yield from csr_ut( csr, CSRA_MSCRATCH, 0xFFFFCBA9, F_CSRRW,  0xFFFFCBA9 )
-  yield from csr_ut( csr, CSRA_MSCRATCH, 0xFFFFFFFF, F_CSRRCI, 0x00000000 )
+  yield from csr_ut( csr, CSRA_MSCRATCH, 0xFFFFFFFF, F_CSRRSI, 0x00000000 )
+  yield from csr_ut( csr, CSRA_MSCRATCH, 0x01234567, F_CSRRC,  0xFFFFFFFF )
+  yield from csr_ut( csr, CSRA_MSCRATCH, 0x0C0FFEE0, F_CSRRW,  0xFEDCBA98 )
+  yield from csr_ut( csr, CSRA_MSCRATCH, 0xFFFFCBA9, F_CSRRW,  0x0C0FFEE0 )
+  yield from csr_ut( csr, CSRA_MSCRATCH, 0xFFFFFFFF, F_CSRRCI, 0xFFFFCBA9 )
+  yield from csr_ut( csr, CSRA_MSCRATCH, 0x00000000, F_CSRRS,  0x00000000 )
 
   # Test an unrecognized CSR.
   yield from csr_ut( csr, 0x101, 0x89ABCDEF, F_CSRRW,  0x00000000 )

@@ -20,7 +20,7 @@ The CPU module's testbench runs the standard `rv32ui` [`RISC-V` instruction set 
 
 Out of the core `RV32UI` operation tests, only the `FENCE` tests fail. I believe that the failure is due to an expectation that the `riscv-tests` be run from re-writable memory (not a simulated ROM), and I've applied a patch which addresses that. But I don't want to say that the `FENCE` tests pass until (if) that patch gets accepted upstream.
 
-I also included the `RV32SI` `CSR` tests, which are also failing at the moment. But I am hoping to implement the minimal 'machine mode' registers.
+I also included the `RV32SI` `CSR` tests, which are passing at the moment. But I have not implemented all of the core 'machine mode' registers, so the `ECALL` instruction is not all there yet.
 
 I also haven't implemented system calls or traps yet, and I had to comment out some of the startup code in `riscv_test.h`, or the simulation wouldn't even make it to the start of the tests. So there's still plenty of work to do.
 

@@ -74,6 +74,12 @@ class CSR( Elaboratable ):
     with m.Elif( self.rsel == CSRA_MIMPID ):
       # Machine Implementation ID is read-only, so ignore writes.
       m.d.nsync += self.rout.eq( MIMP_ID )
+    with m.Elif( self.rsel == CSRA_MHARTID ):
+      # Machine hardware thread ID; this read-only register returns
+      # a unique ID representing the hart which is currently running
+      # code, and there must be a hart with ID 0.
+      # I only have one hart, so...
+      m.d.nsync += self.rout.eq( 0x00000000 )
     with m.Else():
       # Return 0 without action for an unrecognized CSR.
       # TODO: Am I supposed to throw an exception or something here?
@@ -179,9 +185,18 @@ def csr_test( csr ):
   yield from csr_ut( csr, CSRA_MIMPID, 0x00000000, F_CSRRW, MIMP_ID )
   yield from csr_ut( csr, CSRA_MIMPID, 0xFFFFFFFF, F_CSRRS, MIMP_ID )
   yield from csr_ut( csr, CSRA_MIMPID, 0xFFFFFFFF, F_CSRRC, MIMP_ID )
+  # Test reading / writing the 'MHARTID' CSR. (Should be read-only)
+  yield from csr_ut( csr, CSRA_MHARTID, 0x00000000, F_CSRRW, 0 )
+  yield from csr_ut( csr, CSRA_MHARTID, 0xFFFFFFFF, F_CSRRS, 0 )
+  yield from csr_ut( csr, CSRA_MHARTID, 0xFFFFFFFF, F_CSRRC, 0 )
 
   # Test an unrecognized CSR.
-  yield from csr_ut( csr, 0x101, 0x89ABCDEF, F_CSRRW, 0x00000000 )
+  yield from csr_ut( csr, 0x101, 0x89ABCDEF, F_CSRRW,  0x00000000 )
+  yield from csr_ut( csr, 0x101, 0x89ABCDEF, F_CSRRC,  0x00000000 )
+  yield from csr_ut( csr, 0x101, 0x89ABCDEF, F_CSRRS,  0x00000000 )
+  yield from csr_ut( csr, 0x101, 0x89ABCDEF, F_CSRRWI, 0x00000000 )
+  yield from csr_ut( csr, 0x101, 0x89ABCDEF, F_CSRRCI, 0x00000000 )
+  yield from csr_ut( csr, 0x101, 0x89ABCDEF, F_CSRRSI, 0x00000000 )
 
   # Done.
   yield Tick()

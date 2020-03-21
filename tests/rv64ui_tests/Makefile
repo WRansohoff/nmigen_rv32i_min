@@ -14,6 +14,8 @@ ASFLAGS += -nostartfiles
 ASFLAGS += -nostdlib
 ASFLAGS += --specs=nosys.specs
 ASFLAGS += -Wl,-Ttubul.ld
+# Compilation flags.
+ASFLAGS += -D__MACHINE_MODE
 
 # Source files.
 SRC  = ./add.S
@@ -27,6 +29,7 @@ SRC += ./bgeu.S
 SRC += ./blt.S # Mmmm...BLT...
 SRC += ./bltu.S
 SRC += ./bne.S
+SRC += ./csr.S
 SRC += ./fence_i.S
 SRC += ./jal.S
 SRC += ./jalr.S

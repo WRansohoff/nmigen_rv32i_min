@@ -68,6 +68,12 @@ class CSR( Elaboratable ):
     with m.Elif( self.rsel == CSRA_MVENDORID ):
       # Vendor ID is read-only, so ignore writes.
       m.d.nsync += self.rout.eq( VENDOR_ID )
+    with m.Elif( self.rsel == CSRA_MARCHID ):
+      # Architecture ID is read-only, so ignore writes.
+      m.d.nsync += self.rout.eq( ARCH_ID )
+    with m.Elif( self.rsel == CSRA_MIMPID ):
+      # Machine Implementation ID is read-only, so ignore writes.
+      m.d.nsync += self.rout.eq( MIMP_ID )
     with m.Else():
       # Return 0 without action for an unrecognized CSR.
       # TODO: Am I supposed to throw an exception or something here?
@@ -161,10 +167,18 @@ def csr_test( csr ):
   # only one ISA configuration is supported.
   yield from csr_ut( csr, CSRA_MISA, 0xC3FFFFFF, F_CSRRW, 0x40000100 )
 
-  # Test the 'MVENDORID' CSR.
+  # Test reading / writing the 'MVENDORID' CSR. (Should be read-only)
   yield from csr_ut( csr, CSRA_MVENDORID, 0x00000000, F_CSRRW, VENDOR_ID )
-  # Test writing to the 'MVENDORID' CSR. (Should fail.)
   yield from csr_ut( csr, CSRA_MVENDORID, 0xFFFFFFFF, F_CSRRS, VENDOR_ID )
+  yield from csr_ut( csr, CSRA_MVENDORID, 0xFFFFFFFF, F_CSRRC, VENDOR_ID )
+  # Test reading / writing the 'MARCHID' CSR. (Should be read-only)
+  yield from csr_ut( csr, CSRA_MARCHID, 0x00000000, F_CSRRW, ARCH_ID )
+  yield from csr_ut( csr, CSRA_MARCHID, 0xFFFFFFFF, F_CSRRS, ARCH_ID )
+  yield from csr_ut( csr, CSRA_MARCHID, 0xFFFFFFFF, F_CSRRC, ARCH_ID )
+  # Test reading / writing the 'MIMPID' CSR. (Should be read-only)
+  yield from csr_ut( csr, CSRA_MIMPID, 0x00000000, F_CSRRW, MIMP_ID )
+  yield from csr_ut( csr, CSRA_MIMPID, 0xFFFFFFFF, F_CSRRS, MIMP_ID )
+  yield from csr_ut( csr, CSRA_MIMPID, 0xFFFFFFFF, F_CSRRC, MIMP_ID )
 
   # Test an unrecognized CSR.
   yield from csr_ut( csr, 0x101, 0x89ABCDEF, F_CSRRW, 0x00000000 )

@@ -137,6 +137,12 @@ MISA_MSL_128    = 0b11
 # it is okay to return 0 for non-commercial applications or
 # CPUs where the users won't care that the Vendor ID is not populated.
 VENDOR_ID       = 0x00000000
+# Architecture ID. This looks like it is an arbitrary value which
+# the chip designer (you) gets to choose. Fun!
+ARCH_ID         = 0x0C0FFEE0
+# "Machine Implementation" ID. This should be a version number
+# which is associated with your architecture ID.
+MIMP_ID         = 0x00000001
 
 ##############################################################
 # Helper methods to generate machine code for instructions.  #

@@ -75,12 +75,16 @@ def write_py_tests( op, hext, hexd ):
       if x < ( len( hexd ) - 1 ):
         py.write( ', ' )
     py.write( '\r\n] )\r\n' )
+    # Run most tests for 2x the number of instructions to account
+    # for jumps, except for the 'fence' test which uses 3x because
+    # it has a long 'prefetcher test' which counts down from 100.
+    num_instrs = ( instrs * 3 ) if 'fence' in op else ( instrs * 2 )
     # Write the 'expected' value for the testbench to check
     # after tests finish.
     py.write( "\r\n# Expected 'pass' register values.\r\n"
               "%s_exp = {\r\n"
               "  %d: [ { 'r': 17, 'e': 93 }, { 'r': 10, 'e': 0 } ],"
-              "  'end': %d\r\n}\r\n"%( op, instrs * 2, instrs * 2 ) )
+              "  'end': %d\r\n}\r\n"%( op, num_instrs, num_instrs ) )
     # Write the test struct.
     py.write( "\r\n# Collected test program definition:\r\n%s_test = "
               "[ '%s tests', 'cpu_%s', %s_rom, %s_ram, %s_exp ]"

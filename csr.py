@@ -17,15 +17,19 @@ class CSR( Elaboratable ):
   def __init__( self ):
     # CSR input/output registers.
     # TODO: Use fewer bits to encode the supported CSRs.
-    # It shouldn't be complicated to do with a dictionary.
+    # It shouldn't be complicated to do with a dictionary,
+    # but it looks like the 'nmigen-soc' library includes a CSR
+    # wishbone interface; maybe I can use that instead?
     self.rsel = Signal( 12, reset = 0x00000000 )
     self.rin  = Signal( 32, reset = 0x00000000 )
     self.rout = Signal( 32, reset = 0x00000000 )
     self.f    = Signal( 3,  reset = F_CSRRW )
     # Individual CSR modules.
-    # (Read-only constants such as MVENDORID don't have modules)
-    self.misa    = CSR_MISA()
-    self.mstatus = CSR_MSTATUS()
+    # Read-only constants such as MVENDORID don't have modules.
+    # Some registers are simple 32-bit R/W words; those are Signals.
+    self.misa     = CSR_MISA()
+    self.mstatus  = CSR_MSTATUS()
+    self.mscratch = Signal( 32, reset = 0x00000000 )
   def elaborate( self, platform ):
     m = Module()
     # Register CSR submodules.
@@ -71,11 +75,37 @@ class CSR( Elaboratable ):
       # code, and there must be a hart with ID 0.
       # I only have one hart, so...
       m.d.comb += self.rout.eq( 0x00000000 )
-    #with m.Elif( self.rsel == CSRA_MSTATUS ):
+    with m.Elif( self.rsel == CSRA_MSTATUS ):
       # Lower 32 bits of the 'MSTATUS' register.
-    #with m.Elif( self.rsel == CSRA_MSTATUSH ):
+      # TODO: Writes.
+      m.d.comb += self.rout.eq(
+        ( self.mstatus.sie  << 1  ) | ( self.mstatus.mie  << 3  ) |
+        ( self.mstatus.spie << 5  ) | ( self.mstatus.ube  << 6  ) |
+        ( self.mstatus.mpie << 7  ) | ( self.mstatus.spp  << 8  ) |
+        ( self.mstatus.mpp  << 11 ) | ( self.mstatus.fs   << 13 ) |
+        ( self.mstatus.xs   << 15 ) | ( self.mstatus.mprv << 17 ) |
+        ( self.mstatus.sum  << 18 ) | ( self.mstatus.mxr  << 19 ) |
+        ( self.mstatus.tvm  << 20 ) | ( self.mstatus.tw   << 21 ) |
+        ( self.mstatus.tsr  << 22 ) | ( self.mstatus.sd   << 30 ) )
+    with m.Elif( self.rsel == CSRA_MSTATUSH ):
       # Upper 32 bits of the 'MSTATUS' register.
-      # TODO
+      # TODO: Writes.
+      m.d.comb += self.rout.eq(
+        ( self.mstatus.sbe << 4 ) | ( self.mstatus.mbe << 5 ) )
+    with m.Elif( self.rsel == CSRA_MSCRATCH ):
+      # 'MSCRATCH' register, used to store a word of state.
+      # Usually this is a memory address for a context to return to.
+      m.d.comb += self.rout.eq( self.mscratch )
+      # Apply writes on the next falling clock edge.
+      with m.If( ( self.f & 0b11 ) == 0b01 ):
+        # 'Write' - set the register to the input value.
+        m.d.nsync += self.mscratch.eq( self.rin )
+      with m.Elif( ( self.f & 0b11 ) == 0b10 ):
+        # 'Set' - set bits which are set in the input value.
+        m.d.nsync += self.mscratch.eq( self.mscratch | self.rin )
+      with m.Elif( ( self.f & 0b11 ) == 0b11 ):
+        # 'Clear' - reset bits which are set in the input value.
+        m.d.nsync += self.mscratch.eq( self.mscratch & ~( self.rin ) )
     with m.Else():
       # Return 0 without action for an unrecognized CSR.
       # TODO: Am I supposed to throw an exception or something here?
@@ -148,10 +178,6 @@ class CSR_MSTATUS( Elaboratable ):
     self.tvm  = Signal( 1, reset = 0b0 )
     self.tw   = Signal( 1, reset = 0b0 )
     self.tsr  = Signal( 1, reset = 0b0 )
-    self.uxl  = Signal( 2, reset = 0b00 )
-    self.sxl  = Signal( 2, reset = 0b00 )
-    self.sbe  = Signal( 1, reset = 0b0 )
-    self.mbe  = Signal( 1, reset = 0b0 )
     self.sd   = Signal( 1, reset = 0b0 )
     # 'MSTATUSH' fields:
     self.sbe  = Signal( 1, reset = 0b0 )
@@ -219,6 +245,16 @@ def csr_test( csr ):
   yield from csr_ut( csr, CSRA_MHARTID, 0x00000000, F_CSRRW, 0 )
   yield from csr_ut( csr, CSRA_MHARTID, 0xFFFFFFFF, F_CSRRS, 0 )
   yield from csr_ut( csr, CSRA_MHARTID, 0xFFFFFFFF, F_CSRRC, 0 )
+
+  # TODO: Test reading / writing 'MSTATUS' CSR.
+
+  # Test reading / writing the 'MSCRATCH' CSR. (All bits R/W)
+  yield from csr_ut( csr, CSRA_MSCRATCH, 0x00000000, F_CSRRS,  0x00000000 )
+  yield from csr_ut( csr, CSRA_MSCRATCH, 0xFFFFFFFF, F_CSRRSI, 0xFFFFFFFF )
+  yield from csr_ut( csr, CSRA_MSCRATCH, 0x01234567, F_CSRRC,  0xFEDCBA98 )
+  yield from csr_ut( csr, CSRA_MSCRATCH, 0x0C0FFEE0, F_CSRRW,  0x0C0FFEE0 )
+  yield from csr_ut( csr, CSRA_MSCRATCH, 0xFFFFCBA9, F_CSRRW,  0xFFFFCBA9 )
+  yield from csr_ut( csr, CSRA_MSCRATCH, 0xFFFFFFFF, F_CSRRCI, 0x00000000 )
 
   # Test an unrecognized CSR.
   yield from csr_ut( csr, 0x101, 0x89ABCDEF, F_CSRRW,  0x00000000 )

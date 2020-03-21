@@ -114,6 +114,14 @@ CSRA_MIE        = 0x304
 CSRA_MTVEC      = 0x305
 CSRA_MCOUNTEREN = 0x306
 CSRA_MSTATUSH   = 0x310
+# Machine trap handling (Note - traps are not implemented yet):
+CSRA_MSCRATCH   = 0x340
+CSRA_MEPC       = 0x341
+CSRA_MCAUSE     = 0x342
+CSRA_MTVAL      = 0x343
+CSRA_MIP        = 0x344
+CSRA_MTINST     = 0x34A
+CSRA_MTVAL2     = 0x34B
 # Machine memory protection: not impemented
 # Machine counter / timers: not implemented
 # Machine counter setup: not implemented

@@ -18,7 +18,11 @@ The ALU, CSR, RAM, and ROM Python files each have their own testbench to run som
 
 The CPU module's testbench runs the standard `rv32ui` [`RISC-V` instruction set tests](https://github.com/riscv/riscv-tests) for each operation, compiled with GCC.
 
-Out of the core `RV32I` operation tests, only the `FENCE` tests fail. But I still haven't implemented system calls or traps yet, and I had to comment out some of the startup code in `riscv_test.h`, or the simulation wouldn't even make it to the start of the tests. So there's still plenty of work to do.
+Out of the core `RV32UI` operation tests, only the `FENCE` tests fail. I believe that the failure is due to an expectation that the `riscv-tests` be run from re-writable memory (not a simulated ROM), and I've applied a patch which addresses that. But I don't want to say that the `FENCE` tests pass until (if) that patch gets accepted upstream.
+
+I also included the `RV32SI` `CSR` tests, which are also failing at the moment. But I am hoping to implement the minimal 'machine mode' registers.
+
+I also haven't implemented system calls or traps yet, and I had to comment out some of the startup code in `riscv_test.h`, or the simulation wouldn't even make it to the start of the tests. So there's still plenty of work to do.
 
 The `tests/rv64ui_tests/` directory contains assembly code for those test cases, copied [from the `isa/` directory of the `riscv-tests` repository](https://github.com/riscv/riscv-tests/tree/master/isa). And the `tests/test_roms/` directory contains auto-generated Python files with corresponding machine code instructions in a format that the CPU testbenches can interpret.
 
@@ -40,8 +44,8 @@ Note: `EBREAK` instructions are halt or crash the program, depending on your per
 
 So even though this table of test coverage doesn't look too bad, there's plenty more work to do before the design will actually work with real-world programs.
 
-| Instruction | Pass / Fail? |
-|:-----------:|:------------:|
+| Instruction |   Pass / Fail?   |
+|:-----------:|:----------------:|
 | `ADD`       |:heavy_check_mark:|
 | `ADDI`      |:heavy_check_mark:|
 | `AND`       |:heavy_check_mark:|
@@ -53,7 +57,8 @@ So even though this table of test coverage doesn't look too bad, there's plenty 
 | `BLT`       |:heavy_check_mark:|
 | `BLTU`      |:heavy_check_mark:|
 | `BNE`       |:heavy_check_mark:|
-| `FENCE`     |:x:|
+| `CSR`       |       :x:        |
+| `FENCE`     |       :x:        |
 | `JAL`       |:heavy_check_mark:|
 | `JALR`      |:heavy_check_mark:|
 | `LB`        |:heavy_check_mark:|

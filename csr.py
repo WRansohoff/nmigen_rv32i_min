@@ -1,46 +1,188 @@
 from isa import *
 
-#########################################
-# 'Control and Status Registers' file.  #
-# This contains logic for handling the  #
-# 'ECALL' instruction, which is used to #
-# read/write CSRs in the base ISA.      #
-# CSR named constants are in `isa.py`.  #
-#########################################
+#############################################
+# 'Control and Status Registers' file.      #
+# This contains logic for handling the      #
+# 'ECALL' instruction, which is used to     #
+# read/write CSRs in the base ISA.          #
+# CSR named constants are in `isa.py`.      #
+# 'WARL' = Write Anything, Read Legal.      #
+# 'WLRL' = Write Legal, Read Legal.         #
+# 'WPRI' = Writes Preserved, Reads Ignored. #
+#############################################
 
-# Helper methods for individual CSR read/write/set/clear operations.
-# CSRRW: Write a CSR value, and read it back if the destination
-# register is not r0. If dest. is r0, no read side effects occur.
-# Returns the next CPU FSM state.
-def handle_csrrw( self, cpu ):
-  return "CPU_PC_LOAD"
+# Core "CSR" class, which contains an instance of each
+# supported CSR class. the 'ECALL' helper methods access it.
+class CSR( Elaboratable ):
+  def __init__( self ):
+    # CSR input/output registers.
+    # TODO: Use fewer bits to encode the supported CSRs.
+    # It shouldn't be complicated to do with a dictionary.
+    self.rsel = Signal( 12, reset = 0x00000000 )
+    self.rin  = Signal( 32, reset = 0x00000000 )
+    self.rout = Signal( 32, reset = 0x00000000 )
+    self.f    = Signal( 3,  reset = F_CSRRW )
+    # Individual CSR modules.
+    # (Read-only constants such as MVENDORID don't have modules)
+    self.misa = CSR_MISA()
+  def elaborate( self, platform ):
+    m = Module()
+    # Register CSR submodules.
+    m.submodules.misa = self.misa
 
-# CSRRS: Set specified bits in a CSR and read it back, unless the
-# the source register is r0. If source is r0, don't write to the CSR.
-# Returns the next CPU FSM state.
-def handle_csrrs( self, cpu ):
-  return "CPU_PC_LOAD"
+    # Dummy 'sync' logic to make the testbench happy.
+    # TODO: Figure out how to run tests without this.
+    blegh = Signal()
+    m.d.sync += blegh.eq( 1 )
 
-# CSRRC: Clear specified bits in a CSR and read it back, unless the
-# the source register is r0. If source is r0, don't write to the CSR.
-# Returns the next CPU FSM state.
-def handle_csrrc( self, cpu ):
-  return "CPU_PC_LOAD"
+    # Handle CSR logic.
+    with m.If( self.rsel == CSRA_MISA ):
+      # MISA is 'WARL', so ignore writes.
+      m.d.nsync += self.rout.eq( self.misa.mxl << 30 |
+                                   self.misa.z << 25 |
+                                   self.misa.y << 24 |
+                                   self.misa.x << 23 |
+                                   self.misa.w << 22 |
+                                   self.misa.v << 21 |
+                                   self.misa.u << 20 |
+                                   self.misa.t << 19 |
+                                   self.misa.s << 18 |
+                                   self.misa.r << 17 |
+                                   self.misa.q << 16 |
+                                   self.misa.p << 15 |
+                                   self.misa.o << 14 |
+                                   self.misa.n << 13 |
+                                   self.misa.m << 12 |
+                                   self.misa.l << 11 |
+                                   self.misa.k << 10 |
+                                   self.misa.j << 9  |
+                                   self.misa.i << 8  |
+                                   self.misa.h << 7  |
+                                   self.misa.g << 6  |
+                                   self.misa.f << 5  |
+                                   self.misa.e << 4  |
+                                   self.misa.d << 3  |
+                                   self.misa.c << 2  |
+                                   self.misa.b << 1  |
+                                   self.misa.a << 0  )
+    with m.Elif( self.rsel == CSRA_MVENDORID ):
+      # Vendor ID is read-only, so ignore writes.
+      m.d.nsync += self.rout.eq( VENDOR_ID )
+    with m.Else():
+      # Return 0 without action for an unrecognized CSR.
+      # TODO: Am I supposed to throw an exception or something here?
+      m.d.nsync += self.rout.eq( 0x00000000 )
+    return m
 
-# CSRRWI: Write a 5-bit immediate to a CSR, and read it back if the
-# destination register is not r0. If dest. is r0, no read occurs.
-# Returns the next CPU FSM state.
-def handle_csrrwi( self, cpu ):
-  return "CPU_PC_LOAD"
+# 'MISA' register. Contains information about supported ISA modules.
+# The application can also set bits in this register to enable or
+# disable certain extensions. And it is a 'WARL' register, so any
+# writes which request unsupported extensions are silently ignored.
+class CSR_MISA( Elaboratable ):
+  def __init__( self ):
+    # TODO: Since this CPU only supports RV32I, I'm going
+    # to make most of these values constants. But for supported
+    # extensions, they should be writable Signal()s.
+    # I did make the 'E' extension a Signal, because it is always
+    # the opposite of the 'I' extension, and that's trivial.
+    self.mxl = MISA_MSL_32
+    self.a   = 0 # No atomic extension.
+    self.b   = 0 # No bit manipulation extension.
+    self.c   = 0 # No 'compressed instructions' extension.
+    self.d   = 0 # No double-precision floating-point extension.
+    # ('E' and 'I' extensions are mutually exclusive)
+    self.e   = Signal( 1, reset = 0b0 )
+    self.f   = 0 # No single-precision floating-point extension.
+    self.g   = 0 # (Reserved)
+    self.h   = 0 # No hypervisor mode extension.
+    self.i   = 1 # Core RV32I instructions are supported.
+    self.j   = 0 # No...'dynamically-translated language extension'?
+    self.k   = 0 # (Reserved)
+    self.l   = 0 # No decimal floating-point extension.
+    self.m   = 0 # No multiply / divide extension.
+    self.n   = 0 # No user-level interrupts extension.
+    self.o   = 0 # (Reserved)
+    self.p   = 0 # No packed SIMD extension.
+    self.q   = 0 # No quad-precision floating-point extension.
+    self.r   = 0 # (Reserved)
+    self.s   = 0 # No supervisor mode extension.
+    self.t   = 0 # No transactional memory extension.
+    self.u   = 0 # No user mode extension.
+    self.v   = 0 # No vector extension.
+    self.w   = 0 # (Reserved)
+    self.x   = 0 # No non-standard extensions.
+    self.y   = 0 # (Reserved)
+    self.z   = 0 # (Reserved)
+  def elaborate( self, platform ):
+    m = Module()
+    # CPU must implement one core ISA, so 'E' = not 'I'.
+    m.d.comb += self.e.eq( ~self.i )
+    return m
 
-# CSRRSI: Set specified bits in a CSR and read it back, unless the
-# the immediate value equals 0. If it does, don't write to the CSR.
-# Returns the next CPU FSM state.
-def handle_csrrsi( self, cpu ):
-  return "CPU_PC_LOAD"
+##################
+# CSR testbench: #
+##################
+# Keep track of test pass / fail rates.
+p = 0
+f = 0
 
-# CSRRCI: Clear specified bits in a CSR and read it back, unless the
-# the immediate value equals 0. If it does, don't write to the CSR.
-# Returns the next CPU FSM state.
-def handle_csrrci( self, cpu ):
-  return "CPU_PC_LOAD"
+# Perform an individual CSR unit test.
+def csr_ut( csr, reg, rin, cf, expected ):
+  global p, f
+  # Set rsel, rin, f.
+  yield csr.rsel.eq( reg )
+  yield csr.rin.eq( rin )
+  yield csr.f.eq( cf )
+  # Wait a tick.
+  yield Tick()
+  # Done. Check the result after combinatorial logic.
+  yield Settle()
+  actual = yield csr.rout
+  if hexs( expected ) != hexs( actual ):
+    f += 1
+    print( "\033[31mFAIL:\033[0m CSR 0x%03X = %s (got: %s)"
+           %( reg, hexs( expected ), hexs( actual ) ) )
+  else:
+    p += 1
+    print( "\033[32mPASS:\033[0m CSR 0x%03X = %s"
+           %( reg, hexs( expected ) ) )
+
+# Top-level CSR test method.
+def csr_test( csr ):
+  # Let signals settle after reset.
+  yield Settle()
+
+  # Print a test header.
+  print( "--- CSR Tests ---" )
+
+  # Test reading the 'MISA' CSR. XLEN = 32, RV32I = 1, others = 0.
+  yield from csr_ut( csr, CSRA_MISA, 0x00000000, F_CSRRSI, 0x40000100 )
+  # Test writing the 'MISA' CSR. No bits should change, since
+  # only one ISA configuration is supported.
+  yield from csr_ut( csr, CSRA_MISA, 0xC3FFFFFF, F_CSRRW, 0x40000100 )
+
+  # Test the 'MVENDORID' CSR.
+  yield from csr_ut( csr, CSRA_MVENDORID, 0x00000000, F_CSRRW, VENDOR_ID )
+  # Test writing to the 'MVENDORID' CSR. (Should fail.)
+  yield from csr_ut( csr, CSRA_MVENDORID, 0xFFFFFFFF, F_CSRRS, VENDOR_ID )
+
+  # Test an unrecognized CSR.
+  yield from csr_ut( csr, 0x101, 0x89ABCDEF, F_CSRRW, 0x00000000 )
+
+  # Done.
+  yield Tick()
+  print( "ALU Tests: %d Passed, %d Failed"%( p, f ) )
+
+# 'main' method to run a basic testbench.
+if __name__ == "__main__":
+  # Instantiate a CSR module.
+  dut = CSR()
+
+  # Run the tests.
+  with Simulator( dut, vcd_file = open( 'csr.vcd', 'w' ) ) as sim:
+    def proc():
+      yield from csr_test( dut )
+    sim.add_clock( 24e-6 )
+    sim.add_clock( 24e-6, domain = "nsync" )
+    sim.add_sync_process( proc )
+    sim.run()

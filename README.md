@@ -14,7 +14,7 @@ This project uses [nMigen](https://github.com/nmigen/nmigen), which is a super c
 
 # Testbenches
 
-The ALU, RAM, and ROM Python files each have their own testbench to run some basic unit tests.
+The ALU, CSR, RAM, and ROM Python files each have their own testbench to run some basic unit tests.
 
 The CPU module's testbench runs the standard `rv32ui` [`RISC-V` instruction set tests](https://github.com/riscv/riscv-tests) for each operation, compiled with GCC.
 
@@ -34,7 +34,9 @@ Each test simulation also creates a `.vcd` file containing the waveform results,
 
 # Test Coverage
 
-Note: `ECALL` and `EBREAK` instructions are not implemented, and the corresponding lack of "CSR" instructions means that these tests only work when the usual startup code is skipped over. And that includes the logic which loads initial RAM values, which means that the 'load' and 'store' tests need to manually set starting RAM values from the `.data` section.
+Note: `EBREAK` instructions are halt or crash the program, depending on your perspective.
+
+`ECALL` instructions are also very incomplete, so these tests only work when the usual startup code is skipped over. And that startup code includes the logic which loads initial RAM values, which means that the 'load' and 'store' tests need to manually set starting RAM values from the `.data` section to pass.
 
 So even though this table of test coverage doesn't look too bad, there's plenty more work to do before the design will actually work with real-world programs.
 
@@ -85,8 +87,6 @@ So even though this table of test coverage doesn't look too bad, there's plenty 
 
 - I haven't implemented traps (interrupts / exceptions) yet.
 
-- `ECALL` and `EBREAK` System calls are currently implemented as "hard faults" which act as an infinite loop.
-
-- `FENCE` instructions are not implemented yet.
+- `ECALL` and `EBREAK` System calls aren't quite working yet.
 
 - The spec does not define behavior when an unspecified opcode is encountered. For now, I'll just skip to incrementing the PC if that happens. But once I implement traps, it might merit raising an exception.

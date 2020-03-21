@@ -48,6 +48,8 @@ class CPU( Elaboratable ):
     self.ws     = Signal( 3, reset = 0b000 )
     # The ALU submodule which performs logical operations.
     self.alu    = ALU()
+    # CSR 'system registers' module.
+    self.csr    = CSR()
     # The ROM submodule (or multiplexed test ROMs) which act as
     # simulated program data storage for the CPU.
     self.rom    = rom_module
@@ -65,8 +67,9 @@ class CPU( Elaboratable ):
   def elaborate( self, platform ):
     # Core CPU module.
     m = Module()
-    # Register the ALU, ROM and RAM submodules.
+    # Register the ALU, CSR, ROM and RAM submodules.
     m.submodules.alu = self.alu
+    m.submodules.csr = self.csr
     m.submodules.rom = self.rom
     m.submodules.ram = self.ram
 
@@ -262,20 +265,88 @@ class CPU( Elaboratable ):
             # Loop back without moving the Program Counter.
             m.next = "CPU_PC_ROM_FETCH"
           # "Environment Call" instructions:
-          # These 'Control and Status Register' operations call
-          # helper methods located in `csr.py`.
+          # Defer to the 'CSR' module for valid 'ECALL' operations.
+          # 'CSRRW': Write value from register to CSR.
           with m.Elif( self.f == F_CSRRW ):
-            m.next = handle_csrrw( self, m )
+            m.d.comb += [
+              self.csr.rin.eq( self.r[ self.ra ] ),
+              self.csr.rsel.eq( self.imm ),
+              self.csr.f.eq( F_CSRRW )
+            ]
+            # Only read result if destination register is not r0.
+            with m.If( self.rc > 0 ):
+              m.d.sync += self.r[ self.rc ].eq( self.csr.rout )
+            m.next = "CPU_PC_LOAD"
+          # 'CSRRS' set specified bits in a CSR from a register.
           with m.Elif( self.f == F_CSRRS ):
-            m.next = handle_csrrs( self, m )
+            m.d.comb += [
+              self.csr.rin.eq( self.r[ self.ra ] ),
+              self.csr.rsel.eq( self.imm ),
+              self.csr.f.eq( F_CSRRS )
+            ]
+            # Read side effects should still occur if destination
+            # is r0, but the value should not be written back.
+            with m.If( self.rc > 0 ):
+              m.d.sync += self.r[ self.rc ].eq( self.csr.rout )
+            m.next = "CPU_PC_LOAD"
+          # 'CSRRC' clear specified bits in a CSR from a register.
           with m.Elif( self.f == F_CSRRC ):
-            m.next = handle_csrrc( self, m )
+            m.d.comb += [
+              self.csr.rin.eq( self.r[ self.ra ] ),
+              self.csr.rsel.eq( self.imm ),
+              self.csr.f.eq( F_CSRRC )
+            ]
+            # Read side effects should still occur if destination
+            # is r0, but the value should not be written back.
+            with m.If( self.rc > 0 ):
+              m.d.sync += self.r[ self.rc ].eq( self.csr.rout )
+            m.next = "CPU_PC_LOAD"
+          # Note: 'CSRRxI' operations treat the 'rs1' / 'ra'
+          # value as a 5-bit sign-extended immediate.
+          # 'CSRRWI': Write immediate value to CSR.
           with m.Elif( self.f == F_CSRRWI ):
-            m.next = handle_csrrwi( self, m )
+            m.d.comb += [
+              self.csr.rsel.eq( self.imm ),
+              self.csr.f.eq( F_CSRRWI )
+            ]
+            with m.If( self.ra[ 4 ] != 0 ):
+              m.d.comb += self.csr.rin.eq( 0xFFFFFFE0 | self.ra )
+            with m.Else():
+              m.d.comb += self.csr.rin.eq( self.ra )
+            # Only read result if destination register is not r0.
+            with m.If( self.rc > 0 ):
+              m.d.sync += self.r[ self.rc ].eq( self.csr.rout )
+            m.next = "CPU_PC_LOAD"
+          # 'CSRRSI' set immediate bits in a CSR.
           with m.Elif( self.f == F_CSRRSI ):
-            m.next = handle_csrrsi( self, m )
+            m.d.comb += [
+              self.csr.rsel.eq( self.imm ),
+              self.csr.f.eq( F_CSRRSI )
+            ]
+            with m.If( self.ra[ 4 ] != 0 ):
+              m.d.comb += self.csr.rin.eq( 0xFFFFFFE0 | self.ra )
+            with m.Else():
+              m.d.comb += self.csr.rin.eq( self.ra )
+            # Read side effects should still occur if destination
+            # is r0, but the value should not be written back.
+            with m.If( self.rc > 0 ):
+              m.d.sync += self.r[ self.rc ].eq( self.csr.rout )
+            m.next = "CPU_PC_LOAD"
+          # 'CSRRCI' clear immediate bits in a CSR.
           with m.Elif( self.f == F_CSRRCI ):
-            m.next = handle_csrrci( self, m )
+            m.d.comb += [
+              self.csr.rsel.eq( self.imm ),
+              self.csr.f.eq( F_CSRRCI )
+            ]
+            with m.If( self.ra[ 4 ] != 0 ):
+              m.d.comb += self.csr.rin.eq( 0xFFFFFFE0 | self.ra )
+            with m.Else():
+              m.d.comb += self.csr.rin.eq( self.ra )
+            # Read side effects should still occur if destination
+            # is r0, but the value should not be written back.
+            with m.If( self.rc > 0 ):
+              m.d.sync += self.r[ self.rc ].eq( self.csr.rout )
+            m.next = "CPU_PC_LOAD"
           # Halt execution at an unrecognized 'SYSTEM' instruction.
           with m.Else():
             m.next = "CPU_PC_ROM_FETCH"

@@ -101,32 +101,42 @@ F_CSRRCI = 0b111
 # CSR Addresses for the supported subste of 'Machine-Level ISA' CSRs.
 # (Supervisor and Hypervisor CSRs are not implemented.)
 # Machine information registers:
-CSRM_VENDORID  = 0xF11
-CSRM_ARCHID    = 0xF12
-CSRM_IMPID     = 0xF13
-CSRM_HARTID    = 0xF14
+CSRA_MVENDORID  = 0xF11
+CSRA_MARCHID    = 0xF12
+CSRA_MIMPID     = 0xF13
+CSRA_MHARTID    = 0xF14
 # Machine trap setup (Note - traps are not implemented yet):
-CSRM_STATUS    = 0x300
-CSRM_ISA       = 0x301
-CSRM_EDELEG    = 0x302
-CSRM_IDELEG    = 0x303
-CSRM_IE        = 0x304
-CSRM_TVEC      = 0x305
-CSRM_COUNTEREN = 0x306
-CSRM_STATUSH   = 0x310
+CSRA_MSTATUS    = 0x300
+CSRA_MISA       = 0x301
+CSRA_MEDELEG    = 0x302
+CSRA_MIDELEG    = 0x303
+CSRA_MIE        = 0x304
+CSRA_MTVEC      = 0x305
+CSRA_MCOUNTEREN = 0x306
+CSRA_MSTATUSH   = 0x310
 # Machine memory protection: not impemented
 # Machine counter / timers: not implemented
 # Machine counter setup: not implemented
 # Debug / trace registers (Note - no debugging interface exists yet):
-CSRT_SELECT    = 0x7A0
-CSRT_DATA1     = 0x7A1
-CSRT_DATA2     = 0x7A2
-CSRT_DATA3     = 0x7A3
+CSRA_TSELECT    = 0x7A0
+CSRA_TDATA1     = 0x7A1
+CSRA_TDATA2     = 0x7A2
+CSRA_TDATA3     = 0x7A3
 # Debug mode registers (Note - no debugging interface exists yet):
-CSRD_CSR       = 0x7B0
-CSRD_PC        = 0x7B1
-CSRD_SCRATCH0  = 0x7B2
-CSRD_SCRATCH1  = 0x7B3
+CSRA_DCSR       = 0x7B0
+CSRA_DPC        = 0x7B1
+CSRA_DSCRATCH0  = 0x7B2
+CSRA_DSCRATCH1  = 0x7B3
+# Constants and initial values for CSRs.
+# MISA 'MSL' value: determines XLEN of the CPU. This
+# implementation only supports 32-bit (MISA_MSL_32).
+MISA_MSL_32     = 0b01
+MISA_MSL_64     = 0b10
+MISA_MSL_128    = 0b11
+# Encoded JEDEC manufacturer ID. If you don't have one (I don't),
+# it is okay to return 0 for non-commercial applications or
+# CPUs where the users won't care that the Vendor ID is not populated.
+VENDOR_ID       = 0x00000000
 
 ##############################################################
 # Helper methods to generate machine code for instructions.  #

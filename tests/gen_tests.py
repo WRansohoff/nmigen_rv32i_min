@@ -16,7 +16,7 @@ test_path = "%s/"%( os.path.dirname( sys.argv[ 0 ] ) )
 # of the RISC-V assembly test files.
 def get_section_hex( op, sect ):
   hdump = subprocess.run( [ od, '-s', '-j', sect,
-                            '%s/rv64ui_tests/%s.o'
+                            './%s/rv64ui_tests/%s.o'
                             %( test_path, op ) ],
                           stdout = subprocess.PIPE
                         ).stdout.decode( 'utf-8' )
@@ -42,7 +42,7 @@ def write_py_tests( op, hext, hexd ):
   opp = op
   while len( opp ) < 5:
     opp = opp + ' '
-  py_fn = '%s/test_roms/rv32i_%s.py'%( test_path, op )
+  py_fn = './%s/test_roms/rv32i_%s.py'%( test_path, op )
   with open( py_fn, 'w' ) as py:
     print( 'Generating %s tests...'%op, end = '' )
     # Write imports and headers.
@@ -93,11 +93,11 @@ def write_py_tests( op, hext, hexd ):
 
 # Run 'make clean && make' to re-compile the files.
 subprocess.run( [ 'make', 'clean' ],
-                cwd = '%s/rv64ui_tests/'%test_path )
+                cwd = './%s/rv64ui_tests/'%test_path )
 subprocess.run( [ 'make' ],
-                cwd = '%s/rv64ui_tests/'%test_path )
+                cwd = './%s/rv64ui_tests/'%test_path )
 # Process all compiled test files.
-for fn in os.listdir( '%s/rv64ui_tests'%test_path ):
+for fn in os.listdir( './%s/rv64ui_tests'%test_path ):
   if fn[ -1 ] == 'o':
     op = fn[ :-2 ]
     # Get machine code instructions for the operation's tests.

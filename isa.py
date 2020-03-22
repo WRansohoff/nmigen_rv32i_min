@@ -139,8 +139,8 @@ CSRA_MHPMCOUNTERH_MAX = 0xB9F
 # Machine counter setup:
 CSRA_MCOUNTINHIBIT    = 0x320
 # Range of 29 'MHPEVENTx' registers.
-CSRA_MHPMEVENT_MIN     = 0x323
-CSRA_MHPMEVENT_MAX     = 0x33F
+CSRA_MHPMEVENT_MIN    = 0x323
+CSRA_MHPMEVENT_MAX    = 0x33F
 # Debug / trace registers (Note - no debugging interface exists yet):
 CSRA_TSELECT    = 0x7A0
 CSRA_TDATA1     = 0x7A1

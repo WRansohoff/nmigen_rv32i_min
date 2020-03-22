@@ -105,7 +105,10 @@ class CSR( Elaboratable ):
     m.submodules.mip     = self.mip
     m.submodules.mcause  = self.mcause
 
-    # Handle CSR logic.
+    # The 'MCYCLE' CSR increments every clock tick.
+    m.d.sync += self.mcycle.eq( self.mcycle + 1 )
+
+    # Handle CSR read / write logic.
     with m.If( self.rsel == CSRA_MISA ):
       # MISA is 'WARL', so ignore writes.
       m.d.nsync += self.rout.eq( ( self.misa.mxl << 30 ) |
@@ -365,10 +368,16 @@ class CSR( Elaboratable ):
       m.d.nsync += self.rout.eq( self.mcycle & 0xFFFFFFFF )
       # Apply CSR write logic for the lower 32 bits.
       csr_w64l( self, m, self.mcycle )
+      # If 'MCYCLE' would not be changed, increment it.
+      with m.If( ( ( self.f & 0b10 ) != 0 ) & ( self.rin == 0 ) ):
+        m.d.sync += self.mcycle.eq( self.mcycle + 1 )
     with m.Elif( self.rsel == CSRA_MCYCLEH ):
       m.d.nsync += self.rout.eq( self.mcycle >> 32 )
       # Apply CSR write logic for the upper 32 bits.
       csr_w64h( self, m, self.mcycle )
+      # If 'MCYCLE' would not be changed, increment it.
+      with m.If( ( ( self.f & 0b10 ) != 0 ) & ( self.rin == 0 ) ):
+        m.d.sync += self.mcycle.eq( self.mcycle + 1 )
     with m.Elif( self.rsel == CSRA_MINSTRET ):
       m.d.nsync += self.rout.eq( self.minstret & 0xFFFFFFFF )
       # Apply CSR write logic for the lower 32 bits.
@@ -556,6 +565,10 @@ def csr_ut( csr, reg, rin, cf, expected ):
     p += 1
     print( "\033[32mPASS:\033[0m CSR 0x%03X = %s"
            %( reg, hexs( expected ) ) )
+  # Reset rsel, rin, f.
+  yield csr.rsel.eq( 0 )
+  yield csr.rin.eq( 0 )
+  yield csr.f.eq( 0 )
 
 # Perform some basic CSR operation tests on a fully re-writable CSR.
 def csr_rw_ut( csr, reg ):
@@ -665,10 +678,24 @@ def csr_test( csr ):
   # All bits R/W, and reads reflect the previous state.
   yield from csr_rw_ut( csr, CSRA_MSCRATCH )
 
-  # Test reading / writing the 'MCYCLE' CSR.
-  yield from csr_rw_ut( csr, CSRA_MCYCLE )
+  # Test reading / writing the 'MCYCLE' CSR, after resetting it.
+  # Verify that the it counts up every cycle unless it is written to.
+  yield csr.mcycle.eq( 0 )
+  yield from csr_ut( csr, CSRA_MCYCLE, 0x00000000, F_CSRRS,  0x00000000 )
+  yield from csr_ut( csr, CSRA_MCYCLE, 0xFFFFFFFF, F_CSRRSI, 0x00000001 )
+  yield from csr_ut( csr, CSRA_MCYCLE, 0x01234567, F_CSRRC,  0xFFFFFFFF )
+  yield from csr_ut( csr, CSRA_MCYCLE, 0x0C0FFEE0, F_CSRRW,  0xFEDCBA98 )
+  yield from csr_ut( csr, CSRA_MCYCLE, 0xFFFFFCBA, F_CSRRWI, 0x0C0FFEE0 )
+  yield from csr_ut( csr, CSRA_MCYCLE, 0xFFFFFFFF, F_CSRRCI, 0xFFFFFCBA )
+  yield from csr_ut( csr, CSRA_MCYCLE, 0x00000000, F_CSRRC,  0x00000000 )
+  yield from csr_ut( csr, CSRA_MCYCLE, 0x00000000, F_CSRRS,  0x00000001 )
+  yield from csr_ut( csr, CSRA_MCYCLE, 0x00000000, F_CSRRS,  0x00000002 )
+  yield from csr_ut( csr, CSRA_MCYCLE, 0x00000000, F_CSRRS,  0x00000003 )
   # Test reading / writing the 'MCYCLEH' CSR.
   yield from csr_rw_ut( csr, CSRA_MCYCLEH )
+  yield csr.mcycle.eq( 0x00000000FFFFFFFF )
+  yield Tick()
+  yield from csr_ut( csr, CSRA_MCYCLEH, 0x00000000, F_CSRRS,  0x00000001 )
   # Test reading / writing the 'MINSTRET' CSR.
   yield from csr_rw_ut( csr, CSRA_MINSTRET )
   # Test reading / writing the 'MINSTRETH' CSR.

@@ -92,6 +92,13 @@ class CPU( Elaboratable ):
       self.ram.wen.eq( 0 )
     ]
 
+    # Set CSR values to 0 by default.
+    m.d.comb += [
+      self.csr.rin.eq( 0 ),
+      self.csr.rsel.eq( 0 ),
+      self.csr.f.eq( 0 )
+    ]
+
     # Main CPU FSM.
     with m.FSM() as fsm:
       # "Reset state": Wait a few ticks after reset, to let ROM load.

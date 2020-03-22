@@ -1,11 +1,3 @@
-/*
- * RISC-V test header file. Copied from the 'riscv-tests' repository:
- * https://github.com/riscv/riscv-tests
- * This has been modified from the original source file, to remove
- * some startup code which my work-in-progress implementation
- * does not yet support (such as CSR operations).
- */
-
 // See LICENSE for license details.
 
 #ifndef _ENV_PHYSICAL_SINGLE_CORE_H
@@ -104,8 +96,6 @@
   li x30, 0;                                                            \
   li x31, 0;
 
-/* Nope nope nope nope */
-#if 0
 #define INIT_PMP                                                        \
   la t0, 1f;                                                            \
   csrw mtvec, t0;                                                       \
@@ -157,25 +147,6 @@
 #define RISCV_MULTICORE_DISABLE                                         \
   csrr a0, mhartid;                                                     \
   1: bnez a0, 1b
-#endif
-/* Why did they include a bunch of CSR calls in minimal tests
- * which might run before the core is even complete? Oh well. */
-#define INIT_PMP \
-  li a0, 0
-#define INIT_SATP \
-  li a0, 0
-#define DELEGATE_NO_TRAPS \
-  li a0, 0
-#define RVTEST_ENABLE_SUPERVISOR \
-  li a0, 0
-#define RVTEST_ENABLE_MACHINE \
-  li a0, 0
-#define RVTEST_FP_ENABLE \
-  li a0, 0
-#define RVTEST_VECTOR_ENABLE \
-  li a0, 0
-#define RISCV_MULTICORE_DISABLE \
-  li a0, 0
 
 #define EXTRA_TVEC_USER
 #define EXTRA_TVEC_MACHINE
@@ -226,8 +197,6 @@ reset_vector:                                                           \
         INIT_PMP;                                                       \
         DELEGATE_NO_TRAPS;                                              \
         li TESTNUM, 0;                                                  \
-
-#define UNUSED_SYSCALLS \
         la t0, trap_vector;                                             \
         csrw mtvec, t0;                                                 \
         CHECK_XLEN;                                                     \

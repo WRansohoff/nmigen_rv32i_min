@@ -18,9 +18,9 @@ The ALU, CSR, RAM, and ROM Python files each have their own testbench to run som
 
 The CPU module's testbench runs the standard `rv32ui` [`RISC-V` instruction set tests](https://github.com/riscv/riscv-tests) for each operation, compiled with GCC. These tests cover most of the basic `RV32I` instructions, with the exception of `ECALL` and `EBREAK`.
 
-To test `ECALL`, I also included the `RV32SI` `CSR` tests for the most basic 'machine mode' implementation. They pass, but the `ECALL` instruction is still incomplete because I have not implemented all of the core 'machine mode' registers.
+To test `ECALL`, I also included the `RV32SI` `CSR` tests for the most basic 'machine mode' implementation. Even though they currently pass, I haven't implemented all of the core 'machine mode' registers, and the 'ECALL' instruction is incomplete.
 
-I also haven't implemented traps (interrupts and exceptions) yet, and I had to comment out some of the startup code in `riscv_test.h`, or the simulation wouldn't even make it to the start of the tests. So there's still plenty of work to do before this CPU can blink an LED.
+I also haven't implemented traps (interrupts and exceptions) yet, and I'll need to implement some buses before I can add any peripherals. Fortunately, [the `nmigen-soc` repository](https://github.com/nmigen/nmigen-soc) contains a [Wishbone bus implementation](https://opencores.org/howto/wishbone), but I need to do some reading to figure out how that works.
 
 The `tests/rv64ui_tests/` directory contains assembly code for those test cases, copied [from the `isa/` directory of the `riscv-tests` repository](https://github.com/riscv/riscv-tests/tree/master/isa). And the `tests/test_roms/` directory contains auto-generated Python files with corresponding machine code instructions in a format that the CPU testbenches can interpret.
 
@@ -40,7 +40,7 @@ Note: `EBREAK` instructions currently halt or crash the program, depending on yo
 
 `ECALL` instructions are also very incomplete, so these tests only work when the usual startup code is skipped over. And that startup code includes the logic which loads initial RAM values, which means that the 'load' and 'store' tests need to manually set starting RAM values from the `.data` section to pass.
 
-So even though this table of test coverage looks okay, there's plenty more work to do before the design will actually work with real-world programs.
+So even though this table of test coverage looks okay, there's plenty more work to do before this CPU can blink an LED.
 
 | Instruction |   Pass / Fail?   |
 |:-----------:|:----------------:|

@@ -265,7 +265,17 @@ class CPU( Elaboratable ):
             # Loop back without moving the Program Counter.
             m.next = "CPU_PC_ROM_FETCH"
           # "Environment Call" instructions:
-          # Defer to the 'CSR' module for valid 'ECALL' operations.
+          # TODO: Implement trap-management 'ECALL' operations.
+          with m.Elif( self.f == F_TRAPS ):
+            # For now, for the sake of letting the tests run,
+            # halt execution at an 'empty' ECALL.
+            with m.If( ( self.ra == 0 ) &
+                       ( self.rb == 0 ) &
+                       ( self.imm == 0 ) ):
+              m.next = "CPU_PC_ROM_FETCH"
+            with m.Else():
+              m.next = "CPU_PC_LOAD"
+          # Defer to the CSR module for valid 'CSRRx' operations.
           # 'CSRRW': Write value from register to CSR.
           with m.Elif( self.f == F_CSRRW ):
             m.d.comb += [

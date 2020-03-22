@@ -92,6 +92,7 @@ ALU_STRS = {
 # CSR definitions, for 'ECALL' system instructions.
 # Like with other "I-type" instructions, the 'funct3' bits select
 # between different types of environment calls.
+F_TRAPS  = 0b000
 F_CSRRW  = 0b001
 F_CSRRS  = 0b010
 F_CSRRC  = 0b011

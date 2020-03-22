@@ -458,6 +458,9 @@ class CPU( Elaboratable ):
 ##################
 # CPU testbench: #
 ##################
+# Keep track of test pass / fail rates.
+p = 0
+f = 0
 
 # Import test programs and expected runtime register values.
 from programs import *
@@ -465,6 +468,7 @@ from programs import *
 # Helper method to check expected CPU register / memory values
 # at a specific point during a test program.
 def check_vals( expected, ni, cpu ):
+  global p, f
   if ni in expected:
     for j in range( len( expected[ ni ] ) ):
       ex = expected[ ni ][ j ]
@@ -472,10 +476,12 @@ def check_vals( expected, ni, cpu ):
       if ex[ 'r' ] == 'pc':
         cpc = yield cpu.pc
         if hexs( cpc ) == hexs( ex[ 'e' ] ):
+          p += 1
           print( "  \033[32mPASS:\033[0m pc  == %s"
                  " after %d operations"
                  %( hexs( ex[ 'e' ] ), ni ) )
         else:
+          f += 1
           print( "  \033[31mFAIL:\033[0m pc  == %s"
                  " after %d operations (got: %s)"
                  %( hexs( ex[ 'e' ] ), ni, hexs( cpc ) ) )
@@ -483,6 +489,7 @@ def check_vals( expected, ni, cpu ):
       elif type( ex[ 'r' ] ) == str and ex[ 'r' ][ 0:3 ] == "RAM":
         rama = int( ex[ 'r' ][ 3: ] )
         if ( rama % 4 ) != 0:
+          f += 1
           print( "  \033[31mFAIL:\033[0m RAM == %s @ 0x%08X"
                  " after %d operations (mis-aligned address)"
                  %( hexs( ex[ 'e' ] ), rama, ni ) )
@@ -496,10 +503,12 @@ def check_vals( expected, ni, cpu ):
                  ( cpdc << 16 ) |
                  ( cpdd << 24 ) )
           if hexs( cpd ) == hexs( ex[ 'e' ] ):
+            p += 1
             print( "  \033[32mPASS:\033[0m RAM == %s @ 0x%08X"
                    " after %d operations"
                    %( hexs( ex[ 'e' ] ), rama, ni ) )
           else:
+            f += 1
             print( "  \033[31mFAIL:\033[0m RAM == %s @ 0x%08X"
                    " after %d operations (got: %s)"
                    %( hexs( ex[ 'e' ] ), rama, ni, hexs( cpd ) ) )
@@ -507,10 +516,12 @@ def check_vals( expected, ni, cpu ):
       elif ex[ 'r' ] >= 0 and ex[ 'r' ] < 32:
         cr = yield cpu.r[ ex[ 'r' ] ]
         if hexs( cr ) == hexs( ex[ 'e' ] ):
+          p += 1
           print( "  \033[32mPASS:\033[0m r%02d == %s"
                  " after %d operations"
                  %( ex[ 'r' ], hexs( ex[ 'e' ] ), ni ) )
         else:
+          f += 1
           print( "  \033[31mFAIL:\033[0m r%02d == %s"
                  " after %d operations (got: %s)"
                  %( ex[ 'r' ], hexs( ex[ 'e' ] ),
@@ -538,6 +549,7 @@ def cpu_run( cpu, expected ):
       # Check expected values, if any.
       yield from check_vals( expected, ni, cpu )
     elif timeout > 1000:
+      f += 1
       print( "\033[31mFAIL: Timeout\033[0m" )
       break
     elif fsm_state != CPU_PC_ROM_FETCH:
@@ -619,6 +631,7 @@ def cpu_mux_sim( tests ):
 
 # 'main' method to run a basic testbench.
 if __name__ == "__main__":
+  print( '--- CPU Tests ---' )
   # Run auto-generated RV32I tests with a multiplexed ROM module
   # containing a different program for each one.
   # (The CPU gets reset between each program.)
@@ -633,3 +646,6 @@ if __name__ == "__main__":
   cpu_sim( quick_test )
   # Simulate the 'infinite loop test' ROM.
   cpu_sim( loop_test )
+
+  # Done; print results.
+  print( "CPU Tests: %d Passed, %d Failed"%( p, f ) )

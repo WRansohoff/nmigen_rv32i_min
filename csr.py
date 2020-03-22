@@ -70,26 +70,38 @@ class CSR( Elaboratable ):
       m.d.nsync += self.rout.eq( 0x00000000 )
     with m.Elif( self.rsel == CSRA_MSTATUS ):
       # Lower 32 bits of the 'MSTATUS' register.
-      # TODO: Writes.
+      # Supervisor and hypervisor modes are not currently implemented,
+      # So their bits are set to zero. 'MPP' bits are also always equal.
+      # User mode is also not currently implemented, so MPRV = 0.
+      # Since only machine mode is supported, TW = 0.
+      # Since no floating-point extension exists, FS = 0.
+      # Since no user extensions exist, XS = 0.
+      # Since FS = 0 and XS = 0, SD = 0. That doesn't leave many bits :)
       m.d.nsync += self.rout.eq(
-        ( self.mstatus.sie  << 1  ) | ( self.mstatus.mie  << 3  ) |
-        ( self.mstatus.spie << 5  ) | ( self.mstatus.ube  << 6  ) |
-        ( self.mstatus.mpie << 7  ) | ( self.mstatus.spp  << 8  ) |
-        ( self.mstatus.mpp  << 11 ) | ( self.mstatus.fs   << 13 ) |
-        ( self.mstatus.xs   << 15 ) | ( self.mstatus.mprv << 17 ) |
-        ( self.mstatus.sum  << 18 ) | ( self.mstatus.mxr  << 19 ) |
-        ( self.mstatus.tvm  << 20 ) | ( self.mstatus.tw   << 21 ) |
-        ( self.mstatus.tsr  << 22 ) | ( self.mstatus.sd   << 30 ) )
+        ( self.mstatus.mie  << 3  ) | ( self.mstatus.mpie << 7  ) |
+        ( self.mstatus.mpp  << 11 ) )
+      # Apply writes on the next rising clock edge - AFTER reads.
+      # MPIE cannot be written because it is set/reset by hardware.
+      with m.If( ( self.f & 0b11 ) == 0b01 ):
+        # 'Write' - write writable bits from the input field.
+        m.d.sync += self.mstatus.mie.eq( self.rin.bit_select( 3, 1 ) )
+      with m.Elif( ( self.f & 0b11 ) == 0b10 ):
+        # 'Set' - set writable bits from the input value.
+        with m.If( self.rin.bit_select( 3, 1 ) != 0 ):
+          m.d.sync += self.mstatus.mie.eq( 0b1 )
+      with m.Elif( ( self.f & 0b11 ) == 0b11 ):
+        # 'Clear' - reset writable bits from the input value.
+        with m.If( self.rin.bit_select( 3, 1 ) != 0 ):
+          m.d.sync += self.mstatus.mie.eq( 0b0 )
     with m.Elif( self.rsel == CSRA_MSTATUSH ):
       # Upper 32 bits of the 'MSTATUS' register.
-      # TODO: Writes.
-      m.d.nsync += self.rout.eq(
-        ( self.mstatus.sbe << 4 ) | ( self.mstatus.mbe << 5 ) )
+      # Writes are ignored, since none of its fields can be modified.
+      m.d.nsync += self.rout.eq( self.mstatus.mbe << 5 )
     with m.Elif( self.rsel == CSRA_MSCRATCH ):
       # 'MSCRATCH' register, used to store a word of state.
       # Usually this is a memory address for a context to return to.
       m.d.nsync += self.rout.eq( self.mscratch )
-      # Apply writes on the next rising clock edge - AFTER reads.
+      # Apply writes on the next rising clock edge.
       with m.If( ( self.f & 0b11 ) == 0b01 ):
         # 'Write' - set the register to the input value.
         m.d.sync += self.mscratch.eq( self.rin )
@@ -156,25 +168,13 @@ class CSR_MISA( Elaboratable ):
 class CSR_MSTATUS( Elaboratable ):
   def __init__( self ):
     # 'MSTATUS' fields:
-    self.sie  = Signal( 1, reset = 0b0 )
     self.mie  = Signal( 1, reset = 0b0 )
-    self.spie = Signal( 1, reset = 0b0 )
-    self.ube  = Signal( 1, reset = 0b0 )
     self.mpie = Signal( 1, reset = 0b0 )
-    self.spp  = Signal( 1, reset = 0b0 )
-    self.mpp  = Signal( 2, reset = 0b00 )
-    self.fs   = Signal( 2, reset = 0b00 )
-    self.xs   = Signal( 2, reset = 0b00 )
-    self.mprv = Signal( 1, reset = 0b0 )
-    self.sum  = Signal( 1, reset = 0b0 )
-    self.mxr  = Signal( 1, reset = 0b0 )
-    self.tvm  = Signal( 1, reset = 0b0 )
-    self.tw   = Signal( 1, reset = 0b0 )
-    self.tsr  = Signal( 1, reset = 0b0 )
-    self.sd   = Signal( 1, reset = 0b0 )
+    # (Currently, only machine mode is supported.)
+    self.mpp  = MSTATUS_MPP_M
     # 'MSTATUSH' fields:
-    self.sbe  = Signal( 1, reset = 0b0 )
-    self.mbe  = Signal( 1, reset = 0b0 )
+    # (Currently, only little-endian memory access is supported.)
+    self.mbe  = MSTATUS_MBE_LIT
   def elaborate( self, platform ):
     m = Module()
     return m
@@ -239,7 +239,19 @@ def csr_test( csr ):
   yield from csr_ut( csr, CSRA_MHARTID, 0xFFFFFFFF, F_CSRRS, 0 )
   yield from csr_ut( csr, CSRA_MHARTID, 0xFFFFFFFF, F_CSRRC, 0 )
 
-  # TODO: Test reading / writing 'MSTATUS' CSR.
+  # Test reading / writing 'MSTATUS' CSR. (Only 'MIE' can be written)
+  yield from csr_ut( csr, CSRA_MSTATUS, 0xFFFFFFFF, F_CSRRWI, 0x00001800 )
+  yield from csr_ut( csr, CSRA_MSTATUS, 0xFFFFFFFF, F_CSRRCI, 0x00001808 )
+  yield from csr_ut( csr, CSRA_MSTATUS, 0xFFFFFFFF, F_CSRRSI, 0x00001800 )
+  yield from csr_ut( csr, CSRA_MSTATUS, 0x00000000, F_CSRRW, 0x00001808 )
+  yield from csr_ut( csr, CSRA_MSTATUS, 0x00000000, F_CSRRS, 0x00001800 )
+  # Test reading / writing 'MSTATUSH' CSR.
+  yield from csr_ut( csr, CSRA_MSTATUSH, 0x00000000,
+                     F_CSRRWI, ( MSTATUS_MBE_LIT << 5 ) )
+  yield from csr_ut( csr, CSRA_MSTATUSH, 0xFFFFFFFF,
+                     F_CSRRSI, ( MSTATUS_MBE_LIT << 5 ) )
+  yield from csr_ut( csr, CSRA_MSTATUSH, 0xFFFFFFFF,
+                     F_CSRRCI, ( MSTATUS_MBE_LIT << 5 ) )
 
   # Test reading / writing the 'MSCRATCH' CSR.
   # All bits R/W, and reads reflect the previous state.

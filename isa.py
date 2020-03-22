@@ -152,6 +152,17 @@ ARCH_ID         = 0x0C0FFEE0
 # "Machine Implementation" ID. This should be a version number
 # which is associated with your architecture ID.
 MIMP_ID         = 0x00000001
+# MSTATUS mask value:
+MSTATUS_MASK    = 0x0000
+# MSTATUS 'MPP' values: determines the previous privilege
+# mode when an interrupt is called.
+MSTATUS_MPP_U   = 0b00
+MSTATUS_MPP_S   = 0b01
+MSTATUS_MPP_H   = 0b10
+MSTATUS_MPP_M   = 0b11
+# MSTATUS(H) 'MBE' values: determines memory access endianness.
+MSTATUS_MBE_LIT = 0b0
+MSTATUS_MBE_BIG = 0b1
 
 ##############################################################
 # Helper methods to generate machine code for instructions.  #

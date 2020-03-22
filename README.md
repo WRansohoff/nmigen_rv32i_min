@@ -93,3 +93,7 @@ So even though this table of test coverage looks okay, there's plenty more work 
 - `ECALL` and `EBREAK` System calls aren't quite working properly yet.
 
 - The spec does not define behavior when an unspecified opcode is encountered. For now, I'll just skip to incrementing the PC if that happens. But once I implement traps, it might merit raising an exception.
+
+- nMigen has a 'Memory' class which would probably be better than an array of 'Signal' objects for the ROM and RAM modules.
+
+- I should use `signal.to_signed()` instead of if/else checks for sign extension.

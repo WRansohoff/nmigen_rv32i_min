@@ -124,8 +124,23 @@ CSRA_MIP        = 0x344
 CSRA_MTINST     = 0x34A
 CSRA_MTVAL2     = 0x34B
 # Machine memory protection: not impemented
-# Machine counter / timers: not implemented
-# Machine counter setup: not implemented
+# Machine counter / timers:
+CSRA_MCYCLE     = 0xB00
+# TODO: Have the tests check CSRA_MINSTRET and remove 'cpu.fsms'?
+CSRA_MINSTRET         = 0xB02
+# Range of 29 'MHPCOUNTERx' registers (32 low bits).
+CSRA_MHPMCOUNTER_MIN  = 0xB03
+CSRA_MHPMCOUNTER_MAX  = 0xB1F
+CSRA_MCYCLEH          = 0xB80
+CSRA_MINSTRETH        = 0xB82
+# Range of 29 'MHPCOUNTERxH' registers (32 high bits).
+CSRA_MHPMCOUNTERH_MIN = 0xB83
+CSRA_MHPMCOUNTERH_MAX = 0xB9F
+# Machine counter setup:
+CSRA_MCOUNTINHIBIT    = 0x320
+# Range of 29 'MHPEVENTx' registers.
+CSRA_MHPMEVENT_MIN     = 0x323
+CSRA_MHPMEVENT_MAX     = 0x33F
 # Debug / trace registers (Note - no debugging interface exists yet):
 CSRA_TSELECT    = 0x7A0
 CSRA_TDATA1     = 0x7A1

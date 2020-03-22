@@ -11,6 +11,49 @@ from isa import *
 # 'WPRI' = Writes Preserved, Reads Ignored. #
 #############################################
 
+# Helper method to perform CSR write/set/clear logic on a whole
+# 32-bit register.
+def csr_w32( self, csr, reg ):
+  # Apply writes on the next rising clock edge.
+  with csr.If( ( self.f & 0b11 ) == 0b01 ):
+    # 'Write' - set the register to the input value.
+    csr.d.sync += reg.eq( self.rin )
+  with csr.Elif( ( self.f & 0b11 ) == 0b10 ):
+    # 'Set' - set bits which are set in the input value.
+    csr.d.sync += reg.eq( reg | self.rin )
+  with csr.Elif( ( self.f & 0b11 ) == 0b11 ):
+    # 'Clear' - reset bits which are set in the input value.
+    csr.d.sync += reg.eq( reg & ~( self.rin ) )
+
+# Helper method to perform CSR write/set/clear logic on the
+# lower 32 bits of a 64-bit register.
+def csr_w64l( self, csr, reg ):
+  # Apply writes on the next rising clock edge.
+  with csr.If( ( self.f & 0b11 ) == 0b01 ):
+    # 'Write' - set the register to the input value.
+    csr.d.sync += reg.eq( ( reg & 0xFFFFFFFF00000000 ) | self.rin )
+  with csr.Elif( ( self.f & 0b11 ) == 0b10 ):
+    # 'Set' - set bits which are set in the input value.
+    csr.d.sync += reg.eq( reg | self.rin )
+  with csr.Elif( ( self.f & 0b11 ) == 0b11 ):
+    # 'Clear' - reset bits which are set in the input value.
+    csr.d.sync += reg.eq( reg & ~( self.rin ) )
+
+# Helper method to perform CSR write/set/clear logic on the
+# upper 32 bits of a 64-bit register.
+def csr_w64h( self, csr, reg ):
+  # Apply writes on the next rising clock edge.
+  with csr.If( ( self.f & 0b11 ) == 0b01 ):
+    # 'Write' - set the register to the input value.
+    csr.d.sync += reg.eq(
+      ( reg & 0x00000000FFFFFFFF ) | ( self.rin << 32 ) )
+  with csr.Elif( ( self.f & 0b11 ) == 0b10 ):
+    # 'Set' - set bits which are set in the input value.
+    csr.d.sync += reg.eq( reg | ( self.rin << 32 ) )
+  with csr.Elif( ( self.f & 0b11 ) == 0b11 ):
+    # 'Clear' - reset bits which are set in the input value.
+    csr.d.sync += reg.eq( reg & ~( self.rin << 32 ) )
+
 # Core "CSR" class, which contains an instance of each
 # supported CSR class. the 'ECALL' helper methods access it.
 class CSR( Elaboratable ):
@@ -36,6 +79,22 @@ class CSR( Elaboratable ):
     self.mscratch = Signal( 32, reset = 0x00000000 )
     self.mepc     = Signal( 32, reset = 0x00000000 )
     self.mtval    = Signal( 32, reset = 0x00000000 )
+    # Timers and performance monitors. The performance monitors are
+    # cool, there are 29 timers which can be configured to tick up
+    # when arbitrary events occur, and your platform decides what
+    # those events are; each one has a bit in the 'MHPMEVENT'
+    # registers. There are no events yet, so they don't increment.
+    # (Use 64-bit counters for both hi and lo bits.)
+    self.mcycle        = Signal( 64, reset = 0x0000000000000000 )
+    self.minstret      = Signal( 64, reset = 0x0000000000000000 )
+    self.mhpmcounter   = Array(
+      Signal( 64, reset = 0x0000000000000000 ) for i in range( 29 )
+    )
+    self.mcountinhibit = Signal( 32, reset = 0x00000000 )
+    self.mhpevent      = Array(
+      Signal( 32, reset = 0x00000000 ) for i in range( 29 )
+    )
+
   def elaborate( self, platform ):
     m = Module()
     # Register CSR submodules.
@@ -300,16 +359,45 @@ class CSR( Elaboratable ):
       # 'MSCRATCH' register, used to store a word of state.
       # Usually this is a memory address for a context to return to.
       m.d.nsync += self.rout.eq( self.mscratch )
-      # Apply writes on the next rising clock edge.
-      with m.If( ( self.f & 0b11 ) == 0b01 ):
-        # 'Write' - set the register to the input value.
-        m.d.sync += self.mscratch.eq( self.rin )
-      with m.Elif( ( self.f & 0b11 ) == 0b10 ):
-        # 'Set' - set bits which are set in the input value.
-        m.d.sync += self.mscratch.eq( self.mscratch | self.rin )
-      with m.Elif( ( self.f & 0b11 ) == 0b11 ):
-        # 'Clear' - reset bits which are set in the input value.
-        m.d.sync += self.mscratch.eq( self.mscratch & ~( self.rin ) )
+      # Apply CSR write logic for the whole register.
+      csr_w32( self, m, self.mscratch )
+    with m.Elif( self.rsel == CSRA_MCYCLE ):
+      m.d.nsync += self.rout.eq( self.mcycle & 0xFFFFFFFF )
+      # Apply CSR write logic for the lower 32 bits.
+      csr_w64l( self, m, self.mcycle )
+    with m.Elif( self.rsel == CSRA_MCYCLEH ):
+      m.d.nsync += self.rout.eq( self.mcycle >> 32 )
+      # Apply CSR write logic for the upper 32 bits.
+      csr_w64h( self, m, self.mcycle )
+    with m.Elif( self.rsel == CSRA_MINSTRET ):
+      m.d.nsync += self.rout.eq( self.minstret & 0xFFFFFFFF )
+      # Apply CSR write logic for the lower 32 bits.
+      csr_w64l( self, m, self.minstret )
+    with m.Elif( self.rsel == CSRA_MINSTRETH ):
+      m.d.nsync += self.rout.eq( self.minstret >> 32 )
+      # Apply CSR write logic for the upper 32 bits.
+      csr_w64h( self, m, self.minstret )
+    with m.Elif( ( self.rsel >= CSRA_MHPMCOUNTER_MIN ) &
+                 ( self.rsel <= CSRA_MHPMCOUNTER_MAX ) ):
+      m.d.nsync += self.rout.eq(
+        ( self.mhpmcounter[ self.rsel - CSRA_MHPMCOUNTER_MIN ] ) & 0xFFFFFFFF )
+      # Apply CSR write logic for the lower 32 bits.
+      csr_w64l( self, m, self.mhpmcounter[ self.rsel - CSRA_MHPMCOUNTER_MIN ] )
+    with m.Elif( ( self.rsel >= CSRA_MHPMCOUNTERH_MIN ) &
+                 ( self.rsel <= CSRA_MHPMCOUNTERH_MAX ) ):
+      m.d.nsync += self.rout.eq(
+        ( self.mhpmcounter[ self.rsel - CSRA_MHPMCOUNTERH_MIN ] ) >> 32 )
+      # Apply CSR write logic for the upper 32 bits.
+      csr_w64h( self, m, self.mhpmcounter[ self.rsel - CSRA_MHPMCOUNTERH_MIN ] )
+    with m.Elif( self.rsel == CSRA_MCOUNTINHIBIT ):
+      m.d.nsync += self.rout.eq( self.mcountinhibit )
+      # TODO: writes
+    with m.Elif( ( self.rsel >= CSRA_MHPMEVENT_MIN ) &
+                 ( self.rsel <= CSRA_MHPMEVENT_MAX ) ):
+      m.d.nsync += self.rout.eq(
+        self.mhpevent[ self.rsel - CSRA_MHPMEVENT_MIN ] )
+      # Apply CSR write logic for the whole register.
+      csr_w32( self, m, self.mhpevent[ self.rsel - CSRA_MHPMEVENT_MIN ] )
     with m.Else():
       # Return 0 without action for an unrecognized CSR.
       # TODO: Am I supposed to throw an exception or something here?
@@ -469,6 +557,23 @@ def csr_ut( csr, reg, rin, cf, expected ):
     print( "\033[32mPASS:\033[0m CSR 0x%03X = %s"
            %( reg, hexs( expected ) ) )
 
+# Perform some basic CSR operation tests on a fully re-writable CSR.
+def csr_rw_ut( csr, reg ):
+  # 'Set' with rin == 0 reads the value without writing.
+  yield from csr_ut( csr, reg, 0x00000000, F_CSRRS,  0x00000000 )
+  # 'Set Immediate' to set all bits.
+  yield from csr_ut( csr, reg, 0xFFFFFFFF, F_CSRRSI, 0x00000000 )
+  # 'Clear' to reset some bits.
+  yield from csr_ut( csr, reg, 0x01234567, F_CSRRC,  0xFFFFFFFF )
+  # 'Write' to set some bits and reset others.
+  yield from csr_ut( csr, reg, 0x0C0FFEE0, F_CSRRW,  0xFEDCBA98 )
+  # 'Write Immediate' to do the same thing.
+  yield from csr_ut( csr, reg, 0xFFFFFCBA, F_CSRRWI, 0x0C0FFEE0 )
+  # 'Clear Immediate' to clear all bits.
+  yield from csr_ut( csr, reg, 0xFFFFFFFF, F_CSRRCI, 0xFFFFFCBA )
+  # 'Clear' with rin == 0 reads the value without writing.
+  yield from csr_ut( csr, reg, 0x00000000, F_CSRRC,  0x00000000 )
+
 # Top-level CSR test method.
 def csr_test( csr ):
   # Let signals settle after reset.
@@ -558,13 +663,31 @@ def csr_test( csr ):
   yield from csr_ut( csr, CSRA_MEPC, 0x00000000, F_CSRRS,  0x00000000 )
   # Test reading / writing the 'MSCRATCH' CSR.
   # All bits R/W, and reads reflect the previous state.
-  yield from csr_ut( csr, CSRA_MSCRATCH, 0x00000000, F_CSRRS,  0x00000000 )
-  yield from csr_ut( csr, CSRA_MSCRATCH, 0xFFFFFFFF, F_CSRRSI, 0x00000000 )
-  yield from csr_ut( csr, CSRA_MSCRATCH, 0x01234567, F_CSRRC,  0xFFFFFFFF )
-  yield from csr_ut( csr, CSRA_MSCRATCH, 0x0C0FFEE0, F_CSRRW,  0xFEDCBA98 )
-  yield from csr_ut( csr, CSRA_MSCRATCH, 0xFFFFCBA9, F_CSRRW,  0x0C0FFEE0 )
-  yield from csr_ut( csr, CSRA_MSCRATCH, 0xFFFFFFFF, F_CSRRCI, 0xFFFFCBA9 )
-  yield from csr_ut( csr, CSRA_MSCRATCH, 0x00000000, F_CSRRS,  0x00000000 )
+  yield from csr_rw_ut( csr, CSRA_MSCRATCH )
+
+  # Test reading / writing the 'MCYCLE' CSR.
+  yield from csr_rw_ut( csr, CSRA_MCYCLE )
+  # Test reading / writing the 'MCYCLEH' CSR.
+  yield from csr_rw_ut( csr, CSRA_MCYCLEH )
+  # Test reading / writing the 'MINSTRET' CSR.
+  yield from csr_rw_ut( csr, CSRA_MINSTRET )
+  # Test reading / writing the 'MINSTRETH' CSR.
+  yield from csr_rw_ut( csr, CSRA_MINSTRETH )
+  # Test reading / writing some 'MHPMEVENTx' CSRs.
+  yield from csr_rw_ut( csr, CSRA_MHPMEVENT_MIN )
+  yield from csr_rw_ut( csr, CSRA_MHPMEVENT_MIN + 2 )
+  yield from csr_rw_ut( csr, CSRA_MHPMEVENT_MIN + 7 )
+  yield from csr_rw_ut( csr, CSRA_MHPMEVENT_MAX )
+  # Test reading / writing some 'MHPMCOUNTERx' CSRs.
+  yield from csr_rw_ut( csr, CSRA_MHPMCOUNTER_MIN )
+  yield from csr_rw_ut( csr, CSRA_MHPMCOUNTER_MIN + 3 )
+  yield from csr_rw_ut( csr, CSRA_MHPMCOUNTER_MIN + 17 )
+  yield from csr_rw_ut( csr, CSRA_MHPMCOUNTER_MAX )
+  # Test reading / writing some 'MHPMCOUNTERxH' CSRs.
+  yield from csr_rw_ut( csr, CSRA_MHPMCOUNTERH_MIN )
+  yield from csr_rw_ut( csr, CSRA_MHPMCOUNTERH_MIN + 22 )
+  yield from csr_rw_ut( csr, CSRA_MHPMCOUNTERH_MAX - 2 )
+  yield from csr_rw_ut( csr, CSRA_MHPMCOUNTERH_MAX )
 
   # Test an unrecognized CSR.
   yield from csr_ut( csr, 0x101, 0x89ABCDEF, F_CSRRW,  0x00000000 )

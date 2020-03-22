@@ -29,12 +29,14 @@ class CSR( Elaboratable ):
     # Some registers are simple 32-bit R/W words; those are Signals.
     self.misa     = CSR_MISA()
     self.mstatus  = CSR_MSTATUS()
+    self.mtvec    = CSR_MTVEC()
     self.mscratch = Signal( 32, reset = 0x00000000 )
   def elaborate( self, platform ):
     m = Module()
     # Register CSR submodules.
     m.submodules.misa    = self.misa
     m.submodules.mstatus = self.mstatus
+    m.submodules.mtvec   = self.mtvec
 
     # Handle CSR logic.
     with m.If( self.rsel == CSRA_MISA ):
@@ -97,6 +99,32 @@ class CSR( Elaboratable ):
       # Upper 32 bits of the 'MSTATUS' register.
       # Writes are ignored, since none of its fields can be modified.
       m.d.nsync += self.rout.eq( self.mstatus.mbe << 5 )
+    with m.Elif( self.rsel == CSRA_MTVEC ):
+      # 'MTVEC' register, used to store the vector table's
+      # starting address and interrupt mode (vectored or direct).
+      m.d.nsync += self.rout.eq(
+        ( self.mtvec.base << 2 ) | ( self.mtvec.mode ) )
+      # Apply writes on the next rising clock edge.
+      with m.If( ( self.f & 0b11 ) == 0b01 ):
+        # 'Write' - write writable bits from the input field.
+        m.d.sync += self.mtvec.base.eq( self.rin.bit_select( 2, 30 ) )
+        # Ignore modes other than 0, 1.
+        with m.If( self.rin[ 1 ] == 0 ):
+          m.d.sync += self.mtvec.mode.eq( self.rin[ 0 ] )
+      with m.Elif( ( self.f & 0b11 ) == 0b10 ):
+        # 'Set' - set writable bits from the input value.
+        m.d.sync += self.mtvec.base.eq(
+          ( self.rin.bit_select( 2, 30 ) ) | self.mtvec.base )
+        # Ignore modes other than 0, 1.
+        with m.If( ( self.rin[ 1 ] == 0 ) & ( self.rin[ 0 ] == 1 ) ):
+          m.d.sync += self.mtvec.mode.eq( 1 )
+      with m.Elif( ( self.f & 0b11 ) == 0b11 ):
+        # 'Clear' - reset writable bits from the input value.
+        m.d.sync += self.mtvec.base.eq(
+          ~( self.rin.bit_select( 2, 30 ) ) & self.mtvec.base )
+        # Ignore modes other than 0, 1.
+        with m.If( ( self.rin[ 1 ] == 0 ) & ( self.rin[ 0 ] == 1 ) ):
+          m.d.sync += self.mtvec.mode.eq( 0 )
     with m.Elif( self.rsel == CSRA_MSCRATCH ):
       # 'MSCRATCH' register, used to store a word of state.
       # Usually this is a memory address for a context to return to.
@@ -179,6 +207,16 @@ class CSR_MSTATUS( Elaboratable ):
     m = Module()
     return m
 
+# 'MTVEC' CSR. Contains the base vector table address with interrupt
+# handler locations and the current interrupt handling mode.
+class CSR_MTVEC( Elaboratable ):
+  def __init__( self ):
+    self.base = Signal( 30, reset = 0 )
+    self.mode = Signal( 1,  reset = 0 )
+  def elaborate( self, platform ):
+    m = Module()
+    return m
+
 ##################
 # CSR testbench: #
 ##################
@@ -243,8 +281,8 @@ def csr_test( csr ):
   yield from csr_ut( csr, CSRA_MSTATUS, 0xFFFFFFFF, F_CSRRWI, 0x00001800 )
   yield from csr_ut( csr, CSRA_MSTATUS, 0xFFFFFFFF, F_CSRRCI, 0x00001808 )
   yield from csr_ut( csr, CSRA_MSTATUS, 0xFFFFFFFF, F_CSRRSI, 0x00001800 )
-  yield from csr_ut( csr, CSRA_MSTATUS, 0x00000000, F_CSRRW, 0x00001808 )
-  yield from csr_ut( csr, CSRA_MSTATUS, 0x00000000, F_CSRRS, 0x00001800 )
+  yield from csr_ut( csr, CSRA_MSTATUS, 0x00000000, F_CSRRW,  0x00001808 )
+  yield from csr_ut( csr, CSRA_MSTATUS, 0x00000000, F_CSRRS,  0x00001800 )
   # Test reading / writing 'MSTATUSH' CSR.
   yield from csr_ut( csr, CSRA_MSTATUSH, 0x00000000,
                      F_CSRRWI, ( MSTATUS_MBE_LIT << 5 ) )
@@ -252,6 +290,13 @@ def csr_test( csr ):
                      F_CSRRSI, ( MSTATUS_MBE_LIT << 5 ) )
   yield from csr_ut( csr, CSRA_MSTATUSH, 0xFFFFFFFF,
                      F_CSRRCI, ( MSTATUS_MBE_LIT << 5 ) )
+
+  # Test reading / writing 'MTVEC' CSR. (R/W except 'MODE' >= 2)
+  yield from csr_ut( csr, CSRA_MTVEC, 0xFFFFFFFF, F_CSRRWI, 0x00000000 )
+  yield from csr_ut( csr, CSRA_MTVEC, 0xFFFFFFFF, F_CSRRCI, 0xFFFFFFFC )
+  yield from csr_ut( csr, CSRA_MTVEC, 0xFFFFFFFD, F_CSRRSI, 0x00000000 )
+  yield from csr_ut( csr, CSRA_MTVEC, 0x00000001, F_CSRRW,  0xFFFFFFFD )
+  yield from csr_ut( csr, CSRA_MTVEC, 0x00000000, F_CSRRS,  0x00000001 )
 
   # Test reading / writing the 'MSCRATCH' CSR.
   # All bits R/W, and reads reflect the previous state.

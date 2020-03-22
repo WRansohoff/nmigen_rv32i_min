@@ -163,6 +163,11 @@ MSTATUS_MPP_M   = 0b11
 # MSTATUS(H) 'MBE' values: determines memory access endianness.
 MSTATUS_MBE_LIT = 0b0
 MSTATUS_MBE_BIG = 0b1
+# MTVEC 'MODE' values: determines whether each interrupt uses its
+# own handler (vectored), or one common handler is used.
+# This is a two-bit field, but values >= 2 are reserved.
+MTVEC_MODE_VECTORED = 0b1
+MTVEC_MODE_DIRECT   = 0b0
 
 ##############################################################
 # Helper methods to generate machine code for instructions.  #

@@ -31,6 +31,8 @@ class CSR( Elaboratable ):
     self.mstatus  = CSR_MSTATUS()
     self.mtvec    = CSR_MTVEC()
     self.mscratch = Signal( 32, reset = 0x00000000 )
+    self.mepc     = Signal( 32, reset = 0x00000000 )
+    self.mtval    = Signal( 32, reset = 0x00000000 )
   def elaborate( self, platform ):
     m = Module()
     # Register CSR submodules.
@@ -125,6 +127,37 @@ class CSR( Elaboratable ):
         # Ignore modes other than 0, 1.
         with m.If( ( self.rin[ 1 ] == 0 ) & ( self.rin[ 0 ] == 1 ) ):
           m.d.sync += self.mtvec.mode.eq( 0 )
+    with m.Elif( self.rsel == CSRA_MIE ):
+      # 'MIE' register, used to enable individual interrupt channels.
+      # TODO
+      pass
+    with m.Elif( self.rsel == CSRA_MIP ):
+      # 'MIP' register, used to clear interrupt channel 'pending' flags.
+      # TODO
+      pass
+    with m.Elif( self.rsel == CSRA_MCAUSE ):
+      # 'MCAUSE' register, holds the cause of an interrupt or exception.
+      # TODO
+      pass
+    with m.Elif( self.rsel == CSRA_MEPC ):
+      # 'MEPC' register, holds the address which was jumped from when
+      # a trap is entered. Can also be written by software.
+      m.d.nsync += self.rout.eq( self.mepc & 0xFFFFFFFC )
+      # Apply writes on the next rising clock edge.
+      # Bits 0-1 are always zero.
+      with m.If( ( self.f & 0b11 ) == 0b01 ):
+        # 'Write' - write writable bits from the input field.
+        m.d.sync += self.mepc.eq( self.rin & 0xFFFFFFFC )
+      with m.Elif( ( self.f & 0b11 ) == 0b10 ):
+        # 'Set' - set writable bits from the input value.
+        m.d.sync += self.mepc.eq( self.mepc | ( self.rin & 0xFFFFFFFC ) )
+      with m.Elif( ( self.f & 0b11 ) == 0b11 ):
+        # 'Clear' - reset writable bits from the input value.
+        m.d.sync += self.mepc.eq( self.mepc & ~( self.rin ) )
+    with m.Elif( self.rsel == CSRA_MTVAL ):
+      # 'MTVAL' register, holds extra information about a trap.
+      # Possible values depend on the trap.
+      m.d.nsync += self.rout.eq( self.mtval )
     with m.Elif( self.rsel == CSRA_MSCRATCH ):
       # 'MSCRATCH' register, used to store a word of state.
       # Usually this is a memory address for a context to return to.
@@ -298,6 +331,19 @@ def csr_test( csr ):
   yield from csr_ut( csr, CSRA_MTVEC, 0x00000001, F_CSRRW,  0xFFFFFFFD )
   yield from csr_ut( csr, CSRA_MTVEC, 0x00000000, F_CSRRS,  0x00000001 )
 
+  # Test reading / writing the 'MTVAL' CSR. (Should be read-only)
+  yield from csr_ut( csr, CSRA_MHARTID, 0x00000000, F_CSRRW, 0 )
+  yield from csr_ut( csr, CSRA_MHARTID, 0xFFFFFFFF, F_CSRRS, 0 )
+  yield from csr_ut( csr, CSRA_MHARTID, 0xFFFFFFFF, F_CSRRC, 0 )
+
+  # Test reading / writing the 'MEPC' CSR. All bits except 0-1 R/W.
+  yield from csr_ut( csr, CSRA_MEPC, 0x00000000, F_CSRRS,  0x00000000 )
+  yield from csr_ut( csr, CSRA_MEPC, 0xFFFFFFFF, F_CSRRSI, 0x00000000 )
+  yield from csr_ut( csr, CSRA_MEPC, 0x01234567, F_CSRRC,  0xFFFFFFFC )
+  yield from csr_ut( csr, CSRA_MEPC, 0x0C0FFEE0, F_CSRRW,  0xFEDCBA98 )
+  yield from csr_ut( csr, CSRA_MEPC, 0xFFFFCBA9, F_CSRRW,  0x0C0FFEE0 )
+  yield from csr_ut( csr, CSRA_MEPC, 0xFFFFFFFF, F_CSRRCI, 0xFFFFCBA8 )
+  yield from csr_ut( csr, CSRA_MEPC, 0x00000000, F_CSRRS,  0x00000000 )
   # Test reading / writing the 'MSCRATCH' CSR.
   # All bits R/W, and reads reflect the previous state.
   yield from csr_ut( csr, CSRA_MSCRATCH, 0x00000000, F_CSRRS,  0x00000000 )

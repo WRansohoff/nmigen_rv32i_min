@@ -109,8 +109,8 @@ CSRA_MHARTID    = 0xF14
 # Machine trap setup (Note - traps are not implemented yet):
 CSRA_MSTATUS    = 0x300
 CSRA_MISA       = 0x301
-CSRA_MEDELEG    = 0x302
-CSRA_MIDELEG    = 0x303
+CSRA_MEDELEG    = 0x302 # (Does not exist; no S-mode or N-ext)
+CSRA_MIDELEG    = 0x303 # (Does not exist; no S-mode or N-ext)
 CSRA_MIE        = 0x304
 CSRA_MTVEC      = 0x305
 CSRA_MCOUNTEREN = 0x306

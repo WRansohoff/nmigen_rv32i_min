@@ -86,7 +86,9 @@ class CSR( Elaboratable ):
     # registers. There are no events yet, so they don't increment.
     # (Use 64-bit counters for both hi and lo bits.)
     self.mcycle        = Signal( 64, reset = 0x0000000000000000 )
-    self.minstret      = Signal( 64, reset = 0x0000000000000000 )
+    # TODO: 'MINSTRET' starts at -1 because it ticks up before
+    # the first instruction is executed. Not sure if that's kosher.
+    self.minstret      = Signal( 64, reset = 0xFFFFFFFFFFFFFFFF )
     self.mhpmcounter   = Array(
       Signal( 64, reset = 0x0000000000000000 ) for i in range( 29 )
     )
@@ -696,7 +698,8 @@ def csr_test( csr ):
   yield csr.mcycle.eq( 0x00000000FFFFFFFF )
   yield Tick()
   yield from csr_ut( csr, CSRA_MCYCLEH, 0x00000000, F_CSRRS,  0x00000001 )
-  # Test reading / writing the 'MINSTRET' CSR.
+  # Test reading / writing the 'MINSTRET' CSR after clearing it.
+  yield csr.minstret.eq( 0 )
   yield from csr_rw_ut( csr, CSRA_MINSTRET )
   # Test reading / writing the 'MINSTRETH' CSR.
   yield from csr_rw_ut( csr, CSRA_MINSTRETH )

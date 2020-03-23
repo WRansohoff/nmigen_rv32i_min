@@ -651,6 +651,9 @@ def cpu_mux_sim( tests ):
 # 'main' method to run a basic testbench.
 if __name__ == "__main__":
   print( '--- CPU Tests ---' )
+  # Run non-standard CSR tests individually.
+  cpu_sim( mcycle_test )
+  cpu_sim( minstret_test )
   # Run auto-generated RV32I tests with a multiplexed ROM module
   # containing a different program for each one.
   # (The CPU gets reset between each program.)

@@ -614,3 +614,7 @@ rv32i_tests = [ 'RV32I instructions', 'rv32i_tests',
     sub_test, xor_test, xori_test
   ]
 ]
+
+# Non-standard compiled test programs.
+from tests.test_roms.rv32i_mcycle import *
+from tests.test_roms.rv32i_minstret import *

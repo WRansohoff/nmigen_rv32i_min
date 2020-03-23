@@ -82,6 +82,28 @@ So even though this table of test coverage looks okay, there's plenty more work 
 | `XOR`       |:heavy_check_mark:|
 | `XORI`      |:heavy_check_mark:|
 
+# Control and Status Registers
+
+This CPU does not implement User mode, Supervisor mode, or Hypervisor mode. That means all of the code will run in the top-level Machine mode, which still requires a basic subset of the `RISC-V` "Control and Status Registers" (CSRs):
+
+|    CSR Name     | Logic Implemented? |
+|:---------------:|:------------------:|
+| `MISA`          |         :x:        |
+| `MSTATUS`       |         :x:        |
+| `MTVEC`         |         :x:        |
+| `MIE`           |         :x:        |
+| `MIP`           |         :x:        |
+| `MCAUSE`        |         :x:        |
+| `MSCRATCH`      |         :x:        |
+| `MEPC`          |         :x:        |
+| `MTVAL`         |         :x:        |
+| `MCYCLE`        | :heavy_check_mark: |
+| `MINSTRET`      | :heavy_check_mark: |
+| `MHPMCOUNTERx`  |         :x:        |
+| `MHPMCOUNTERxH` |         :x:        |
+| `MCOUNTINHIBIT` |         :x:        |
+| `MHPEVENT`      |         :x:        |
+
 # Notes to Self
 
 - The RISC-V spec says that any instruction ending in `0x0000` is illegal; I should build that into the CPU, but I haven't yet.
@@ -95,3 +117,5 @@ So even though this table of test coverage looks okay, there's plenty more work 
 - nMigen has a 'Memory' class which would probably be better than an array of 'Signal' objects for the ROM and RAM modules.
 
 - I should use `signal.to_signed()` instead of if/else checks for sign extension.
+
+- There's a `Mux(...)` expression which might be able to replace some more of the repetitive 'if/else' logic.

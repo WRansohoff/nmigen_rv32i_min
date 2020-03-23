@@ -92,7 +92,7 @@ class CSR( Elaboratable ):
     self.mhpmcounter   = Array(
       Signal( 64, reset = 0x0000000000000000 ) for i in range( 29 )
     )
-    self.mcountinhibit = Signal( 32, reset = 0x00000000 )
+    self.mcountinhibit = CSR_MCOUNTINHIBIT()
     self.mhpevent      = Array(
       Signal( 32, reset = 0x00000000 ) for i in range( 29 )
     )
@@ -100,15 +100,17 @@ class CSR( Elaboratable ):
   def elaborate( self, platform ):
     m = Module()
     # Register CSR submodules.
-    m.submodules.misa    = self.misa
-    m.submodules.mstatus = self.mstatus
-    m.submodules.mtvec   = self.mtvec
-    m.submodules.mie     = self.mie
-    m.submodules.mip     = self.mip
-    m.submodules.mcause  = self.mcause
+    m.submodules.misa          = self.misa
+    m.submodules.mstatus       = self.mstatus
+    m.submodules.mtvec         = self.mtvec
+    m.submodules.mie           = self.mie
+    m.submodules.mip           = self.mip
+    m.submodules.mcause        = self.mcause
+    m.submodules.mcountinhibit = self.mcountinhibit
 
-    # The 'MCYCLE' CSR increments every clock tick.
-    m.d.sync += self.mcycle.eq( self.mcycle + 1 )
+    # The 'MCYCLE' CSR increments every clock tick unless inhibited.
+    with m.If( self.mcountinhibit.cy == 0 ):
+      m.d.sync += self.mcycle.eq( self.mcycle + 1 )
 
     # Handle CSR read / write logic.
     with m.If( self.rsel == CSRA_MISA ):
@@ -372,14 +374,16 @@ class CSR( Elaboratable ):
       csr_w64l( self, m, self.mcycle )
       # If 'MCYCLE' would not be changed, increment it.
       with m.If( ( ( self.f & 0b10 ) != 0 ) & ( self.rin == 0 ) ):
-        m.d.sync += self.mcycle.eq( self.mcycle + 1 )
+        with m.If( self.mcountinhibit.cy == 0 ):
+          m.d.sync += self.mcycle.eq( self.mcycle + 1 )
     with m.Elif( self.rsel == CSRA_MCYCLEH ):
       m.d.nsync += self.rout.eq( self.mcycle >> 32 )
       # Apply CSR write logic for the upper 32 bits.
       csr_w64h( self, m, self.mcycle )
       # If 'MCYCLE' would not be changed, increment it.
       with m.If( ( ( self.f & 0b10 ) != 0 ) & ( self.rin == 0 ) ):
-        m.d.sync += self.mcycle.eq( self.mcycle + 1 )
+        with m.If( self.mcountinhibit.cy == 0 ):
+          m.d.sync += self.mcycle.eq( self.mcycle + 1 )
     with m.Elif( self.rsel == CSRA_MINSTRET ):
       m.d.nsync += self.rout.eq( self.minstret & 0xFFFFFFFF )
       # Apply CSR write logic for the lower 32 bits.
@@ -401,8 +405,64 @@ class CSR( Elaboratable ):
       # Apply CSR write logic for the upper 32 bits.
       csr_w64h( self, m, self.mhpmcounter[ self.rsel - CSRA_MHPMCOUNTERH_MIN ] )
     with m.Elif( self.rsel == CSRA_MCOUNTINHIBIT ):
-      m.d.nsync += self.rout.eq( self.mcountinhibit )
-      # TODO: writes
+      m.d.nsync += self.rout.eq( self.mcountinhibit.cy |
+        ( self.mcountinhibit.ir << 2 ) |
+        ( self.mcountinhibit.hpm[ 0  ] << 3  ) |
+        ( self.mcountinhibit.hpm[ 1  ] << 4  ) |
+        ( self.mcountinhibit.hpm[ 2  ] << 5  ) |
+        ( self.mcountinhibit.hpm[ 3  ] << 6  ) |
+        ( self.mcountinhibit.hpm[ 4  ] << 7  ) |
+        ( self.mcountinhibit.hpm[ 5  ] << 8  ) |
+        ( self.mcountinhibit.hpm[ 6  ] << 9  ) |
+        ( self.mcountinhibit.hpm[ 7  ] << 10 ) |
+        ( self.mcountinhibit.hpm[ 8  ] << 11 ) |
+        ( self.mcountinhibit.hpm[ 9  ] << 12 ) |
+        ( self.mcountinhibit.hpm[ 10 ] << 13 ) |
+        ( self.mcountinhibit.hpm[ 11 ] << 14 ) |
+        ( self.mcountinhibit.hpm[ 12 ] << 15 ) |
+        ( self.mcountinhibit.hpm[ 13 ] << 16 ) |
+        ( self.mcountinhibit.hpm[ 14 ] << 17 ) |
+        ( self.mcountinhibit.hpm[ 15 ] << 18 ) |
+        ( self.mcountinhibit.hpm[ 16 ] << 19 ) |
+        ( self.mcountinhibit.hpm[ 17 ] << 20 ) |
+        ( self.mcountinhibit.hpm[ 18 ] << 21 ) |
+        ( self.mcountinhibit.hpm[ 19 ] << 22 ) |
+        ( self.mcountinhibit.hpm[ 20 ] << 23 ) |
+        ( self.mcountinhibit.hpm[ 21 ] << 24 ) |
+        ( self.mcountinhibit.hpm[ 22 ] << 25 ) |
+        ( self.mcountinhibit.hpm[ 23 ] << 26 ) |
+        ( self.mcountinhibit.hpm[ 24 ] << 27 ) |
+        ( self.mcountinhibit.hpm[ 25 ] << 28 ) |
+        ( self.mcountinhibit.hpm[ 26 ] << 29 ) |
+        ( self.mcountinhibit.hpm[ 27 ] << 30 ) |
+        ( self.mcountinhibit.hpm[ 28 ] << 31 ) )
+      # Apply writes on the next rising clock edge.
+      with m.If( ( self.f & 0b11 ) == 0b01 ):
+        # 'Write' - write writable bits from the input field.
+        m.d.sync += [
+          self.mcountinhibit.cy.eq( self.rin[ 0 ] ),
+          self.mcountinhibit.ir.eq( self.rin[ 2 ] )
+        ]
+        for i in range( 29 ):
+          m.d.sync += self.mcountinhibit.hpm[ i ].eq( self.rin[ i + 3 ] )
+      with m.Elif( ( self.f & 0b11 ) == 0b10 ):
+        # 'Set' - set writable bits from the input value.
+        with m.If( self.rin[ 0 ] ):
+          m.d.sync += self.mcountinhibit.cy.eq( 1 )
+        with m.If( self.rin[ 2 ] ):
+          m.d.sync += self.mcountinhibit.ir.eq( 1 )
+        for i in range( 29 ):
+          with m.If( self.rin[ i + 3 ] ):
+            m.d.sync += self.mcountinhibit.hpm[ i ].eq( 1 )
+      with m.Elif( ( self.f & 0b11 ) == 0b11 ):
+        # 'Clear' - reset writable bits from the input value.
+        with m.If( self.rin[ 0 ] ):
+          m.d.sync += self.mcountinhibit.cy.eq( 0 )
+        with m.If( self.rin[ 2 ] ):
+          m.d.sync += self.mcountinhibit.ir.eq( 0 )
+        for i in range( 29 ):
+          with m.If( self.rin[ i + 3 ] ):
+            m.d.sync += self.mcountinhibit.hpm[ i ].eq( 0 )
     with m.Elif( ( self.rsel >= CSRA_MHPMEVENT_MIN ) &
                  ( self.rsel <= CSRA_MHPMEVENT_MAX ) ):
       m.d.nsync += self.rout.eq(
@@ -536,6 +596,20 @@ class CSR_MCAUSE( Elaboratable ):
     self.lpf  = Signal( 1, reset = 0b0, reset_less = True )
     # Store page fault.
     self.spf  = Signal( 1, reset = 0b0, reset_less = True )
+  def elaborate( self, platform ):
+    m = Module()
+    return m
+
+# 'MCOUNTINHIBIT' CSR. This enables and disables `MCYCLE`,
+# `MINSTRET`, and `MHPMCOUNTER` counters.
+class CSR_MCOUNTINHIBIT( Elaboratable ):
+  def __init__( self ):
+    # Control bits for `MHPMCOUNTER` counters. (Off after reset)
+    self.hpm = Array( Signal( 1, reset = 0b1 ) for i in range( 29 ) )
+    # Control bit for `MINSTRET`. (On after reset)
+    self.ir  = Signal( 1, reset = 0b0 )
+    # Control bit for `MCYCLE`. (On after reset)
+    self.cy  = Signal( 1, reset = 0b0 )
   def elaborate( self, platform ):
     m = Module()
     return m
@@ -718,6 +792,15 @@ def csr_test( csr ):
   yield from csr_rw_ut( csr, CSRA_MHPMCOUNTERH_MIN + 22 )
   yield from csr_rw_ut( csr, CSRA_MHPMCOUNTERH_MAX - 2 )
   yield from csr_rw_ut( csr, CSRA_MHPMCOUNTERH_MAX )
+  # Test reading / writing the 'MCOUNTINHIBIT' CSR.
+  # All bits can be written except for [1], starts with HPMs disabled.
+  yield from csr_ut( csr, CSRA_MCOUNTINHIBIT, 0xFFFFFFFF, F_CSRRC,  0xFFFFFFF8 )
+  yield from csr_ut( csr, CSRA_MCOUNTINHIBIT, 0xFFFFFFFF, F_CSRRSI, 0x00000000 )
+  yield from csr_ut( csr, CSRA_MCOUNTINHIBIT, 0x01234567, F_CSRRC,  0xFFFFFFFD )
+  yield from csr_ut( csr, CSRA_MCOUNTINHIBIT, 0x0C0FFEE0, F_CSRRW,  0xFEDCBA98 )
+  yield from csr_ut( csr, CSRA_MCOUNTINHIBIT, 0xFFFFFCBA, F_CSRRWI, 0x0C0FFEE0 )
+  yield from csr_ut( csr, CSRA_MCOUNTINHIBIT, 0xFFFFFFFF, F_CSRRCI, 0xFFFFFCB8 )
+  yield from csr_ut( csr, CSRA_MCOUNTINHIBIT, 0x00000000, F_CSRRC,  0x00000000 )
 
   # Test an unrecognized CSR.
   yield from csr_ut( csr, 0x101, 0x89ABCDEF, F_CSRRW,  0x00000000 )

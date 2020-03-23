@@ -86,22 +86,26 @@ So even though this table of test coverage looks okay, there's plenty more work 
 
 This CPU does not implement User mode, Supervisor mode, or Hypervisor mode. That means all of the code will run in the top-level Machine mode, which still requires a basic subset of the `RISC-V` "Control and Status Registers" (CSRs):
 
+Some CSRs don't actually need any logic in a very minimal implementation like this one, even though they usually control parts of the CPU. `MISA` is one example of this; since only the core `RV32I` ISA is supported, it doesn't need to be able to enable different extensions or switch between 32-bit and 64-bit modes.
+
+Other CSRs behave as defined in the specification, but they won't really function properly until I implement traps in the CPU. `MIP` and `MEPC` are examples of this.
+
 |    CSR Name     | Logic Implemented? |
 |:---------------:|:------------------:|
-| `MISA`          |         :x:        |
+| `MISA`          | :heavy_check_mark: |
 | `MSTATUS`       |         :x:        |
 | `MTVEC`         |         :x:        |
 | `MIE`           |         :x:        |
 | `MIP`           |         :x:        |
 | `MCAUSE`        |         :x:        |
-| `MSCRATCH`      |         :x:        |
+| `MSCRATCH`      | :heavy_check_mark: |
 | `MEPC`          |         :x:        |
 | `MTVAL`         |         :x:        |
 | `MCYCLE`        | :heavy_check_mark: |
 | `MINSTRET`      | :heavy_check_mark: |
 | `MHPMCOUNTERx`  |         :x:        |
 | `MHPMCOUNTERxH` |         :x:        |
-| `MCOUNTINHIBIT` |         :x:        |
+| `MCOUNTINHIBIT` | :heavy_check_mark: |
 | `MHPEVENT`      |         :x:        |
 
 # Notes to Self

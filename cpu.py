@@ -119,12 +119,13 @@ class CPU( Elaboratable ):
             self.ram.addr.eq( ( self.pc ) & 0x1FFFFFFF ),
             self.ram.ren.eq( 1 )
           ]
-          # Increment 'MINSTRET' before the next instruction.
-          m.d.comb += [
-            self.csr.rin.eq( self.csr.minstret + 1 ),
-            self.csr.rsel.eq( CSRA_MINSTRET ),
-            self.csr.f.eq( F_CSRRW )
-          ]
+          # Increment 'MINSTRET' unless the counter is inhibited.
+          with m.If( self.csr.mcountinhibit.ir == 0 ):
+            m.d.comb += [
+              self.csr.rin.eq( self.csr.minstret + 1 ),
+              self.csr.rsel.eq( CSRA_MINSTRET ),
+              self.csr.f.eq( F_CSRRW )
+            ]
           # Decode the fetched instruction and move on to run it.
           rv32i_decode( self, m, self.ram.dout )
           m.next = "CPU_PC_DECODE"
@@ -135,12 +136,13 @@ class CPU( Elaboratable ):
           with m.Else():
             # Reset the 'ROM wait-states' counter.
             m.d.sync += rws.eq( 0 )
-            # Increment 'MINSTRET' before the next instruction.
-            m.d.comb += [
-              self.csr.rin.eq( self.csr.minstret + 1 ),
-              self.csr.rsel.eq( CSRA_MINSTRET ),
-              self.csr.f.eq( F_CSRRW )
-            ]
+            # Increment 'MINSTRET' unless the counter is inhibited.
+            with m.If( self.csr.mcountinhibit.ir == 0 ):
+              m.d.comb += [
+                self.csr.rin.eq( self.csr.minstret + 1 ),
+                self.csr.rsel.eq( CSRA_MINSTRET ),
+                self.csr.f.eq( F_CSRRW )
+              ]
             # Decode the fetched instruction and move on to run it.
             rv32i_decode( self, m, self.rom.out )
             m.next = "CPU_PC_DECODE"

@@ -118,8 +118,8 @@ Other CSRs behave as defined in the specification, but they won't really functio
 
 - The spec does not define behavior when an unspecified opcode is encountered. For now, I'll just skip to incrementing the PC if that happens. But once I implement traps, it might merit raising an exception.
 
-- nMigen has a 'Memory' class which would probably be better than an array of 'Signal' objects for the ROM and RAM modules.
-
 - I should use `signal.to_signed()` instead of if/else checks for sign extension.
 
 - There's a `Mux(...)` expression which might be able to replace some more of the repetitive 'if/else' logic.
+
+- Instead of using positive and negative clock edges of the 'sync' domain, I should own up when logic takes more than one tick and split it up between multiple clock cycles.

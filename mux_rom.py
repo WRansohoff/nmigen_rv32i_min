@@ -13,8 +13,8 @@ class MUXROM( Elaboratable ):
     # Collect max / mins from available ROMs.
     max_addr_len = 1
     for rom in roms:
-      if ( len( rom.data ) * 4 ) > max_addr_len:
-        max_addr_len = len( rom.data ) * 4
+      if ( rom.size * 4 ) > max_addr_len:
+        max_addr_len = rom.size * 4
     # 'Select' signal to choose which ROM module to address.
     self.select = Signal( range( len( roms ) ), reset = 0 )
     # 'Address' signal to forward to the appropriate ROM.

@@ -28,10 +28,8 @@ class RAM( Elaboratable ):
     # the way up to 'size - 1' and still work. I'm not sure why,
     # but 'with m.If( ( i + n ) < self.size ):' doesn't seem to
     # work to prevent out-of-bounds byte writes.
-    self.data = Array(
-      Signal( 8, reset = 0x00, name = "ram(0x%08X)"%i )
-      for i in range( self.size + 4 )
-    )
+    self.data = Memory( width = 8, depth = ( self.size + 4 ),
+      init = ( 0x00 for i in range( self.size + 4 ) ) )
 
   def elaborate( self, platform ):
     # Core RAM module.

@@ -89,13 +89,9 @@ class CSR( Elaboratable ):
     # TODO: 'MINSTRET' starts at -1 because it ticks up before
     # the first instruction is executed. Not sure if that's kosher.
     self.minstret      = Signal( 64, reset = 0xFFFFFFFFFFFFFFFF )
-    self.mhpmcounter   = Array(
-      Signal( 64, reset = 0x0000000000000000 ) for i in range( 29 )
-    )
+    self.mhpmcounter   = Memory( width = 64, depth = 29 )
     self.mcountinhibit = CSR_MCOUNTINHIBIT()
-    self.mhpevent      = Array(
-      Signal( 32, reset = 0x00000000 ) for i in range( 29 )
-    )
+    self.mhpevent      = Memory( width = 32, depth = 29 )
 
   def elaborate( self, platform ):
     m = Module()

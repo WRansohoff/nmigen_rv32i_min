@@ -30,10 +30,8 @@ class CPU( Elaboratable ):
     # Intermediate load/store memory pointer.
     self.mp = Signal( 32, reset = 0x00000000 )
     # The main 32 CPU registers.
-    self.r  = Array(
-      Signal( 32, reset = 0x00000000, name = "r%d"%i )
-      for i in range( 32 )
-    )
+    self.r  = Memory( width = 32, depth = 32,
+                      init = ( 0x00000000 for i in range( 32 ) ) )
     # Intermediate instruction and PC storage.
     self.opcode = Signal( 7, reset = 0b0000000 )
     self.f      = Signal( 3, reset = 0b000 )

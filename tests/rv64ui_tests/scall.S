@@ -42,6 +42,9 @@ RVTEST_CODE_BEGIN
   li t1, CAUSE_MACHINE_ECALL
 #endif
 
+# NONSTANDARD: Store t1 to account for automatic context switch.
+csrw sscratch, t1
+
 1:
   li t0, SSTATUS_SPP
   csrc sstatus, t0
@@ -66,6 +69,8 @@ do_scall:
   .align 2
   .global stvec_handler
 stvec_handler:
+  # NONSTANDARD: Reload t1 to account for automatic context switch.
+  csrr t1, sscratch
   csrr t0, scause
   bne t0, t1, fail
   la t2, do_scall

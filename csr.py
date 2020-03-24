@@ -249,96 +249,28 @@ class CSR( Elaboratable ):
       # 'MCAUSE' register, holds the cause of an interrupt or exception.
       # This register can also be written to, but it is WLRL
       # so reserved bits are set to 0.
-      with m.If( self.mcause.int == 0 ):
-        m.d.nsync += self.rout.eq( self.mcause.imis |
-          ( self.mcause.iaf  << 1  ) | ( self.mcause.ill  << 2  ) |
-          ( self.mcause.brk  << 3  ) | ( self.mcause.lmis << 4  ) |
-          ( self.mcause.laf  << 5  ) | ( self.mcause.smis << 6  ) |
-          ( self.mcause.saf  << 7  ) | ( self.mcause.ipf  << 12 ) |
-          ( self.mcause.lpf  << 13 ) | ( self.mcause.spf  << 14 ) )
-      with m.Else():
-        m.d.nsync += self.rout.eq( 0x80000000 |
-          ( self.mcause.ms << 3  ) | ( self.mcause.mt << 7 ) |
-          ( self.mcause.me << 11 ) )
+      m.d.nsync += self.rout.eq(
+        ( self.mcause.int << 31 ) | self.mcause.ec )
       # Apply writes on the next rising clock edge.
       with m.If( ( self.f & 0b11 ) == 0b01 ):
         # 'Write' - write writable bits from the input field.
-        with m.If( self.rin[ 31 ] == 0 ):
-          # Accept writes to exception fields.
-          m.d.sync += [
-            self.mcause.int.eq( 0 ),
-            self.mcause.imis.eq( self.rin[ 0 ] ),
-            self.mcause.iaf.eq( self.rin[ 1 ] ),
-            self.mcause.ill.eq( self.rin[ 2 ] ),
-            self.mcause.brk.eq( self.rin[ 3 ] ),
-            self.mcause.lmis.eq( self.rin[ 4 ] ),
-            self.mcause.laf.eq( self.rin[ 5 ] ),
-            self.mcause.smis.eq( self.rin[ 6 ] ),
-            self.mcause.saf.eq( self.rin[ 7 ] ),
-            self.mcause.ipf.eq( self.rin[ 12 ] ),
-            self.mcause.lpf.eq( self.rin[ 13 ] ),
-            self.mcause.spf.eq( self.rin[ 14 ] ),
-          ]
-        with m.Else():
-          # Accept writes to interrupt fields.
-          m.d.sync += [
-            self.mcause.int.eq( 1 ),
-            self.mcause.ms.eq( self.rin[ 3 ] ),
-            self.mcause.mt.eq( self.rin[ 7 ] ),
-            self.mcause.me.eq( self.rin[ 11 ] )
-          ]
+        m.d.sync += [
+          self.mcause.int.eq( self.rin[ 31 ] ),
+          self.mcause.ec.eq( self.rin.bit_select( 0, 31 ) )
+        ]
       with m.Elif( ( self.f & 0b11 ) == 0b10 ):
         # 'Set' - set writable bits from the input value.
-        with m.If( ( self.rin[ 31 ] == 1 ) |
-                   ( self.mcause.int == 1 ) ):
-          # Set interrupt bits.
-          m.d.sync += [
-            self.mcause.int.eq( 1 ),
-            self.mcause.ms.eq( self.mcause.ms | self.rin[ 3 ] ),
-            self.mcause.mt.eq( self.mcause.ms | self.rin[ 7 ] ),
-            self.mcause.me.eq( self.mcause.ms | self.rin[ 11 ] )
-          ]
-        with m.Else():
-          # Set exception bits.
-          m.d.sync += [
-            self.mcause.imis.eq( self.mcause.imis | self.rin[ 0  ] ),
-            self.mcause.iaf.eq(  self.mcause.iaf  | self.rin[ 1  ] ),
-            self.mcause.ill.eq(  self.mcause.ill  | self.rin[ 2  ] ),
-            self.mcause.brk.eq(  self.mcause.brk  | self.rin[ 3  ] ),
-            self.mcause.lmis.eq( self.mcause.lmis | self.rin[ 4  ] ),
-            self.mcause.laf.eq(  self.mcause.laf  | self.rin[ 5  ] ),
-            self.mcause.smis.eq( self.mcause.smis | self.rin[ 6  ] ),
-            self.mcause.saf.eq(  self.mcause.saf  | self.rin[ 7  ] ),
-            self.mcause.ipf.eq(  self.mcause.ipf  | self.rin[ 12 ] ),
-            self.mcause.lpf.eq(  self.mcause.lpf  | self.rin[ 13 ] ),
-            self.mcause.spf.eq(  self.mcause.spf  | self.rin[ 14 ] )
-          ]
+        # 'Write' - write writable bits from the input field.
+        m.d.sync += [
+          self.mcause.int.eq( Mux( self.rin[ 31 ], 1, self.mcause.int ) ),
+          self.mcause.ec.eq( self.mcause.ec | self.rin.bit_select( 0, 31 ) )
+        ]
       with m.Elif( ( self.f & 0b11 ) == 0b11 ):
         # 'Clear' - reset writable bits from the input value.
-        with m.If( ( self.rin[ 31 ] == 1 ) |
-                   ( self.mcause.int == 0 ) ):
-          # Clear interrupt bits.
-          m.d.sync += [
-            self.mcause.int.eq( 0 ),
-            self.mcause.imis.eq( self.mcause.imis & ~( self.rin[ 0  ] ) ),
-            self.mcause.iaf.eq(  self.mcause.iaf  & ~( self.rin[ 1  ] ) ),
-            self.mcause.ill.eq(  self.mcause.ill  & ~( self.rin[ 2  ] ) ),
-            self.mcause.brk.eq(  self.mcause.brk  & ~( self.rin[ 3  ] ) ),
-            self.mcause.lmis.eq( self.mcause.lmis & ~( self.rin[ 4  ] ) ),
-            self.mcause.laf.eq(  self.mcause.laf  & ~( self.rin[ 5  ] ) ),
-            self.mcause.smis.eq( self.mcause.smis & ~( self.rin[ 6  ] ) ),
-            self.mcause.saf.eq(  self.mcause.saf  & ~( self.rin[ 7  ] ) ),
-            self.mcause.ipf.eq(  self.mcause.ipf  & ~( self.rin[ 12 ] ) ),
-            self.mcause.lpf.eq(  self.mcause.lpf  & ~( self.rin[ 13 ] ) ),
-            self.mcause.spf.eq(  self.mcause.spf  & ~( self.rin[ 14 ] ) )
-          ]
-        with m.Else():
-          # Clear exception bits.
-          m.d.sync += [
-            self.mcause.ms.eq( self.mcause.ms & ~( self.rin[ 3 ] ) ),
-            self.mcause.mt.eq( self.mcause.ms & ~( self.rin[ 7 ] ) ),
-            self.mcause.me.eq( self.mcause.ms & ~( self.rin[ 11 ] ) )
-          ]
+        m.d.sync += [
+          self.mcause.int.eq( Mux( self.rin[ 31 ], 0, self.mcause.int ) ),
+          self.mcause.ec.eq( self.mcause.ec & ~( self.rin.bit_select( 0, 31 ) ) )
+        ]
     with m.Elif( self.rsel == CSRA_MEPC ):
       # 'MEPC' register, holds the address which was jumped from when
       # a trap is entered. Can also be written by software.
@@ -563,35 +495,8 @@ class CSR_MCAUSE( Elaboratable ):
   def __init__( self ):
     # 'Interrupt or exception?' bit.
     self.int = Signal( 1, reset = 0b0 )
-    # Interrupt bits (See 'CSR_MINTS')
-    self.ms = Signal( 1, reset = 0b0 )
-    self.mt = Signal( 1, reset = 0b0 )
-    self.me = Signal( 1, reset = 0b0 )
-    # Exception / reset cause bits:
-    # These should not be reset with the clock domain reset signal,
-    # because one of their uses is to preserve the cause of a reset.
-    # Instruction address misaligned.
-    self.imis = Signal( 1, reset = 0b0, reset_less = True )
-    # Instruction access fault.
-    self.iaf  = Signal( 1, reset = 0b0, reset_less = True )
-    # Illegal instruction.
-    self.ill  = Signal( 1, reset = 0b0, reset_less = True )
-    # Breakpoint.
-    self.brk  = Signal( 1, reset = 0b0, reset_less = True )
-    # Load address misaligned.
-    self.lmis = Signal( 1, reset = 0b0, reset_less = True )
-    # Load access fault.
-    self.laf  = Signal( 1, reset = 0b0, reset_less = True )
-    # Store address misaligned.
-    self.smis = Signal( 1, reset = 0b0, reset_less = True )
-    # Store access fault.
-    self.saf  = Signal( 1, reset = 0b0, reset_less = True )
-    # Instruction page fault.
-    self.ipf  = Signal( 1, reset = 0b0, reset_less = True )
-    # Load page fault.
-    self.lpf  = Signal( 1, reset = 0b0, reset_less = True )
-    # Store page fault.
-    self.spf  = Signal( 1, reset = 0b0, reset_less = True )
+    # 'Exception code' field.
+    self.ec = Signal( 31, reset = 0 )
   def elaborate( self, platform ):
     m = Module()
     return m
@@ -731,12 +636,7 @@ def csr_test( csr ):
   yield from csr_ut( csr, CSRA_MIP, 0xFFFFFFFF, F_CSRRC, 0x00000888 )
   yield from csr_ut( csr, CSRA_MIP, 0x00000000, F_CSRRS, 0x00000000 )
   # Test reading / writing the 'MCAUSE' CSR.
-  yield from csr_ut( csr, CSRA_MCAUSE, 0x7FFFFFFF, F_CSRRW,  0x00000000 )
-  yield from csr_ut( csr, CSRA_MCAUSE, 0xFFFFFFFF, F_CSRRWI, 0x000070FF )
-  yield from csr_ut( csr, CSRA_MCAUSE, 0xFFFFFFFF, F_CSRRC,  0x80000888 )
-  yield from csr_ut( csr, CSRA_MCAUSE, 0x80000000, F_CSRRS,  0x00000000 )
-  yield from csr_ut( csr, CSRA_MCAUSE, 0x7FFFFFFF, F_CSRRCI, 0x80000888 )
-  yield from csr_ut( csr, CSRA_MCAUSE, 0x00000000, F_CSRRSI, 0x80000000 )
+  yield from csr_rw_ut( csr, CSRA_MCAUSE )
 
   # Test reading / writing the 'MEPC' CSR. All bits except 0-1 R/W.
   yield from csr_ut( csr, CSRA_MEPC, 0x00000000, F_CSRRS,  0x00000000 )

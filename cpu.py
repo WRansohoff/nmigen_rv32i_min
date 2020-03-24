@@ -85,6 +85,8 @@ class CPU( Elaboratable ):
 
     # r0 should always be 0.
     m.d.sync += self.r[ 0 ].eq( 0x00000000 )
+    # r32 should always be 0 (r0 in interrupt context)
+    m.d.sync += self.r[ 32 ].eq( 0x00000000 )
     # Set the program counter to the simulated memory addresses
     # by default. Load operations temporarily override this.
     m.d.comb += self.rom.addr.eq( self.pc )
@@ -293,17 +295,16 @@ class CPU( Elaboratable ):
           # "Environment Call" instructions:
           with m.Elif( self.f == F_TRAPS ):
             # An 'empty' ECALL instruction should raise an
-            # 'environment-call-from-M-mode" exception, iff
-            # the interrupt is enabled.
+            # 'environment-call-from-M-mode" exception.
             # TODO: This should really set 'MIP.MS', which should
             # be the real trigger for the 'ENTER_TRAP' state.
             with m.If( ( ( self.ra & 0x1F ) == 0 ) &
                        ( ( self.rc & 0x1F ) == 0 ) &
                        ( self.imm == 0 ) ):
               m.d.comb += [
-                self.csr.rin.eq( 0x80000008 ),
+                self.csr.rin.eq( 0x0000000B ),
                 self.csr.rsel.eq( CSRA_MCAUSE ),
-                self.csr.f.eq( F_CSRRS )
+                self.csr.f.eq( F_CSRRW )
               ]
               with m.If( self.csr.mtvec.mode == MTVEC_MODE_DIRECT ):
                 m.d.nsync += self.pc.eq( self.csr.mtvec.base << 2 )
@@ -495,7 +496,7 @@ class CPU( Elaboratable ):
       with m.State( "CPU_TRAP_ENTER" ):
         m.d.comb += [
           self.fsms.eq( CPU_TRAP_ENTER ),
-          self.csr.rin.eq( self.ipc + 4 ),
+          self.csr.rin.eq( self.ipc ),
           self.csr.rsel.eq( CSRA_MEPC ),
           self.csr.f.eq( F_CSRRW )
         ]
@@ -574,18 +575,19 @@ def check_vals( expected, ni, cpu ):
                    " after %d operations (got: %s)"
                    %( hexs( ex[ 'e' ] ), rama, ni, hexs( cpd ) ) )
       # Numbered general-purpose registers.
-      elif ex[ 'r' ] >= 0 and ex[ 'r' ] < 32:
+      elif ex[ 'r' ] >= 0 and ex[ 'r' ] < 64:
         cr = yield cpu.r[ ex[ 'r' ] ]
+        rn = ex[ 'r' ] if ex[ 'r' ] < 32 else ( ex[ 'r' ] - 32 )
         if hexs( cr ) == hexs( ex[ 'e' ] ):
           p += 1
           print( "  \033[32mPASS:\033[0m r%02d == %s"
                  " after %d operations"
-                 %( ex[ 'r' ], hexs( ex[ 'e' ] ), ni ) )
+                 %( rn, hexs( ex[ 'e' ] ), ni ) )
         else:
           f += 1
           print( "  \033[31mFAIL:\033[0m r%02d == %s"
                  " after %d operations (got: %s)"
-                 %( ex[ 'r' ], hexs( ex[ 'e' ] ),
+                 %( rn, hexs( ex[ 'e' ] ),
                     ni, hexs( cr ) ) )
 
 # Helper method to run a CPU device for a given number of cycles,
@@ -699,7 +701,6 @@ if __name__ == "__main__":
   # Run non-standard CSR tests individually.
   cpu_sim( mcycle_test )
   cpu_sim( minstret_test )
-  cpu_sim( mie_test )
   # Run auto-generated RV32I tests with a multiplexed ROM module
   # containing a different program for each one.
   # (The CPU gets reset between each program.)

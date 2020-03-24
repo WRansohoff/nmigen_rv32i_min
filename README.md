@@ -18,7 +18,7 @@ The ALU, CSR, RAM, and ROM Python files each have their own testbench to run som
 
 The CPU module's testbench runs the standard `rv32ui` [`RISC-V` instruction set tests](https://github.com/riscv/riscv-tests) for each operation, compiled with GCC. These tests cover most of the basic `RV32I` instructions, with the exception of `ECALL` and `EBREAK`.
 
-To test `ECALL`, I also included the `RV32SI` `CSR` tests for the most basic 'machine mode' implementation. Even though they currently pass, I haven't implemented all of the core 'machine mode' registers, and the 'ECALL' instruction is incomplete.
+I also included the `RV32MI` `CSR`, `EBREAK`, and `ECALL` tests for the most basic 'machine mode' implementation. They don't all pass yet, because I still haven't implemented traps properly.
 
 The `tests/rv64ui_tests/` directory contains assembly code for those test cases, copied [from the `isa/` directory of the `riscv-tests` repository](https://github.com/riscv/riscv-tests/tree/master/isa). And the `tests/test_roms/` directory contains auto-generated Python files with corresponding machine code instructions in a format that the CPU testbenches can interpret.
 
@@ -34,7 +34,7 @@ Each test simulation also creates a `.vcd` file containing the waveform results,
 
 # Test Coverage
 
-Note: `EBREAK` instructions currently halt or crash the program, depending on your perspective. And `ECALL` instructions are incomplete, but the basic `CSRRx` and `CSRRxI` operations work well enough to run these 'first stage' tests.
+Note: `EBREAK` instructions currently halt or crash the program, depending on your perspective. And `ECALL` instructions are incomplete, but the basic `CSRRx` and `CSRRxI` operations work well enough to run most of these 'first stage' tests.
 
 I also haven't implemented traps (interrupts and exceptions) yet, and I'll need to implement some buses before I can add any peripherals. Fortunately, [the `nmigen-soc` repository](https://github.com/nmigen/nmigen-soc) contains a [Wishbone bus implementation](https://opencores.org/howto/wishbone), but I need to do some reading to figure out how that works.
 
@@ -42,6 +42,9 @@ So even though this table of test coverage looks okay, there's plenty more work 
 
 | Instruction |   Pass / Fail?   |
 |:-----------:|:----------------:|
+| `MCSR`      |:heavy_check_mark:|
+| `ECALL`     |        :x:       |
+| `EBREAK`    |        :x:       |
 | `ADD`       |:heavy_check_mark:|
 | `ADDI`      |:heavy_check_mark:|
 | `AND`       |:heavy_check_mark:|
@@ -53,7 +56,6 @@ So even though this table of test coverage looks okay, there's plenty more work 
 | `BLT`       |:heavy_check_mark:|
 | `BLTU`      |:heavy_check_mark:|
 | `BNE`       |:heavy_check_mark:|
-| `CSR`       |:heavy_check_mark:|
 | `FENCE`     |:heavy_check_mark:|
 | `JAL`       |:heavy_check_mark:|
 | `JALR`      |:heavy_check_mark:|

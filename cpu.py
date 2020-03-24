@@ -695,6 +695,9 @@ def cpu_mux_sim( tests ):
 # 'main' method to run a basic testbench.
 if __name__ == "__main__":
   print( '--- CPU Tests ---' )
+  cpu_sim( scall_test )
+  cpu_sim( mcsr_test )
+  cpu_sim( sbreak_test )
   # Run non-standard CSR tests individually.
   cpu_sim( mcycle_test )
   cpu_sim( minstret_test )

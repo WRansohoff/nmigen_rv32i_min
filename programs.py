@@ -575,7 +575,6 @@ from tests.test_roms.rv32i_bgeu import *
 from tests.test_roms.rv32i_blt import *
 from tests.test_roms.rv32i_bltu import *
 from tests.test_roms.rv32i_bne import *
-from tests.test_roms.rv32i_csr import *
 from tests.test_roms.rv32i_fence_i import *
 from tests.test_roms.rv32i_jal import *
 from tests.test_roms.rv32i_jalr import *
@@ -603,10 +602,13 @@ from tests.test_roms.rv32i_srli import *
 from tests.test_roms.rv32i_sub import *
 from tests.test_roms.rv32i_xor import *
 from tests.test_roms.rv32i_xori import *
+from tests.test_roms.rv32i_mcsr import *
+from tests.test_roms.rv32i_sbreak import *
+from tests.test_roms.rv32i_scall import *
 rv32i_tests = [ 'RV32I instructions', 'rv32i_tests',
   [
     add_test, addi_test, and_test, andi_test, auipc_test, beq_test,
-    bge_test, bgeu_test, blt_test, bltu_test, bne_test, csr_test,
+    bge_test, bgeu_test, blt_test, bltu_test, bne_test, mcsr_test,
     fence_i_test, jal_test, jalr_test, lb_test, lbu_test, lh_test,
     lhu_test, lw_test, lui_test, or_test, ori_test, sb_test,
     sh_test, sw_test, sll_test, slli_test, slt_test, slti_test,

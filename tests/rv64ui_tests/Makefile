@@ -18,6 +18,7 @@ ASFLAGS += -Wl,-Ttubul.ld
 ASFLAGS += -D__MACHINE_MODE
 
 # Source files.
+# rv64ui
 SRC  = ./add.S
 SRC += ./addi.S
 SRC += ./and.S
@@ -29,7 +30,6 @@ SRC += ./bgeu.S
 SRC += ./blt.S # Mmmm...BLT...
 SRC += ./bltu.S
 SRC += ./bne.S
-SRC += ./csr.S
 SRC += ./fence_i.S
 SRC += ./jal.S
 SRC += ./jalr.S
@@ -57,6 +57,10 @@ SRC += ./sub.S
 SRC += ./sw.S
 SRC += ./xor.S
 SRC += ./xori.S
+# rv64mi
+SRC += ./mcsr.S
+SRC += ./sbreak.S
+SRC += ./scall.S
 # Non-standard test files.
 SRC += ./mcycle.S
 SRC += ./minstret.S

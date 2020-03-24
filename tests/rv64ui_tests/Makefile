@@ -60,6 +60,7 @@ SRC += ./xori.S
 # Non-standard test files.
 SRC += ./mcycle.S
 SRC += ./minstret.S
+SRC += ./mie.S
 
 # Binary images to build.
 OBJS = $(SRC:.S=.o)

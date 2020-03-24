@@ -99,6 +99,10 @@ F_CSRRC  = 0b011
 F_CSRRWI = 0b101
 F_CSRRSI = 0b110
 F_CSRRCI = 0b111
+# Definitions for non-CSR 'ECALL' system instructions. These seem to
+# use the whole 12-bit immediate to encode their functionality.
+IMM_MRET = 0x302
+IMM_WFI  = 0x105
 # CSR Addresses for the supported subste of 'Machine-Level ISA' CSRs.
 # (Supervisor and Hypervisor CSRs are not implemented.)
 # Machine information registers:

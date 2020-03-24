@@ -20,7 +20,9 @@ CPU_PC_LOAD      = 1
 CPU_PC_ROM_FETCH = 2
 CPU_PC_DECODE    = 3
 CPU_LD           = 4
-CPU_STATES_MAX   = 4
+CPU_TRAP_ENTER   = 5
+CPU_TRAP_EXIT    = 6
+CPU_STATES_MAX   = 6
 
 # CPU module.
 class CPU( Elaboratable ):
@@ -277,7 +279,7 @@ class CPU( Elaboratable ):
           # debugging interface yet. And apparently compilers sometimes
           # use this instruction to mark invalid code paths, so...yeah.
           with m.If( ( self.ra  == 0 )
-                   & ( self.rb  == 0 )
+                   & ( self.rc  == 0 )
                    & ( self.f   == 0 )
                    & ( self.imm == 0x001 ) ):
             # Read PC from RAM if the address is in that memory space.
@@ -289,14 +291,35 @@ class CPU( Elaboratable ):
             # Loop back without moving the Program Counter.
             m.next = "CPU_PC_ROM_FETCH"
           # "Environment Call" instructions:
-          # TODO: Implement trap-management 'ECALL' operations.
           with m.Elif( self.f == F_TRAPS ):
-            # For now, for the sake of letting the tests run,
-            # halt execution at an 'empty' ECALL.
+            # An 'empty' ECALL instruction should raise an
+            # 'environment-call-from-M-mode" exception, iff
+            # the interrupt is enabled.
+            # TODO: This should really set 'MIP.MS', which should
+            # be the real trigger for the 'ENTER_TRAP' state.
             with m.If( ( self.ra == 0 ) &
                        ( self.rb == 0 ) &
-                       ( self.imm == 0 ) ):
-              m.next = "CPU_PC_ROM_FETCH"
+                       ( self.imm == 0 ) &
+                       ( self.csr.mstatus.mie == 1 ) &
+                       ( self.csr.mie.ms == 1 ) ):
+              m.d.comb += [
+                self.csr.rin.eq( 0x80000008 ),
+                self.csr.rsel.eq( CSRA_MCAUSE ),
+                self.csr.f.eq( F_CSRRS )
+              ]
+              with m.If( self.csr.mtvec.mode == MTVEC_MODE_DIRECT ):
+                m.d.nsync += self.pc.eq( self.csr.mtvec.base << 2 )
+              with m.Else():
+                m.d.nsync += self.pc.eq( ( self.csr.mtvec.base + 3 ) << 2 )
+              m.next = "CPU_TRAP_ENTER"
+            # 'MTRET' should return from an interrupt context.
+            # For now, just skip to the next instruction if it
+            # occurs outside of an interrupt.
+            with m.Elif( self.imm == IMM_MRET ):
+              with m.If( self.irq == 1 ):
+                m.next = "CPU_TRAP_EXIT"
+              with m.Else():
+                m.next = "CPU_PC_LOAD"
             with m.Else():
               m.next = "CPU_PC_LOAD"
           # Defer to the CSR module for valid 'CSRRx' operations.
@@ -470,6 +493,22 @@ class CPU( Elaboratable ):
               m.d.sync += self.r[ self.rc ].eq(
                 ( self.rom.out & 0xFFFF ) )
         m.next = "CPU_PC_LOAD"
+      # "Trap Entry" - update PC and EPC CSR, and context switch.
+      with m.State( "CPU_TRAP_ENTER" ):
+        m.d.comb += [
+          self.fsms.eq( CPU_TRAP_ENTER ),
+          self.csr.rin.eq( self.ipc + 4 ),
+          self.csr.rsel.eq( CSRA_MEPC ),
+          self.csr.f.eq( F_CSRRW )
+        ]
+        m.d.sync += self.irq.eq( 1 )
+        m.next = "CPU_PC_ROM_FETCH"
+      # "Trap Exit" - update PC and context switch.
+      with m.State( "CPU_TRAP_EXIT" ):
+        m.d.comb += self.fsms.eq( CPU_TRAP_EXIT )
+        m.d.sync += self.irq.eq( 0 )
+        m.d.nsync += self.pc.eq( self.csr.mepc ),
+        m.next = "CPU_PC_ROM_FETCH"
       # "PC Load Letter" - increment the PC.
       with m.State( "CPU_PC_LOAD" ):
         m.d.comb += self.fsms.eq( CPU_PC_LOAD ) # TODO: Remove
@@ -659,6 +698,7 @@ if __name__ == "__main__":
   # Run non-standard CSR tests individually.
   cpu_sim( mcycle_test )
   cpu_sim( minstret_test )
+  cpu_sim( mie_test )
   # Run auto-generated RV32I tests with a multiplexed ROM module
   # containing a different program for each one.
   # (The CPU gets reset between each program.)

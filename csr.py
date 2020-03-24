@@ -110,7 +110,7 @@ class CSR( Elaboratable ):
 
     # Handle CSR read / write logic.
     with m.If( self.rsel == CSRA_MISA ):
-      # MISA is 'WARL', so ignore writes.
+      # MISA is 'WARL' with no configurable values, so ignore writes.
       m.d.nsync += self.rout.eq( ( self.misa.mxl << 30 ) |
           ( self.misa.z << 25 ) | ( self.misa.y << 24 ) |
           ( self.misa.x << 23 ) | ( self.misa.w << 22 ) |

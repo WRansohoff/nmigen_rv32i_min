@@ -11,3 +11,7 @@ There are also a few tests which are not part of the standard `riscv-tests` file
 * mcycle.S
 
 * minstret.S
+
+* mie.S
+
+Finally, I changed the last `ecall` instructions to `ebreak`s in `riscv_test.h`, because it looks like the tests disable all interrupts before they run. I could be reading the specification wrong, though.

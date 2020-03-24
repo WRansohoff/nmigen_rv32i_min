@@ -11,8 +11,8 @@ import sys
 od = 'riscv32-unknown-elf-objdump'
 test_path = "%s/"%( os.path.dirname( sys.argv[ 0 ] ) )
 
-# Helper method to get raw hex out of an object file's `.text`
-# section. This basically returns the compiled machine code for one
+# Helper method to get raw hex out of an object file memory section
+# This basically returns the compiled machine code for one
 # of the RISC-V assembly test files.
 def get_section_hex( op, sect ):
   hdump = subprocess.run( [ od, '-s', '-j', sect,

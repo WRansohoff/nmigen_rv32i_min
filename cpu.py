@@ -29,16 +29,21 @@ class CPU( Elaboratable ):
     self.pc = Signal( 32, reset = 0x00000000 )
     # Intermediate load/store memory pointer.
     self.mp = Signal( 32, reset = 0x00000000 )
-    # The main 32 CPU registers.
-    self.r  = Memory( width = 32, depth = 32,
+    # The main 32 CPU registers for 'normal' and 'interrupt' contexts.
+    # I don't think that the base specification includes priority
+    # levels, so for now, we only need one extra set of registers
+    # to handle context-switching in hardware.
+    self.r  = Memory( width = 32, depth = 64,
                       init = ( 0x00000000 for i in range( 32 ) ) )
+    # CPU context flag; toggles 'normal' and 'interrupt' registers.
+    self.irq    = Signal( 1, reset = 0b0 )
     # Intermediate instruction and PC storage.
     self.opcode = Signal( 7, reset = 0b0000000 )
     self.f      = Signal( 3, reset = 0b000 )
     self.ff     = Signal( 7, reset = 0b0000000 )
-    self.ra     = Signal( 5, reset = 0b00000 )
-    self.rb     = Signal( 5, reset = 0b00000 )
-    self.rc     = Signal( 5, reset = 0b00000 )
+    self.ra     = Signal( 6, reset = 0b000000 )
+    self.rb     = Signal( 6, reset = 0b000000 )
+    self.rc     = Signal( 6, reset = 0b000000 )
     self.imm    = Signal( shape = Shape( width = 32, signed = True ),
                           reset = 0x00000000 )
     self.ipc    = Signal( 32, reset = 0x00000000 )

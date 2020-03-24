@@ -156,9 +156,9 @@ def rv32i_decode( self, cpu, instr ):
     self.opcode.eq( instr.bit_select( 0, 7 ) ),
     self.rc.eq( instr.bit_select( 7,  5 ) ),
     self.f.eq( instr.bit_select( 12, 3 ) ),
-    self.ra.eq( instr.bit_select( 15, 5 ) ),
-    self.rb.eq( instr.bit_select( 20, 5 ) ),
-    self.ff.eq( instr.bit_select( 25, 7 ) ),
+    self.ra.eq( ( instr.bit_select( 15, 5 ) ) | ( self.irq << 5 ) ),
+    self.rb.eq( ( instr.bit_select( 20, 5 ) ) | ( self.irq << 5 ) ),
+    self.ff.eq( ( instr.bit_select( 25, 7 ) ) | ( self.irq << 5 ) ),
     self.ipc.eq( self.pc )
   ]
 

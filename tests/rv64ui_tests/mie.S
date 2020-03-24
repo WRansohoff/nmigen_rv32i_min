@@ -14,22 +14,6 @@
 RVTEST_RV64U
 RVTEST_CODE_BEGIN
 
-  # Test that a trap cannot be triggered by software while
-  # interrupts are disabled globally.
-  csrw mscratch, x0
-  ecall
-  TEST_CASE(2, a3, 0x00000000, csrr a3, mscratch)
-
-  # Set the 'MSTATUS.MIE' bit to enable interrupts globally.
-  li a0, MSTATUS_MIE
-  csrs mstatus, a0
-  # Set the 'MIE.MS' bit to enable machine-mode software traps.
-  li a0, 0x00000008
-  csrs mie, a0
-  # Test that the bits were actually set.
-  TEST_CASE(3, a3, MSTATUS_MIE, csrr a3, mstatus; and a3, a3, a0)
-  TEST_CASE(4, a3, 0x00000008, csrr a3, mie)
-
   # Write a value to 'a1' before triggering an exception.
   # The exception will write to 'a1' too, but this CPU should
   # contain logic to automatically save and restore its registers.
@@ -40,11 +24,11 @@ RVTEST_CODE_BEGIN
   csrw mscratch, x0
   ecall
   # Verify that the interrupt occurred by reading MSCRATCH.
-  TEST_CASE(5, a3, 0x0C0FFEE0, csrr a3, mscratch)
+  TEST_CASE(2, a3, 0x0C0FFEE0, csrr a3, mscratch)
   # Ensure that the CPU switched contexts entering/exiting the trap.
   # Again, this is NOT required by the RISC-V spec; I'm just
   # testing the behavior for this implementation.
-  TEST_CASE(6, a1, 0xDEADBEEF, nop)
+  TEST_CASE(3, a1, 0xDEADBEEF, nop)
 
   TEST_PASSFAIL
 

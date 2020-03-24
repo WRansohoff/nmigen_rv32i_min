@@ -96,12 +96,12 @@ Other CSRs behave as defined in the specification, but they won't really functio
 |:---------------:|:------------------:|
 | `MISA`          | :heavy_check_mark: |
 | `MSTATUS`       |         :x:        |
-| `MTVEC`         |         :x:        |
+| `MTVEC`         | :heavy_check_mark: |
 | `MIE`           |         :x:        |
 | `MIP`           |         :x:        |
 | `MCAUSE`        |         :x:        |
 | `MSCRATCH`      | :heavy_check_mark: |
-| `MEPC`          |         :x:        |
+| `MEPC`          | :heavy_check_mark: |
 | `MTVAL`         |         :x:        |
 | `MCYCLE`        | :heavy_check_mark: |
 | `MINSTRET`      | :heavy_check_mark: |

@@ -157,17 +157,17 @@ class CPU( Elaboratable ):
         m.d.comb += self.fsms.eq( CPU_PC_DECODE ) #TODO: Remove
         # "Load Upper Immediate" instruction:
         with m.If( self.opcode == OP_LUI ):
-          with m.If( self.rc > 0 ):
+          with m.If( ( self.rc & 0x1F ) > 0 ):
             m.d.sync += self.r[ self.rc ].eq( self.imm )
           m.next = "CPU_PC_LOAD"
         # "Add Upper Immediate to PC" instruction:
         with m.Elif( self.opcode == OP_AUIPC ):
-          with m.If( self.rc > 0 ):
+          with m.If( ( self.rc & 0x1F ) > 0 ):
             m.d.sync += self.r[ self.rc ].eq( self.imm + self.ipc )
           m.next = "CPU_PC_LOAD"
         # "Jump And Link" instruction:
         with m.Elif( self.opcode == OP_JAL ):
-          with m.If( self.rc > 0 ):
+          with m.If( ( self.rc & 0x1F ) > 0 ):
             m.d.sync += self.r[ self.rc ].eq( self.ipc + 4 )
           jump_to( self, m, ( self.ipc + self.imm ) )
           m.next = "CPU_PC_ROM_FETCH"
@@ -176,7 +176,7 @@ class CPU( Elaboratable ):
         with m.Elif( self.opcode == OP_JALR ):
           jump_to( self, m,
                    ( self.r[ self.ra ] + self.imm ) & 0xFFFFFFFE )
-          with m.If( self.rc > 0 ):
+          with m.If( ( self.rc & 0x1F ) > 0 ):
             m.d.sync += self.r[ self.rc ].eq( self.ipc + 4 )
           m.next = "CPU_PC_ROM_FETCH"
         # "Conditional Branch" instructions:
@@ -278,8 +278,8 @@ class CPU( Elaboratable ):
           # control of the program to a debugger, but this CPU has no
           # debugging interface yet. And apparently compilers sometimes
           # use this instruction to mark invalid code paths, so...yeah.
-          with m.If( ( self.ra  == 0 )
-                   & ( self.rc  == 0 )
+          with m.If( ( ( self.ra & 0x1F )  == 0 )
+                   & ( ( self.rc & 0x1F ) == 0 )
                    & ( self.f   == 0 )
                    & ( self.imm == 0x001 ) ):
             # Read PC from RAM if the address is in that memory space.
@@ -297,11 +297,9 @@ class CPU( Elaboratable ):
             # the interrupt is enabled.
             # TODO: This should really set 'MIP.MS', which should
             # be the real trigger for the 'ENTER_TRAP' state.
-            with m.If( ( self.ra == 0 ) &
-                       ( self.rb == 0 ) &
-                       ( self.imm == 0 ) &
-                       ( self.csr.mstatus.mie == 1 ) &
-                       ( self.csr.mie.ms == 1 ) ):
+            with m.If( ( ( self.ra & 0x1F ) == 0 ) &
+                       ( ( self.rc & 0x1F ) == 0 ) &
+                       ( self.imm == 0 ) ):
               m.d.comb += [
                 self.csr.rin.eq( 0x80000008 ),
                 self.csr.rsel.eq( CSRA_MCAUSE ),
@@ -331,7 +329,7 @@ class CPU( Elaboratable ):
               self.csr.f.eq( F_CSRRW )
             ]
             # Only read result if destination register is not r0.
-            with m.If( self.rc > 0 ):
+            with m.If( ( self.rc & 0x1F ) > 0 ):
               m.d.sync += self.r[ self.rc ].eq( self.csr.rout )
             m.next = "CPU_PC_LOAD"
           # 'CSRRS' set specified bits in a CSR from a register.
@@ -343,7 +341,7 @@ class CPU( Elaboratable ):
             ]
             # Read side effects should still occur if destination
             # is r0, but the value should not be written back.
-            with m.If( self.rc > 0 ):
+            with m.If( ( self.rc & 0x1F ) > 0 ):
               m.d.sync += self.r[ self.rc ].eq( self.csr.rout )
             m.next = "CPU_PC_LOAD"
           # 'CSRRC' clear specified bits in a CSR from a register.
@@ -355,7 +353,7 @@ class CPU( Elaboratable ):
             ]
             # Read side effects should still occur if destination
             # is r0, but the value should not be written back.
-            with m.If( self.rc > 0 ):
+            with m.If( ( self.rc & 0x1F ) > 0 ):
               m.d.sync += self.r[ self.rc ].eq( self.csr.rout )
             m.next = "CPU_PC_LOAD"
           # Note: 'CSRRxI' operations treat the 'rs1' / 'ra'
@@ -367,11 +365,11 @@ class CPU( Elaboratable ):
               self.csr.f.eq( F_CSRRWI )
             ]
             with m.If( self.ra[ 4 ] != 0 ):
-              m.d.comb += self.csr.rin.eq( 0xFFFFFFE0 | self.ra )
+              m.d.comb += self.csr.rin.eq( 0xFFFFFFE0 | ( self.ra & 0x1F ) )
             with m.Else():
-              m.d.comb += self.csr.rin.eq( self.ra )
+              m.d.comb += self.csr.rin.eq( ( self.ra & 0x1F ) )
             # Only read result if destination register is not r0.
-            with m.If( self.rc > 0 ):
+            with m.If( ( self.rc & 0x1F ) > 0 ):
               m.d.sync += self.r[ self.rc ].eq( self.csr.rout )
             m.next = "CPU_PC_LOAD"
           # 'CSRRSI' set immediate bits in a CSR.
@@ -381,12 +379,12 @@ class CPU( Elaboratable ):
               self.csr.f.eq( F_CSRRSI )
             ]
             with m.If( self.ra[ 4 ] != 0 ):
-              m.d.comb += self.csr.rin.eq( 0xFFFFFFE0 | self.ra )
+              m.d.comb += self.csr.rin.eq( 0xFFFFFFE0 | ( self.ra & 0x1F ) )
             with m.Else():
-              m.d.comb += self.csr.rin.eq( self.ra )
+              m.d.comb += self.csr.rin.eq( ( self.ra & 0x1F ) )
             # Read side effects should still occur if destination
             # is r0, but the value should not be written back.
-            with m.If( self.rc > 0 ):
+            with m.If( ( self.rc & 0x1F )> 0 ):
               m.d.sync += self.r[ self.rc ].eq( self.csr.rout )
             m.next = "CPU_PC_LOAD"
           # 'CSRRCI' clear immediate bits in a CSR.
@@ -396,12 +394,12 @@ class CPU( Elaboratable ):
               self.csr.f.eq( F_CSRRCI )
             ]
             with m.If( self.ra[ 4 ] != 0 ):
-              m.d.comb += self.csr.rin.eq( 0xFFFFFFE0 | self.ra )
+              m.d.comb += self.csr.rin.eq( 0xFFFFFFE0 | ( self.ra & 0x1F ) )
             with m.Else():
-              m.d.comb += self.csr.rin.eq( self.ra )
+              m.d.comb += self.csr.rin.eq( ( self.ra & 0x1F ) )
             # Read side effects should still occur if destination
             # is r0, but the value should not be written back.
-            with m.If( self.rc > 0 ):
+            with m.If( ( self.rc & 0x1F ) > 0 ):
               m.d.sync += self.r[ self.rc ].eq( self.csr.rout )
             m.next = "CPU_PC_LOAD"
           # Halt execution at an unrecognized 'SYSTEM' instruction.
@@ -437,7 +435,7 @@ class CPU( Elaboratable ):
           m.d.comb += self.rom.addr.eq( self.mp )
         # "Load Byte" operation:
         with m.If( self.f == F_LB ):
-          with m.If( self.rc > 0 ):
+          with m.If( ( self.rc & 0x1F ) > 0 ):
             with m.If( ( self.mp & 0xE0000000 ) == 0x20000000 ):
               with m.If( self.ram.dout[ 7 ] ):
                 m.d.sync += self.r[ self.rc ].eq(
@@ -454,7 +452,7 @@ class CPU( Elaboratable ):
                   ( self.rom.out & 0xFF ) )
         # "Load Halfword" operation:
         with m.Elif( self.f == F_LH ):
-          with m.If( self.rc > 0 ):
+          with m.If( ( self.rc & 0x1F ) > 0 ):
             with m.If( ( self.mp & 0xE0000000 ) == 0x20000000 ):
               with m.If( self.ram.dout[ 15 ] ):
                 m.d.sync += self.r[ self.rc ].eq(
@@ -471,21 +469,21 @@ class CPU( Elaboratable ):
                   ( self.rom.out & 0xFFFF ) )
         # "Load Word" operation:
         with m.Elif( self.f == F_LW ):
-          with m.If( self.rc > 0 ):
+          with m.If( ( self.rc & 0x1F ) > 0 ):
             with m.If( ( self.mp & 0xE0000000 ) == 0x20000000 ):
               m.d.sync += self.r[ self.rc ].eq( self.ram.dout )
             with m.Else():
               m.d.sync += self.r[ self.rc ].eq( self.rom.out )
         # "Load Byte" (without sign extension) operation:
         with m.Elif( self.f == F_LBU ):
-          with m.If( self.rc > 0 ):
+          with m.If( ( self.rc & 0x1F ) > 0 ):
             with m.If( ( self.mp & 0xE0000000 ) == 0x20000000 ):
               m.d.sync += self.r[ self.rc ].eq( self.ram.dout & 0xFF )
             with m.Else():
               m.d.sync += self.r[ self.rc ].eq( self.rom.out & 0xFF )
         # "Load Halfword" (without sign extension) operation:
         with m.Elif( self.f == F_LHU ):
-          with m.If( self.rc > 0 ):
+          with m.If( ( self.rc & 0x1F ) > 0 ):
             with m.If( ( self.mp & 0xE0000000 ) == 0x20000000 ):
               m.d.sync += self.r[ self.rc ].eq(
                 ( self.ram.dout & 0xFFFF ) )

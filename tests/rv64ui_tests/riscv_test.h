@@ -237,8 +237,7 @@ reset_vector:                                                           \
         li TESTNUM, 1;                                                  \
         li a7, 93;                                                      \
         li a0, 0;                                                       \
-        ebreak
-// NOTE: The last instruction is 'ecall' in the official test repo.
+        ecall
 
 #define TESTNUM gp
 #define RVTEST_FAIL                                                     \
@@ -248,8 +247,7 @@ reset_vector:                                                           \
         or TESTNUM, TESTNUM, 1;                                         \
         li a7, 93;                                                      \
         addi a0, TESTNUM, 0;                                            \
-        ebreak
-// NOTE: The last instruction is 'ecall' in the official test repo.
+        ecall
 
 //-----------------------------------------------------------------------
 // Data Section Macro

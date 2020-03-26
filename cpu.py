@@ -52,7 +52,7 @@ class CPU( Elaboratable ):
                           reset = 0x00000000 )
     self.ipc    = Signal( 32, reset = 0x00000000 )
     # ROM wait states.
-    self.ws     = Signal( 3, reset = 0b000 )
+    self.ws     = Signal( 3, reset = 0b001 )
     # CSR access wait states.
     self.cws    = Signal( 2, reset = 0b00 )
     # The ALU submodule which performs logical operations.
@@ -181,12 +181,10 @@ class CPU( Elaboratable ):
         # TODO: Should these defer to the ALU for compare operations?
         with m.Elif( self.opcode == OP_BRANCH ):
           # "Branch if EQual" operation:
-          with m.If( self.f == F_BEQ ):
-            with m.If( self.r[ self.ra ] == self.r[ self.rb ] ):
+          with m.If( ( self.f == F_BEQ ) &
+                     ( self.r[ self.ra ] == self.r[ self.rb ] ) ):
               jump_to( self, m, ( self.ipc + self.imm ) )
               m.next = "CPU_PC_ROM_FETCH"
-            with m.Else():
-              m.next = "CPU_PC_LOAD"
           # "Branch if Not Equal" operation:
           with m.Elif( ( self.f == F_BNE ) &
                        ( self.r[ self.ra ] != self.r[ self.rb ] ) ):
@@ -297,15 +295,11 @@ class CPU( Elaboratable ):
             with m.If( ( ( self.ra & 0x1F ) == 0 ) &
                        ( ( self.rc & 0x1F ) == 0 ) &
                        ( self.imm == 0 ) ):
-              m.d.comb += [
-                self.csr.rin.eq( 0x0000000B ),
-                self.csr.rsel.eq( CSRA_MCAUSE ),
-                self.csr.f.eq( F_CSRRW )
-              ]
+              m.d.sync += self.csr.mcause.shadow.eq( 0x0000000A )
               with m.If( ( self.csr.mtvec.shadow & 0b11 ) == MTVEC_MODE_DIRECT ):
-                m.d.nsync += self.pc.eq( self.csr.mtvec.shadow & 0xFFFFFFFC )
+                m.d.sync += self.pc.eq( self.csr.mtvec.shadow & 0xFFFFFFFC )
               with m.Else():
-                m.d.nsync += self.pc.eq( ( self.csr.mtvec.shadow & 0xFFFFFFFC ) + 0xC )
+                m.d.sync += self.pc.eq( ( self.csr.mtvec.shadow & 0xFFFFFFFC ) + 0xC )
               m.next = "CPU_TRAP_ENTER"
             # 'MTRET' should return from an interrupt context.
             # For now, just skip to the next instruction if it
@@ -469,18 +463,18 @@ class CPU( Elaboratable ):
       # "Trap Entry" - update PC and EPC CSR, and context switch.
       with m.State( "CPU_TRAP_ENTER" ):
         m.d.comb += self.fsms.eq( CPU_TRAP_ENTER ) # TODO: Delete
-        m.d.comb += [
-          self.csr.rin.eq( self.ipc ),
-          self.csr.rsel.eq( CSRA_MEPC ),
-          self.csr.f.eq( F_CSRRW )
+        m.d.sync += [
+          self.csr.mepc.shadow.eq( self.ipc ),
+          self.irq.eq( 1 )
         ]
-        m.d.sync += self.irq.eq( 1 )
         m.next = "CPU_PC_ROM_FETCH"
       # "Trap Exit" - update PC and context switch.
       with m.State( "CPU_TRAP_EXIT" ):
         m.d.comb += self.fsms.eq( CPU_TRAP_EXIT ) # TODO: Delete
-        m.d.sync += self.irq.eq( 0 )
-        m.d.nsync += self.pc.eq( self.csr.mepc ),
+        m.d.sync += [
+          self.pc.eq( self.csr.mepc ),
+          self.irq.eq( 0 )
+        ]
         m.next = "CPU_PC_ROM_FETCH"
       # "PC Load Letter" - increment the PC.
       with m.State( "CPU_PC_LOAD" ):
@@ -638,9 +632,9 @@ def cpu_mux_sim( tests ):
   sim_name = "%s.vcd"%tests[ 1 ]
   with Simulator( cpu, vcd_file = open( sim_name, 'w' ) ) as sim:
     def proc():
-      # Set one wait state for ROM access, to allow the ROM address
+      # Set two wait states for ROM access, to allow the ROM address
       # and data to propagate through the multiplexer.
-      yield cpu.ws.eq( 0b001 )
+      yield cpu.ws.eq( 0b010 )
       # Run the programs and print pass/fail for individual tests.
       for i in range( len( tests[ 2 ] ) ):
         print( "  \033[93mSTART\033[0m running '%s' ROM image:"

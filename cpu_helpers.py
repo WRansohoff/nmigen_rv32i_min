@@ -183,7 +183,7 @@ def csr_rw( self, cpu ):
 # Program Counter to a different memory location.
 def jump_to( self, cpu, npc ):
   # Set the new PC value at the next falling clock edge.
-  cpu.d.nsync += self.pc.eq( npc )
+  cpu.d.sync += self.pc.eq( npc )
   # Read PC from RAM if the address is in that memory space.
   with cpu.If( ( npc & 0xE0000000 ) == 0x20000000 ):
     cpu.d.comb += [

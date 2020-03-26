@@ -53,6 +53,8 @@ class CPU( Elaboratable ):
     self.ipc    = Signal( 32, reset = 0x00000000 )
     # ROM wait states.
     self.ws     = Signal( 3, reset = 0b001 )
+    # ALU access wait states.
+    self.aws    = Signal( 2, reset = 0b00 )
     # CSR access wait states.
     self.cws    = Signal( 2, reset = 0b00 )
     # The ALU submodule which performs logical operations.
@@ -263,11 +265,9 @@ class CPU( Elaboratable ):
         # "Register-Based" instructions:
         with m.Elif( self.opcode == OP_REG ):
           alu_reg_op( self, m )
-          m.next = "CPU_PC_LOAD"
         # "Immediate-Based" instructions:
         with m.Elif( self.opcode == OP_IMM ):
           alu_imm_op( self, m )
-          m.next = "CPU_PC_LOAD"
         with m.Elif( self.opcode == OP_SYSTEM ):
           # "EBREAK" instruction: For now, halt execution of the
           # program. It sounds like this is usually used to hand off
@@ -613,7 +613,6 @@ def cpu_sim( test ):
       print( "\033[35mDONE\033[0m running %s: executed %d instructions"
              %( test[ 0 ], test[ 4 ][ 'end' ] ) )
     sim.add_clock( 24e-6 )
-    sim.add_clock( 24e-6, domain = "nsync" )
     sim.add_sync_process( proc )
     sim.run()
 
@@ -657,7 +656,6 @@ def cpu_mux_sim( tests ):
       print( "\033[35mDONE\033[0m running %s: executed %d instructions"
              %( tests[ 0 ], num_i ) )
     sim.add_clock( 24e-6 )
-    sim.add_clock( 24e-6, domain = "nsync" )
     sim.add_sync_process( proc )
     sim.run()
 

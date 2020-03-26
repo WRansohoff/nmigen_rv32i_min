@@ -122,5 +122,3 @@ Other CSRs behave as defined in the specification, but they won't really functio
 - I should use `signal.to_signed()` instead of if/else checks for sign extension.
 
 - There's a `Mux(...)` expression which might be able to replace some more of the repetitive 'if/else' logic.
-
-- Instead of using positive and negative clock edges of the 'sync' domain, I should own up when logic takes more than one tick and split it up between multiple clock cycles.

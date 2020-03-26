@@ -28,16 +28,6 @@ class ALU( Elaboratable ):
   def elaborate( self, platform ):
     # Core ALU module.
     m = Module()
-    # Define positive- and negative-edge clock domains.
-    # TODO: If I try to use 'sync' for both domains, I get an error
-    # which says that the domain names and dictionary keys must match.
-    # But it would be nice to use both edges of one 'sync' domain...
-    clock = ClockDomain( "sync", clk_edge = "pos" )
-    clock.rst = self.clk_rst
-    nclock = ClockDomain( "nsync", clk_edge = "neg" )
-    nclock.rst = self.clk_rst
-    m.domains += clock
-    m.domains += nclock
 
     # Latched input values for signed and unsigned operations.
     xa   = Signal( shape = Shape( width = 32, signed = True ) )
@@ -46,9 +36,9 @@ class ALU( Elaboratable ):
     ub   = Signal( shape = Shape( width = 32, signed = False ) )
     fn   = Signal( 4 )
 
-    # Latch input values at falling clock edges if 'start' is set.
+    # Latch input values at rising clock edges if 'start' is set.
     with m.If( self.start ):
-      m.d.nsync += [
+      m.d.sync += [
         xa.eq( self.a ),
         xb.eq( self.b ),
         ua.eq( self.a ),
@@ -228,6 +218,5 @@ if __name__ == "__main__":
     def proc():
       yield from alu_test( dut )
     sim.add_clock( 24e-6 )
-    sim.add_clock( 24e-6, domain = "nsync" )
     sim.add_sync_process( proc )
     sim.run()

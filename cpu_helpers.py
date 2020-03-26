@@ -39,8 +39,13 @@ def alu_reg_op( self, cpu ):
     self.alu.a.eq( self.r[ self.ra ] ),
     self.alu.b.eq( self.r[ self.rb ] )
   ]
-  with cpu.If( self.rc > 0 ):
-    cpu.d.sync += self.r[ self.rc ].eq( self.alu.y )
+  with cpu.If( self.aws == 0 ):
+    with cpu.If( self.rc > 0 ):
+      cpu.d.sync += self.r[ self.rc ].eq( self.alu.y )
+    cpu.next = "CPU_PC_LOAD"
+  with cpu.Else():
+    cpu.d.sync += self.aws.eq( self.aws - 1 )
+    cpu.next = "CPU_PC_DECODE"
 
 # Helper method to define shared logic for 'Rc = Ra ? Immediate'
 # ALU operations such as 'ADDI', 'ANDI', 'SLTI', etc.
@@ -72,8 +77,13 @@ def alu_imm_op( self, cpu ):
     self.alu.start.eq( 1 )
   ]
   # Connect appropriate registers to the ALU inputs and output.
-  with cpu.If( self.rc > 0 ):
-    cpu.d.sync += self.r[ self.rc ].eq( self.alu.y )
+  with cpu.If( self.aws == 0 ):
+    with cpu.If( self.rc > 0 ):
+      cpu.d.sync += self.r[ self.rc ].eq( self.alu.y )
+    cpu.next = "CPU_PC_LOAD"
+  with cpu.Else():
+    cpu.d.sync += self.aws.eq( self.aws - 1 )
+    cpu.next = "CPU_PC_DECODE"
 
 # Helper method to decode an instruction into individual fields.
 def rv32i_decode( self, cpu, instr ):
@@ -159,7 +169,9 @@ def rv32i_decode( self, cpu, instr ):
     self.ra.eq( ( instr.bit_select( 15, 5 ) ) | ( self.irq << 5 ) ),
     self.rb.eq( ( instr.bit_select( 20, 5 ) ) | ( self.irq << 5 ) ),
     self.ff.eq( instr.bit_select( 25, 7 ) ),
-    self.ipc.eq( self.pc )
+    self.ipc.eq( self.pc ),
+    # Also set the ALU wait-state counter.
+    self.aws.eq( 1 )
   ]
 
 # Helper method to perform atomic r/w logic for CSR instructions.

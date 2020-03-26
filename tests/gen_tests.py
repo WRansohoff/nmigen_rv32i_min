@@ -79,18 +79,25 @@ def write_py_tests( op, hext, hexd ):
     # for jumps, except for the 'fence' test which uses 3x because
     # it has a long 'prefetcher test' which counts down from 100.
     num_instrs = ( instrs * 3 ) if 'fence' in op else ( instrs * 2 )
+    # The 'SBREAK' test executes the 'pass' or 'fail' macro
+    # in the interrupt context, so add 32 to its register addresses.
+    roff = ( 32 if 'sbreak' in op else 0 )
     # Write the 'expected' value for the testbench to check
     # after tests finish.
     py.write( "\r\n# Expected 'pass' register values.\r\n"
               "%s_exp = {\r\n"
-              "  %d: [ { 'r': 17, 'e': 93 }, { 'r': 10, 'e': 0 } ],"
-              "  'end': %d\r\n}\r\n" %( op, num_instrs, num_instrs ) )
+              "  %d: [ { 'r': %d, 'e': 93 }, { 'r': %d, 'e': 0 } ],"
+              "  'end': %d\r\n}\r\n"%( op, num_instrs, ( roff + 17 ),
+                                     ( roff + 10 ), num_instrs ) )
     # Write the test struct.
     py.write( "\r\n# Collected test program definition:\r\n%s_test = "
               "[ '%s tests', 'cpu_%s', %s_rom, %s_ram, %s_exp ]"
               %( op, op.upper(), op, op, op, op ) )
   print( "Done!" )
 
+# Ensure that the 'tests/test_roms' directory exists.
+if not os.path.exists( './%s/test_roms'%test_path ):
+  os.makedirs( './%s/test_roms'%test_path )
 # Run 'make clean && make' to re-compile the files.
 subprocess.run( [ 'make', 'clean' ],
                 cwd = './%s/rv64ui_tests/'%test_path )

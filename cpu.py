@@ -29,6 +29,8 @@ CPU_STATES_MAX   = 6
 # CPU module.
 class CPU( Elaboratable ):
   def __init__( self, rom_module ):
+    # 'Reset' signal for clock domains.
+    self.clk_rst = Signal( reset = 0b0, reset_less = True )
     # Program Counter register.
     self.pc = Signal( 32, reset = 0x00000000 )
     # Intermediate load/store memory pointer.
@@ -78,6 +80,10 @@ class CPU( Elaboratable ):
   def elaborate( self, platform ):
     # Core CPU module.
     m = Module()
+    # Define the synchronous clock domain with a reset signal.
+    clock = ClockDomain( "sync", clk_edge = "pos" )
+    clock.rst = self.clk_rst
+    m.domains += clock
     # Register the ALU, CSR, ROM and RAM submodules.
     m.submodules.alu = self.alu
     m.submodules.csr = self.csr
@@ -269,37 +275,30 @@ class CPU( Elaboratable ):
         with m.Elif( self.opcode == OP_IMM ):
           alu_imm_op( self, m )
         with m.Elif( self.opcode == OP_SYSTEM ):
-          # "EBREAK" instruction: For now, halt execution of the
-          # program. It sounds like this is usually used to hand off
-          # control of the program to a debugger, but this CPU has no
-          # debugging interface yet. And apparently compilers sometimes
-          # use this instruction to mark invalid code paths, so...yeah.
+          # "EBREAK" instruction: enter the interrupt context
+          # with 'breakpoint' as the cause of the exception.
           with m.If( ( ( self.ra & 0x1F )  == 0 )
                    & ( ( self.rc & 0x1F ) == 0 )
                    & ( self.f   == 0 )
                    & ( self.imm == 0x001 ) ):
-            # Read PC from RAM if the address is in that memory space.
-            with m.If( ( self.pc & 0xE0000000 ) == 0x20000000 ):
-              m.d.comb += [
-                self.ram.addr.eq( self.pc & 0x1FFFFFFF ),
-                self.ram.ren.eq( 1 )
-              ]
-            # Loop back without moving the Program Counter.
-            m.next = "CPU_PC_ROM_FETCH"
+            m.d.sync += self.csr.mcause.shadow.eq( 3 )
+            with m.If( ( self.csr.mtvec.shadow & 0b11 ) == MTVEC_MODE_DIRECT ):
+              m.d.sync += self.pc.eq( self.csr.mtvec.shadow & 0xFFFFFFFC )
+            with m.Else():
+              m.d.sync += self.pc.eq( ( self.csr.mtvec.shadow & 0xFFFFFFFC ) + ( 3 << 2 ) )
+            m.next = "CPU_TRAP_ENTER"
           # "Environment Call" instructions:
           with m.Elif( self.f == F_TRAPS ):
             # An 'empty' ECALL instruction should raise an
             # 'environment-call-from-M-mode" exception.
-            # TODO: This should really set 'MIP.MS', which should
-            # be the real trigger for the 'ENTER_TRAP' state.
             with m.If( ( ( self.ra & 0x1F ) == 0 ) &
                        ( ( self.rc & 0x1F ) == 0 ) &
                        ( self.imm == 0 ) ):
-              m.d.sync += self.csr.mcause.shadow.eq( 0x0000000A )
+              m.d.sync += self.csr.mcause.shadow.eq( 11 )
               with m.If( ( self.csr.mtvec.shadow & 0b11 ) == MTVEC_MODE_DIRECT ):
                 m.d.sync += self.pc.eq( self.csr.mtvec.shadow & 0xFFFFFFFC )
               with m.Else():
-                m.d.sync += self.pc.eq( ( self.csr.mtvec.shadow & 0xFFFFFFFC ) + 0xC )
+                m.d.sync += self.pc.eq( ( self.csr.mtvec.shadow & 0xFFFFFFFC ) + ( 11 << 2 ) )
               m.next = "CPU_TRAP_ENTER"
             # 'MTRET' should return from an interrupt context.
             # For now, just skip to the next instruction if it
@@ -638,9 +637,9 @@ def cpu_mux_sim( tests ):
       for i in range( len( tests[ 2 ] ) ):
         print( "  \033[93mSTART\033[0m running '%s' ROM image:"
                %tests[ 2 ][ i ][ 0 ] )
-        yield cpu.alu.clk_rst.eq( 1 )
+        yield cpu.clk_rst.eq( 1 )
         yield Tick()
-        yield cpu.alu.clk_rst.eq( 0 )
+        yield cpu.clk_rst.eq( 0 )
         yield Tick()
         yield cpu.rom.select.eq( i )
         yield Settle()

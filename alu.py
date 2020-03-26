@@ -21,8 +21,6 @@ class ALU( Elaboratable ):
                      reset = 0x00000000 )
     # 'Start' signal to latch inputs.
     self.start = Signal( reset = 0b0 )
-    # 'Reset' signal for clock domains.
-    self.clk_rst = Signal( reset = 0b0, reset_less = True )
     # (RISC-V does not have ALU condition flags)
 
   def elaborate( self, platform ):

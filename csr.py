@@ -1,4 +1,12 @@
+from nmigen_soc.csr import *
+from nmigen_soc.csr.bus import *
+from nmigen_soc.csr.wishbone import *
+from nmigen_soc.wishbone import *
+from nmigen_soc.memory import *
+
 from isa import *
+
+import warnings
 
 #############################################
 # 'Control and Status Registers' file.      #
@@ -11,48 +19,48 @@ from isa import *
 # 'WPRI' = Writes Preserved, Reads Ignored. #
 #############################################
 
-# Helper method to perform CSR write/set/clear logic on a whole
-# 32-bit register.
-def csr_w32( self, csr, reg ):
-  # Apply writes on the next rising clock edge.
-  with csr.If( ( self.f & 0b11 ) == 0b01 ):
-    # 'Write' - set the register to the input value.
-    csr.d.sync += reg.eq( self.rin )
-  with csr.Elif( ( self.f & 0b11 ) == 0b10 ):
-    # 'Set' - set bits which are set in the input value.
-    csr.d.sync += reg.eq( reg | self.rin )
-  with csr.Elif( ( self.f & 0b11 ) == 0b11 ):
-    # 'Clear' - reset bits which are set in the input value.
-    csr.d.sync += reg.eq( reg & ~( self.rin ) )
+# Helper method to generate CSR memory map.
+def gen_csrs( self ):
+  # Even though it's a 32-bit CPU, the CSR bus is 64 bits wide
+  # to allow for the spec's performance counter registers, which
+  # are 64 bits in every implementation.
+  self.csrs = Multiplexer( addr_width = bus_addr.bit_length(),
+                           data_width = 64,
+                           alignment  = 0 )
+  for csr_name, reg in CSRS.items():
+    creg = CSReg( reg )
+    self.csrs.add( creg, addr = reg[ 'b_addr' ] )
+    setattr( self, csr_name, creg )
 
-# Helper method to perform CSR write/set/clear logic on the
-# lower 32 bits of a 64-bit register.
-def csr_w64l( self, csr, reg ):
-  # Apply writes on the next rising clock edge.
-  with csr.If( ( self.f & 0b11 ) == 0b01 ):
-    # 'Write' - set the register to the input value.
-    csr.d.sync += reg.eq( ( reg & 0xFFFFFFFF00000000 ) | self.rin )
-  with csr.Elif( ( self.f & 0b11 ) == 0b10 ):
-    # 'Set' - set bits which are set in the input value.
-    csr.d.sync += reg.eq( reg | self.rin )
-  with csr.Elif( ( self.f & 0b11 ) == 0b11 ):
-    # 'Clear' - reset bits which are set in the input value.
-    csr.d.sync += reg.eq( reg & ~( self.rin ) )
-
-# Helper method to perform CSR write/set/clear logic on the
-# upper 32 bits of a 64-bit register.
-def csr_w64h( self, csr, reg ):
-  # Apply writes on the next rising clock edge.
-  with csr.If( ( self.f & 0b11 ) == 0b01 ):
-    # 'Write' - set the register to the input value.
-    csr.d.sync += reg.eq(
-      ( reg & 0x00000000FFFFFFFF ) | ( self.rin << 32 ) )
-  with csr.Elif( ( self.f & 0b11 ) == 0b10 ):
-    # 'Set' - set bits which are set in the input value.
-    csr.d.sync += reg.eq( reg | ( self.rin << 32 ) )
-  with csr.Elif( ( self.f & 0b11 ) == 0b11 ):
-    # 'Clear' - reset bits which are set in the input value.
-    csr.d.sync += reg.eq( reg & ~( self.rin << 32 ) )
+# CSR register for use in the multiplexer.
+class CSReg( Element, Elaboratable ):
+  def __init__( self, reg ):
+    csr_r, csr_w = False, False
+    self.mask_r, self.mask_ro = reg[ 'mask_r' ], reg[ 'mask_ro' ]
+    self.mask_s, self.mask_c = reg[ 'mask_s' ], reg[ 'mask_c' ]
+    self.rst = reg[ 'rst' ]
+    self.w = ( 64 if 'c_addrl' in reg else 32 )
+    for name, field in reg[ 'bits' ].items():
+      if 'r' in field[ 2 ]:
+        csr_r = True
+      if ( 'w' in field[ 2 ] ) | \
+         ( 's' in field[ 2 ] ) | \
+         ( 'c' in field[ 2 ] ):
+        csr_w = True
+    self.shadow = Signal( self.w, reset = self.rst )
+    self.access = "%s%s"%( ( 'r' if csr_r else '' ),
+                           ( 'w' if csr_w else '' ) )
+    Element.__init__( self, self.w, self.access )
+  def elaborate( self, platform ):
+    m = Module()
+    if self.access.readable():
+      m.d.comb += self.r_data.eq( self.shadow & self.mask_r )
+    if self.access.writable():
+      with m.If( self.w_stb ):
+        m.d.sync += self.shadow.eq( ( ( self.shadow & self.mask_ro ) |
+                                    ( self.w_data & self.mask_s ) ) &
+                                    ~( ~( self.w_data ) & self.mask_c ) )
+    return m
 
 # Core "CSR" class, which contains an instance of each
 # supported CSR class. the 'ECALL' helper methods access it.
@@ -66,453 +74,116 @@ class CSR( Elaboratable ):
     self.rsel = Signal( 12, reset = 0x00000000 )
     self.rin  = Signal( 32, reset = 0x00000000 )
     self.rout = Signal( 32, reset = 0x00000000 )
+    self.rw   = Signal( 1,  reset = 0b0 )
     self.f    = Signal( 3,  reset = F_CSRRW )
-    # Individual CSR modules.
-    # Read-only constants such as MVENDORID don't have modules.
-    # Some registers are simple 32-bit R/W words; those are Signals.
-    self.misa     = CSR_MISA()
-    self.mstatus  = CSR_MSTATUS()
-    self.mtvec    = CSR_MTVEC()
-    self.mie      = CSR_MINTS()
-    self.mip      = CSR_MINTS()
-    self.mcause   = CSR_MCAUSE()
-    self.mscratch = Signal( 32, reset = 0x00000000 )
-    self.mepc     = Signal( 32, reset = 0x00000000 )
-    self.mtval    = Signal( 32, reset = 0x00000000 )
-    # Timers and performance monitors. The performance monitors are
-    # cool, there are 29 timers which can be configured to tick up
-    # when arbitrary events occur, and your platform decides what
-    # those events are; each one has a bit in the 'MHPMEVENT'
-    # registers. There are no events yet, so they don't increment.
-    # (Use 64-bit counters for both hi and lo bits.)
-    self.mcycle        = Signal( 64, reset = 0x0000000000000000 )
-    # TODO: 'MINSTRET' starts at -1 because it ticks up before
-    # the first instruction is executed. Not sure if that's kosher.
-    self.minstret      = Signal( 64, reset = 0xFFFFFFFFFFFFFFFF )
-    self.mhpmcounter   = Memory( width = 64, depth = 29 )
-    self.mcountinhibit = CSR_MCOUNTINHIBIT()
-    self.mhpevent      = Memory( width = 32, depth = 29 )
+    gen_csrs( self )
 
   def elaborate( self, platform ):
     m = Module()
     # Register CSR submodules.
-    m.submodules.misa          = self.misa
-    m.submodules.mstatus       = self.mstatus
-    m.submodules.mtvec         = self.mtvec
-    m.submodules.mie           = self.mie
-    m.submodules.mip           = self.mip
-    m.submodules.mcause        = self.mcause
-    m.submodules.mcountinhibit = self.mcountinhibit
+    m.submodules.csrs          = self.csrs
+    for name, reg in CSRS.items():
+      setattr( m.submodules, name, getattr( self, name ) )
+
+    # Set read strobe and address to 0 by default.
+    m.d.comb += [
+      self.csrs.bus.addr.eq( 0 ),
+      self.csrs.bus.r_stb.eq( 0 ),
+      self.csrs.bus.w_stb.eq( 0 )
+    ]
 
     # The 'MCYCLE' CSR increments every clock tick unless inhibited.
-    with m.If( self.mcountinhibit.cy == 0 ):
-      m.d.sync += self.mcycle.eq( self.mcycle + 1 )
+    with m.If( self.mcountinhibit.shadow[ 0 ] == 0 ):
+      m.d.sync += self.mcycle.shadow.eq( self.mcycle.shadow + 1 )
 
     # Handle CSR read / write logic.
-    with m.If( self.rsel == CSRA_MISA ):
-      # MISA is 'WARL' with no configurable values, so ignore writes.
-      m.d.nsync += self.rout.eq( ( self.misa.mxl << 30 ) |
-          ( self.misa.z << 25 ) | ( self.misa.y << 24 ) |
-          ( self.misa.x << 23 ) | ( self.misa.w << 22 ) |
-          ( self.misa.v << 21 ) | ( self.misa.u << 20 ) |
-          ( self.misa.t << 19 ) | ( self.misa.s << 18 ) |
-          ( self.misa.r << 17 ) | ( self.misa.q << 16 ) |
-          ( self.misa.p << 15 ) | ( self.misa.o << 14 ) |
-          ( self.misa.n << 13 ) | ( self.misa.m << 12 ) |
-          ( self.misa.l << 11 ) | ( self.misa.k << 10 ) |
-          ( self.misa.j << 9  ) | ( self.misa.i << 8  ) |
-          ( self.misa.h << 7  ) | ( self.misa.g << 6  ) |
-          ( self.misa.f << 5  ) | ( self.misa.e << 4  ) |
-          ( self.misa.d << 3  ) | ( self.misa.c << 2  ) |
-          ( self.misa.b << 1  ) | ( self.misa.a << 0  ) )
-    with m.Elif( self.rsel == CSRA_MVENDORID ):
-      # Vendor ID is read-only, so ignore writes.
-      m.d.nsync += self.rout.eq( VENDOR_ID )
-    with m.Elif( self.rsel == CSRA_MARCHID ):
-      # Architecture ID is read-only, so ignore writes.
-      m.d.nsync += self.rout.eq( ARCH_ID )
-    with m.Elif( self.rsel == CSRA_MIMPID ):
-      # Machine Implementation ID is read-only, so ignore writes.
-      m.d.nsync += self.rout.eq( MIMP_ID )
-    with m.Elif( self.rsel == CSRA_MHARTID ):
-      # Machine hardware thread ID; this read-only register returns
-      # a unique ID representing the hart which is currently running
-      # code, and there must be a hart with ID 0.
-      # I only have one hart, so...
-      m.d.nsync += self.rout.eq( 0x00000000 )
-    with m.Elif( self.rsel == CSRA_MSTATUS ):
-      # Lower 32 bits of the 'MSTATUS' register.
-      # Supervisor and hypervisor modes are not currently implemented,
-      # So their bits are set to zero. 'MPP' bits are also always equal.
-      # User mode is also not currently implemented, so MPRV = 0.
-      # Since only machine mode is supported, TW = 0.
-      # Since no floating-point extension exists, FS = 0.
-      # Since no user extensions exist, XS = 0.
-      # Since FS = 0 and XS = 0, SD = 0. That doesn't leave many bits :)
-      m.d.nsync += self.rout.eq(
-        ( self.mstatus.mie  << 3  ) | ( self.mstatus.mpie << 7  ) |
-        ( self.mstatus.mpp  << 11 ) )
-      # Apply writes on the next rising clock edge - AFTER reads.
-      # MPIE cannot be written because it is set/reset by hardware.
-      with m.If( ( self.f & 0b11 ) == 0b01 ):
-        # 'Write' - write writable bits from the input field.
-        m.d.sync += self.mstatus.mie.eq( self.rin.bit_select( 3, 1 ) )
-      with m.Elif( ( self.f & 0b11 ) == 0b10 ):
-        # 'Set' - set writable bits from the input value.
-        with m.If( self.rin.bit_select( 3, 1 ) != 0 ):
-          m.d.sync += self.mstatus.mie.eq( 0b1 )
-      with m.Elif( ( self.f & 0b11 ) == 0b11 ):
-        # 'Clear' - reset writable bits from the input value.
-        with m.If( self.rin.bit_select( 3, 1 ) != 0 ):
-          m.d.sync += self.mstatus.mie.eq( 0b0 )
-    with m.Elif( self.rsel == CSRA_MSTATUSH ):
-      # Upper 32 bits of the 'MSTATUS' register.
-      # Writes are ignored, since none of its fields can be modified.
-      m.d.nsync += self.rout.eq( self.mstatus.mbe << 5 )
-    with m.Elif( self.rsel == CSRA_MTVEC ):
-      # 'MTVEC' register, used to store the vector table's
-      # starting address and interrupt mode (vectored or direct).
-      m.d.nsync += self.rout.eq(
-        ( self.mtvec.base << 2 ) | ( self.mtvec.mode ) )
-      # Apply writes on the next rising clock edge.
-      with m.If( ( self.f & 0b11 ) == 0b01 ):
-        # 'Write' - write writable bits from the input field.
-        m.d.sync += self.mtvec.base.eq( self.rin.bit_select( 2, 30 ) )
-        # Ignore modes other than 0, 1.
-        with m.If( self.rin[ 1 ] == 0 ):
-          m.d.sync += self.mtvec.mode.eq( self.rin[ 0 ] )
-      with m.Elif( ( self.f & 0b11 ) == 0b10 ):
-        # 'Set' - set writable bits from the input value.
-        m.d.sync += self.mtvec.base.eq(
-          ( self.rin.bit_select( 2, 30 ) ) | self.mtvec.base )
-        # Ignore modes other than 0, 1.
-        with m.If( ( self.rin[ 1 ] == 0 ) & ( self.rin[ 0 ] == 1 ) ):
-          m.d.sync += self.mtvec.mode.eq( 1 )
-      with m.Elif( ( self.f & 0b11 ) == 0b11 ):
-        # 'Clear' - reset writable bits from the input value.
-        m.d.sync += self.mtvec.base.eq(
-          ~( self.rin.bit_select( 2, 30 ) ) & self.mtvec.base )
-        # Ignore modes other than 0, 1.
-        with m.If( ( self.rin[ 1 ] == 0 ) & ( self.rin[ 0 ] == 1 ) ):
-          m.d.sync += self.mtvec.mode.eq( 0 )
-    with m.Elif( self.rsel == CSRA_MIE ):
-      # 'MIE' register, used to enable or disable interrupt channels.
-      m.d.nsync += self.rout.eq( ( self.mie.ms << 3 ) |
-        ( self.mie.mt << 7 ) | ( self.mie.me << 11 ) )
-      # Apply writes on the next rising clock edge.
-      with m.If( ( self.f & 0b11 ) == 0b01 ):
-        # 'Write' - write writable bits from the input field.
-        m.d.sync += [
-          self.mie.ms.eq( self.rin[ 3 ] ),
-          self.mie.mt.eq( self.rin[ 7 ] ),
-          self.mie.me.eq( self.rin[ 11 ] )
-        ]
-      with m.Elif( ( self.f & 0b11 ) == 0b10 ):
-        # 'Set' - set writable bits from the input value.
-        with m.If( self.rin[ 3 ] == 1 ):
-          m.d.sync += self.mie.ms.eq( 1 )
-        with m.If( self.rin[ 7 ] == 1 ):
-          m.d.sync += self.mie.mt.eq( 1 )
-        with m.If( self.rin[ 11 ] == 1 ):
-          m.d.sync += self.mie.me.eq( 1 )
-      with m.Elif( ( self.f & 0b11 ) == 0b11 ):
-        # 'Clear' - reset writable bits from the input value.
-        with m.If( self.rin[ 3 ] == 1 ):
-          m.d.sync += self.mie.ms.eq( 0 )
-        with m.If( self.rin[ 7 ] == 1 ):
-          m.d.sync += self.mie.mt.eq( 0 )
-        with m.If( self.rin[ 11 ] == 1 ):
-          m.d.sync += self.mie.me.eq( 0 )
-    with m.Elif( self.rsel == CSRA_MIP ):
-      # 'MIP' register, used to clear interrupt 'pending' bits.
-      # These bits can only be cleared by software, not set.
-      m.d.nsync += self.rout.eq( ( self.mip.ms << 3 ) |
-        ( self.mip.mt << 7 ) | ( self.mip.me << 11 ) )
-      # Apply writes on the next rising clock edge.
-      with m.If( ( self.f & 0b11 ) == 0b01 ):
-        # 'Write' - write writable bits from the input field.
-        with m.If( self.rin[ 3 ] == 0 ):
-          m.d.sync += self.mip.ms.eq( 0 )
-        with m.If( self.rin[ 7 ] == 0 ):
-          m.d.sync += self.mip.mt.eq( 0 )
-        with m.If( self.rin[ 11 ] == 0 ):
-          m.d.sync += self.mip.me.eq( 0 )
-      with m.Elif( ( self.f & 0b11 ) == 0b11 ):
-        # 'Clear' - reset writable bits from the input value.
-        with m.If( self.rin[ 3 ] == 1 ):
-          m.d.sync += self.mip.ms.eq( 0 )
-        with m.If( self.rin[ 7 ] == 1 ):
-          m.d.sync += self.mip.mt.eq( 0 )
-        with m.If( self.rin[ 11 ] == 1 ):
-          m.d.sync += self.mip.me.eq( 0 )
-    with m.Elif( self.rsel == CSRA_MCAUSE ):
-      # 'MCAUSE' register, holds the cause of an interrupt or exception.
-      # This register can also be written to, but it is WLRL
-      # so reserved bits are set to 0.
-      m.d.nsync += self.rout.eq(
-        ( self.mcause.int << 31 ) | self.mcause.ec )
-      # Apply writes on the next rising clock edge.
-      with m.If( ( self.f & 0b11 ) == 0b01 ):
-        # 'Write' - write writable bits from the input field.
-        m.d.sync += [
-          self.mcause.int.eq( self.rin[ 31 ] ),
-          self.mcause.ec.eq( self.rin.bit_select( 0, 31 ) )
-        ]
-      with m.Elif( ( self.f & 0b11 ) == 0b10 ):
-        # 'Set' - set writable bits from the input value.
-        # 'Write' - write writable bits from the input field.
-        m.d.sync += [
-          self.mcause.int.eq( Mux( self.rin[ 31 ], 1, self.mcause.int ) ),
-          self.mcause.ec.eq( self.mcause.ec | self.rin.bit_select( 0, 31 ) )
-        ]
-      with m.Elif( ( self.f & 0b11 ) == 0b11 ):
-        # 'Clear' - reset writable bits from the input value.
-        m.d.sync += [
-          self.mcause.int.eq( Mux( self.rin[ 31 ], 0, self.mcause.int ) ),
-          self.mcause.ec.eq( self.mcause.ec & ~( self.rin.bit_select( 0, 31 ) ) )
-        ]
-    with m.Elif( self.rsel == CSRA_MEPC ):
-      # 'MEPC' register, holds the address which was jumped from when
-      # a trap is entered. Can also be written by software.
-      m.d.nsync += self.rout.eq( self.mepc & 0xFFFFFFFC )
-      # Apply writes on the next rising clock edge.
-      # Bits 0-1 are always zero.
-      with m.If( ( self.f & 0b11 ) == 0b01 ):
-        # 'Write' - write writable bits from the input field.
-        m.d.sync += self.mepc.eq( self.rin & 0xFFFFFFFC )
-      with m.Elif( ( self.f & 0b11 ) == 0b10 ):
-        # 'Set' - set writable bits from the input value.
-        m.d.sync += self.mepc.eq( self.mepc | ( self.rin & 0xFFFFFFFC ) )
-      with m.Elif( ( self.f & 0b11 ) == 0b11 ):
-        # 'Clear' - reset writable bits from the input value.
-        m.d.sync += self.mepc.eq( self.mepc & ~( self.rin ) )
-    with m.Elif( self.rsel == CSRA_MTVAL ):
-      # 'MTVAL' register, holds extra information about a trap.
-      # Possible values depend on the trap.
-      m.d.nsync += self.rout.eq( self.mtval )
-    with m.Elif( self.rsel == CSRA_MSCRATCH ):
-      # 'MSCRATCH' register, used to store a word of state.
-      # Usually this is a memory address for a context to return to.
-      m.d.nsync += self.rout.eq( self.mscratch )
-      # Apply CSR write logic for the whole register.
-      csr_w32( self, m, self.mscratch )
-    with m.Elif( self.rsel == CSRA_MCYCLE ):
-      m.d.nsync += self.rout.eq( self.mcycle & 0xFFFFFFFF )
-      # Apply CSR write logic for the lower 32 bits.
-      csr_w64l( self, m, self.mcycle )
-      # If 'MCYCLE' would not be changed, increment it.
-      with m.If( ( ( self.f & 0b10 ) != 0 ) & ( self.rin == 0 ) ):
-        with m.If( self.mcountinhibit.cy == 0 ):
-          m.d.sync += self.mcycle.eq( self.mcycle + 1 )
-    with m.Elif( self.rsel == CSRA_MCYCLEH ):
-      m.d.nsync += self.rout.eq( self.mcycle >> 32 )
-      # Apply CSR write logic for the upper 32 bits.
-      csr_w64h( self, m, self.mcycle )
-      # If 'MCYCLE' would not be changed, increment it.
-      with m.If( ( ( self.f & 0b10 ) != 0 ) & ( self.rin == 0 ) ):
-        with m.If( self.mcountinhibit.cy == 0 ):
-          m.d.sync += self.mcycle.eq( self.mcycle + 1 )
-    with m.Elif( self.rsel == CSRA_MINSTRET ):
-      m.d.nsync += self.rout.eq( self.minstret & 0xFFFFFFFF )
-      # Apply CSR write logic for the lower 32 bits.
-      csr_w64l( self, m, self.minstret )
-    with m.Elif( self.rsel == CSRA_MINSTRETH ):
-      m.d.nsync += self.rout.eq( self.minstret >> 32 )
-      # Apply CSR write logic for the upper 32 bits.
-      csr_w64h( self, m, self.minstret )
-    with m.Elif( ( self.rsel >= CSRA_MHPMCOUNTER_MIN ) &
-                 ( self.rsel <= CSRA_MHPMCOUNTER_MAX ) ):
-      m.d.nsync += self.rout.eq(
-        ( self.mhpmcounter[ self.rsel - CSRA_MHPMCOUNTER_MIN ] ) & 0xFFFFFFFF )
-      # Apply CSR write logic for the lower 32 bits.
-      csr_w64l( self, m, self.mhpmcounter[ self.rsel - CSRA_MHPMCOUNTER_MIN ] )
-    with m.Elif( ( self.rsel >= CSRA_MHPMCOUNTERH_MIN ) &
-                 ( self.rsel <= CSRA_MHPMCOUNTERH_MAX ) ):
-      m.d.nsync += self.rout.eq(
-        ( self.mhpmcounter[ self.rsel - CSRA_MHPMCOUNTERH_MIN ] ) >> 32 )
-      # Apply CSR write logic for the upper 32 bits.
-      csr_w64h( self, m, self.mhpmcounter[ self.rsel - CSRA_MHPMCOUNTERH_MIN ] )
-    with m.Elif( self.rsel == CSRA_MCOUNTINHIBIT ):
-      m.d.nsync += self.rout.eq( self.mcountinhibit.cy |
-        ( self.mcountinhibit.ir << 2 ) |
-        ( self.mcountinhibit.hpm[ 0  ] << 3  ) |
-        ( self.mcountinhibit.hpm[ 1  ] << 4  ) |
-        ( self.mcountinhibit.hpm[ 2  ] << 5  ) |
-        ( self.mcountinhibit.hpm[ 3  ] << 6  ) |
-        ( self.mcountinhibit.hpm[ 4  ] << 7  ) |
-        ( self.mcountinhibit.hpm[ 5  ] << 8  ) |
-        ( self.mcountinhibit.hpm[ 6  ] << 9  ) |
-        ( self.mcountinhibit.hpm[ 7  ] << 10 ) |
-        ( self.mcountinhibit.hpm[ 8  ] << 11 ) |
-        ( self.mcountinhibit.hpm[ 9  ] << 12 ) |
-        ( self.mcountinhibit.hpm[ 10 ] << 13 ) |
-        ( self.mcountinhibit.hpm[ 11 ] << 14 ) |
-        ( self.mcountinhibit.hpm[ 12 ] << 15 ) |
-        ( self.mcountinhibit.hpm[ 13 ] << 16 ) |
-        ( self.mcountinhibit.hpm[ 14 ] << 17 ) |
-        ( self.mcountinhibit.hpm[ 15 ] << 18 ) |
-        ( self.mcountinhibit.hpm[ 16 ] << 19 ) |
-        ( self.mcountinhibit.hpm[ 17 ] << 20 ) |
-        ( self.mcountinhibit.hpm[ 18 ] << 21 ) |
-        ( self.mcountinhibit.hpm[ 19 ] << 22 ) |
-        ( self.mcountinhibit.hpm[ 20 ] << 23 ) |
-        ( self.mcountinhibit.hpm[ 21 ] << 24 ) |
-        ( self.mcountinhibit.hpm[ 22 ] << 25 ) |
-        ( self.mcountinhibit.hpm[ 23 ] << 26 ) |
-        ( self.mcountinhibit.hpm[ 24 ] << 27 ) |
-        ( self.mcountinhibit.hpm[ 25 ] << 28 ) |
-        ( self.mcountinhibit.hpm[ 26 ] << 29 ) |
-        ( self.mcountinhibit.hpm[ 27 ] << 30 ) |
-        ( self.mcountinhibit.hpm[ 28 ] << 31 ) )
-      # Apply writes on the next rising clock edge.
-      with m.If( ( self.f & 0b11 ) == 0b01 ):
-        # 'Write' - write writable bits from the input field.
-        m.d.sync += [
-          self.mcountinhibit.cy.eq( self.rin[ 0 ] ),
-          self.mcountinhibit.ir.eq( self.rin[ 2 ] )
-        ]
-        for i in range( 29 ):
-          m.d.sync += self.mcountinhibit.hpm[ i ].eq( self.rin[ i + 3 ] )
-      with m.Elif( ( self.f & 0b11 ) == 0b10 ):
-        # 'Set' - set writable bits from the input value.
-        with m.If( self.rin[ 0 ] ):
-          m.d.sync += self.mcountinhibit.cy.eq( 1 )
-        with m.If( self.rin[ 2 ] ):
-          m.d.sync += self.mcountinhibit.ir.eq( 1 )
-        for i in range( 29 ):
-          with m.If( self.rin[ i + 3 ] ):
-            m.d.sync += self.mcountinhibit.hpm[ i ].eq( 1 )
-      with m.Elif( ( self.f & 0b11 ) == 0b11 ):
-        # 'Clear' - reset writable bits from the input value.
-        with m.If( self.rin[ 0 ] ):
-          m.d.sync += self.mcountinhibit.cy.eq( 0 )
-        with m.If( self.rin[ 2 ] ):
-          m.d.sync += self.mcountinhibit.ir.eq( 0 )
-        for i in range( 29 ):
-          with m.If( self.rin[ i + 3 ] ):
-            m.d.sync += self.mcountinhibit.hpm[ i ].eq( 0 )
-    with m.Elif( ( self.rsel >= CSRA_MHPMEVENT_MIN ) &
-                 ( self.rsel <= CSRA_MHPMEVENT_MAX ) ):
-      m.d.nsync += self.rout.eq(
-        self.mhpevent[ self.rsel - CSRA_MHPMEVENT_MIN ] )
-      # Apply CSR write logic for the whole register.
-      csr_w32( self, m, self.mhpevent[ self.rsel - CSRA_MHPMEVENT_MIN ] )
-    with m.Else():
-      # Return 0 without action for an unrecognized CSR.
-      # TODO: Am I supposed to throw an exception or something here?
-      m.d.nsync += self.rout.eq( 0x00000000 )
-    return m
+    with m.If( self.f == 0b000 ):
+      m.d.sync += self.rout.eq( 0x00000000 )
+    for name, reg in CSRS.items():
+      if 'c_addr' in reg:
+        with m.Elif( self.rsel == reg[ 'c_addr' ] ):
+          # 32-bit CSR.
+          m.d.comb += [
+            self.csrs.bus.addr.eq( reg[ 'b_addr' ] ),
+            self.csrs.bus.r_stb.eq( 1 )
+          ]
+          m.d.sync += self.rout.eq( self.csrs.bus.r_data & reg[ 'mask_r' ] )
+          with m.If( self.rw != 0 ):
+            m.d.comb += self.csrs.bus.r_stb.eq( 1 )
+            with m.If( ( self.f & 0b11 ) == 0b01 ):
+              # 'Write' - set the register to the input value.
+              m.d.comb += [
+                self.csrs.bus.w_stb.eq( 1 ),
+                self.csrs.bus.w_data.eq( self.rin )
+              ]
+            with m.Elif( ( ( self.f & 0b11 ) == 0b10 ) & ( self.rin != 0 ) ):
+              # 'Set' - set bits which are set in the input value.
+              m.d.comb += [
+                self.csrs.bus.w_stb.eq( 1 ),
+                self.csrs.bus.w_data.eq( self.rin | self.csrs.bus.r_data )
+              ]
+            with m.Elif( ( ( self.f & 0b11 ) == 0b11 ) & ( self.rin != 0 ) ):
+              # 'Clear' - reset bits which are set in the input value.
+              m.d.comb += [
+                self.csrs.bus.w_stb.eq( 1 ),
+                self.csrs.bus.w_data.eq( ~( self.rin ) & self.csrs.bus.r_data )
+              ]
+      else:
+        with m.Elif( self.rsel == reg[ 'c_addrl' ] ):
+          # Lower 32 bits of a 64-bit CSR.
+          m.d.comb += [
+            self.csrs.bus.addr.eq( reg[ 'b_addr' ] ),
+            self.csrs.bus.r_stb.eq( 1 )
+          ]
+          m.d.sync += self.rout.eq( self.csrs.bus.r_data & reg[ 'mask_r' ] )
+          with m.If( self.rw != 0 ):
+            m.d.comb += self.csrs.bus.r_stb.eq( 1 )
+            with m.If( ( self.f & 0b11 ) == 0b01 ):
+              # 'Write' - set the register to the input value.
+              m.d.comb += [
+                self.csrs.bus.w_stb.eq( 1 ),
+                self.csrs.bus.w_data.eq( self.rin )
+              ]
+            with m.Elif( ( ( self.f & 0b11 ) == 0b10 ) & ( self.rin != 0 ) ):
+              # 'Set' - set bits which are set in the input value.
+              m.d.comb += [
+                self.csrs.bus.w_stb.eq( 1 ),
+                self.csrs.bus.w_data.eq( self.rin | self.csrs.bus.r_data )
+              ]
+            with m.Elif( ( ( self.f & 0b11 ) == 0b11 ) & ( self.rin != 0 ) ):
+              # 'Clear' - reset bits which are set in the input value.
+              m.d.comb += [
+                self.csrs.bus.w_stb.eq( 1 ),
+                self.csrs.bus.w_data.eq( ~( self.rin ) & self.csrs.bus.r_data )
+              ]
+        with m.Elif( self.rsel == reg[ 'c_addrh' ] ):
+          # Upper 32 bits of a 64-bit CSR.
+          m.d.comb += [
+            self.csrs.bus.addr.eq( reg[ 'b_addr' ] ),
+            self.csrs.bus.r_stb.eq( 1 )
+          ]
+          m.d.sync += self.rout.eq( ( self.csrs.bus.r_data & reg[ 'mask_r' ] ) >> 32 )
+          with m.If( self.rw != 0 ):
+            m.d.comb += self.csrs.bus.r_stb.eq( 1 )
+            with m.If( ( self.f & 0b11 ) == 0b01 ):
+              # 'Write' - set the register to the input value.
+              m.d.comb += [
+                self.csrs.bus.w_stb.eq( 1 ),
+                self.csrs.bus.w_data.eq( ( self.rin << 32 ) | ( self.csrs.bus.r_data & 0xFFFFFFFF ) )
+              ]
+            with m.Elif( ( ( self.f & 0b11 ) == 0b10 ) & ( self.rin != 0 ) ):
+              # 'Set' - set bits which are set in the input value.
+              m.d.comb += [
+                self.csrs.bus.w_stb.eq( 1 ),
+                self.csrs.bus.w_data.eq( ( ( self.rin | ( self.csrs.bus.r_data >> 32 ) ) << 32 ) | ( self.csrs.bus.r_data & 0xFFFFFFFF ) )
+              ]
+            with m.Elif( ( ( self.f & 0b11 ) == 0b11 ) & ( self.rin != 0 ) ):
+              # 'Clear' - reset bits which are set in the input value.
+              m.d.comb += [
+                self.csrs.bus.w_stb.eq( 1 ),
+                self.csrs.bus.w_data.eq( ( ( ~( self.rin ) & ( self.csrs.bus.r_data >> 32 ) ) << 32 ) | ( self.csrs.bus.r_data & 0xFFFFFFFF ) )
+              ]
 
-# 'MISA' register. Contains information about supported ISA modules.
-# The application can also set bits in this register to enable or
-# disable certain extensions. And it is a 'WARL' register, so any
-# writes which request unsupported extensions are silently ignored.
-class CSR_MISA( Elaboratable ):
-  def __init__( self ):
-    # TODO: Since this CPU only supports RV32I, I'm going
-    # to make most of these values constants. But for supported
-    # extensions, they should be writable Signal()s.
-    # I did make the 'E' extension a Signal, because it is always
-    # the opposite of the 'I' extension, and that's trivial.
-    self.mxl = MISA_MSL_32
-    self.a   = 0 # No atomic extension.
-    self.b   = 0 # No bit manipulation extension.
-    self.c   = 0 # No 'compressed instructions' extension.
-    self.d   = 0 # No double-precision floating-point extension.
-    # ('E' and 'I' extensions are mutually exclusive)
-    self.e   = Signal( 1, reset = 0b0 )
-    self.f   = 0 # No single-precision floating-point extension.
-    self.g   = 0 # (Reserved)
-    self.h   = 0 # No hypervisor mode extension.
-    self.i   = 1 # Core RV32I instructions are supported.
-    self.j   = 0 # No...'dynamically-translated language extension'?
-    self.k   = 0 # (Reserved)
-    self.l   = 0 # No decimal floating-point extension.
-    self.m   = 0 # No multiply / divide extension.
-    self.n   = 0 # No user-level interrupts extension.
-    self.o   = 0 # (Reserved)
-    self.p   = 0 # No packed SIMD extension.
-    self.q   = 0 # No quad-precision floating-point extension.
-    self.r   = 0 # (Reserved)
-    self.s   = 0 # No supervisor mode extension.
-    self.t   = 0 # No transactional memory extension.
-    self.u   = 0 # No user mode extension.
-    self.v   = 0 # No vector extension.
-    self.w   = 0 # (Reserved)
-    self.x   = 0 # No non-standard extensions.
-    self.y   = 0 # (Reserved)
-    self.z   = 0 # (Reserved)
-  def elaborate( self, platform ):
-    m = Module()
-    # CPU must implement one core ISA, so 'E' = not 'I'.
-    m.d.comb += self.e.eq( ~self.i )
-    return m
-
-# 'MSTATUS' CSR. These fields actually spans two 32-bit registers on
-# 32-bit platforms, with some 'WPRI' bits that are reserved for
-# future use and can be hard-wired to 0.
-class CSR_MSTATUS( Elaboratable ):
-  def __init__( self ):
-    # 'MSTATUS' fields:
-    self.mie  = Signal( 1, reset = 0b0 )
-    self.mpie = Signal( 1, reset = 0b0 )
-    # (Currently, only machine mode is supported.)
-    self.mpp  = MSTATUS_MPP_M
-    # 'MSTATUSH' fields:
-    # (Currently, only little-endian memory access is supported.)
-    self.mbe  = MSTATUS_MBE_LIT
-  def elaborate( self, platform ):
-    m = Module()
-    return m
-
-# 'MTVEC' CSR. Contains the base vector table address with interrupt
-# handler locations and the current interrupt handling mode.
-class CSR_MTVEC( Elaboratable ):
-  def __init__( self ):
-    self.base = Signal( 30, reset = 0 )
-    self.mode = Signal( 1,  reset = 0 )
-  def elaborate( self, platform ):
-    m = Module()
-    return m
-
-# 'MIE' or 'MIP' CSR. They both use the same bit
-# positions to identify interrupt types.
-class CSR_MINTS( Elaboratable ):
-  def __init__( self ):
-    # Machine software interrupt.
-    self.ms = Signal( 1, reset = 0b0 )
-    # Machine timer interrupt.
-    self.mt = Signal( 1, reset = 0b0 )
-    # Machine external interrupt.
-    self.me = Signal( 1, reset = 0b0 )
-  def elaborate( self, platform ):
-    m = Module()
-    return m
-
-# 'MCAUSE' CSR. This uses the same interrupt bits as
-# 'MIE' and 'MIP', but it has extra exception/reset causes.
-class CSR_MCAUSE( Elaboratable ):
-  def __init__( self ):
-    # 'Interrupt or exception?' bit.
-    self.int = Signal( 1, reset = 0b0 )
-    # 'Exception code' field.
-    self.ec = Signal( 31, reset = 0 )
-  def elaborate( self, platform ):
-    m = Module()
-    return m
-
-# 'MCOUNTINHIBIT' CSR. This enables and disables `MCYCLE`,
-# `MINSTRET`, and `MHPMCOUNTER` counters.
-class CSR_MCOUNTINHIBIT( Elaboratable ):
-  def __init__( self ):
-    # Control bits for `MHPMCOUNTER` counters. (Off after reset)
-    self.hpm = Array( Signal( 1, reset = 0b1 ) for i in range( 29 ) )
-    # Control bit for `MINSTRET`. (On after reset)
-    self.ir  = Signal( 1, reset = 0b0 )
-    # Control bit for `MCYCLE`. (On after reset)
-    self.cy  = Signal( 1, reset = 0b0 )
-  def elaborate( self, platform ):
-    m = Module()
     return m
 
 ##################
@@ -529,9 +200,11 @@ def csr_ut( csr, reg, rin, cf, expected ):
   yield csr.rsel.eq( reg )
   yield csr.rin.eq( rin )
   yield csr.f.eq( cf )
-  # Wait a tick.
+  yield csr.rw.eq( 0 )
+  # Wait two ticks.
   yield Tick()
-  # Done. Check the result after combinatorial logic.
+  yield Tick()
+  # Check the result after combinatorial logic.
   yield Settle()
   actual = yield csr.rout
   if hexs( expected ) != hexs( actual ):
@@ -542,7 +215,12 @@ def csr_ut( csr, reg, rin, cf, expected ):
     p += 1
     print( "\033[32mPASS:\033[0m CSR 0x%03X = %s"
            %( reg, hexs( expected ) ) )
-  # Reset rsel, rin, f.
+  # Set 'rw' and wait another two ticks.
+  yield csr.rw.eq( 1 )
+  yield Tick()
+  yield Tick()
+  yield Settle()
+  # Done. Reset rsel, rin, f, rw.
   yield csr.rsel.eq( 0 )
   yield csr.rin.eq( 0 )
   yield csr.f.eq( 0 )
@@ -566,7 +244,7 @@ def csr_rw_ut( csr, reg ):
 
 # Top-level CSR test method.
 def csr_test( csr ):
-  # Let signals settle after reset.
+  # Wait a tick and let signals settle after reset.
   yield Settle()
 
   # Print a test header.
@@ -587,6 +265,7 @@ def csr_test( csr ):
   yield from csr_ut( csr, CSRA_MARCHID, 0x00000000, F_CSRRW, ARCH_ID )
   yield from csr_ut( csr, CSRA_MARCHID, 0xFFFFFFFF, F_CSRRS, ARCH_ID )
   yield from csr_ut( csr, CSRA_MARCHID, 0xFFFFFFFF, F_CSRRC, ARCH_ID )
+  yield from csr_ut( csr, CSRA_MARCHID, 0x00000000, F_CSRRW, ARCH_ID )
   # Test reading / writing the 'MIMPID' CSR. (Should be read-only)
   yield from csr_ut( csr, CSRA_MIMPID, 0x00000000, F_CSRRW, MIMP_ID )
   yield from csr_ut( csr, CSRA_MIMPID, 0xFFFFFFFF, F_CSRRS, MIMP_ID )
@@ -612,12 +291,12 @@ def csr_test( csr ):
 
   # Test reading / writing 'MTVEC' CSR. (R/W except 'MODE' >= 2)
   yield from csr_ut( csr, CSRA_MTVEC, 0xFFFFFFFF, F_CSRRWI, 0x00000000 )
-  yield from csr_ut( csr, CSRA_MTVEC, 0xFFFFFFFF, F_CSRRCI, 0xFFFFFFFC )
-  yield from csr_ut( csr, CSRA_MTVEC, 0xFFFFFFFD, F_CSRRSI, 0x00000000 )
-  yield from csr_ut( csr, CSRA_MTVEC, 0x00000001, F_CSRRW,  0xFFFFFFFD )
+  yield from csr_ut( csr, CSRA_MTVEC, 0xFFFFFFFF, F_CSRRCI, 0xFFFFFFFD )
+  yield from csr_ut( csr, CSRA_MTVEC, 0xFFFFFFFE, F_CSRRSI, 0x00000000 )
+  yield from csr_ut( csr, CSRA_MTVEC, 0x00000003, F_CSRRW,  0xFFFFFFFC )
   yield from csr_ut( csr, CSRA_MTVEC, 0x00000000, F_CSRRS,  0x00000001 )
 
-  # Test reading / writing the 'MTVAL' CSR. (Should be read-only)
+  # Test reading / writing the 'MHARTID' CSR. (Should be read-only)
   yield from csr_ut( csr, CSRA_MHARTID, 0x00000000, F_CSRRW, 0 )
   yield from csr_ut( csr, CSRA_MHARTID, 0xFFFFFFFF, F_CSRRS, 0 )
   yield from csr_ut( csr, CSRA_MHARTID, 0xFFFFFFFF, F_CSRRC, 0 )
@@ -630,13 +309,14 @@ def csr_test( csr ):
   yield from csr_ut( csr, CSRA_MIP, 0x00000000, F_CSRRW, 0x00000000 )
   yield from csr_ut( csr, CSRA_MIP, 0xFFFFFFFF, F_CSRRS, 0x00000000 )
   yield from csr_ut( csr, CSRA_MIP, 0xFFFFFFFF, F_CSRRC, 0x00000000 )
-  yield csr.mip.ms.eq( 1 )
-  yield csr.mip.mt.eq( 1 )
-  yield csr.mip.me.eq( 1 )
+  yield csr.mip.shadow.eq( 0x00000888 )
   yield from csr_ut( csr, CSRA_MIP, 0xFFFFFFFF, F_CSRRC, 0x00000888 )
   yield from csr_ut( csr, CSRA_MIP, 0x00000000, F_CSRRS, 0x00000000 )
   # Test reading / writing the 'MCAUSE' CSR.
   yield from csr_rw_ut( csr, CSRA_MCAUSE )
+
+  # Test reading / writing the 'MTVAL' CSR.
+  yield from csr_rw_ut( csr, CSRA_MTVAL )
 
   # Test reading / writing the 'MEPC' CSR. All bits except 0-1 R/W.
   yield from csr_ut( csr, CSRA_MEPC, 0x00000000, F_CSRRS,  0x00000000 )
@@ -652,24 +332,20 @@ def csr_test( csr ):
 
   # Test reading / writing the 'MCYCLE' CSR, after resetting it.
   # Verify that the it counts up every cycle unless it is written to.
-  yield csr.mcycle.eq( 0 )
-  yield from csr_ut( csr, CSRA_MCYCLE, 0x00000000, F_CSRRS,  0x00000000 )
-  yield from csr_ut( csr, CSRA_MCYCLE, 0xFFFFFFFF, F_CSRRSI, 0x00000001 )
+  cyc_start = ( yield csr.mcycle.shadow ) & 0xFFFFFFFF
+  yield from csr_ut( csr, CSRA_MCYCLE, 0x00000000, F_CSRRS,  cyc_start )
+  yield from csr_ut( csr, CSRA_MCYCLE, 0xFFFFFFFF, F_CSRRSI, cyc_start + 4 )
   yield from csr_ut( csr, CSRA_MCYCLE, 0x01234567, F_CSRRC,  0xFFFFFFFF )
   yield from csr_ut( csr, CSRA_MCYCLE, 0x0C0FFEE0, F_CSRRW,  0xFEDCBA98 )
   yield from csr_ut( csr, CSRA_MCYCLE, 0xFFFFFCBA, F_CSRRWI, 0x0C0FFEE0 )
   yield from csr_ut( csr, CSRA_MCYCLE, 0xFFFFFFFF, F_CSRRCI, 0xFFFFFCBA )
   yield from csr_ut( csr, CSRA_MCYCLE, 0x00000000, F_CSRRC,  0x00000000 )
-  yield from csr_ut( csr, CSRA_MCYCLE, 0x00000000, F_CSRRS,  0x00000001 )
-  yield from csr_ut( csr, CSRA_MCYCLE, 0x00000000, F_CSRRS,  0x00000002 )
   yield from csr_ut( csr, CSRA_MCYCLE, 0x00000000, F_CSRRS,  0x00000003 )
+  yield from csr_ut( csr, CSRA_MCYCLE, 0x00000000, F_CSRRS,  0x00000007 )
+  yield from csr_ut( csr, CSRA_MCYCLE, 0x00000000, F_CSRRS,  0x0000000B )
   # Test reading / writing the 'MCYCLEH' CSR.
   yield from csr_rw_ut( csr, CSRA_MCYCLEH )
-  yield csr.mcycle.eq( 0x00000000FFFFFFFF )
-  yield Tick()
-  yield from csr_ut( csr, CSRA_MCYCLEH, 0x00000000, F_CSRRS,  0x00000001 )
   # Test reading / writing the 'MINSTRET' CSR after clearing it.
-  yield csr.minstret.eq( 0 )
   yield from csr_rw_ut( csr, CSRA_MINSTRET )
   # Test reading / writing the 'MINSTRETH' CSR.
   yield from csr_rw_ut( csr, CSRA_MINSTRETH )
@@ -712,14 +388,16 @@ def csr_test( csr ):
 
 # 'main' method to run a basic testbench.
 if __name__ == "__main__":
-  # Instantiate a CSR module.
-  dut = CSR()
+  with warnings.catch_warnings():
+    warnings.filterwarnings( "ignore", category = DriverConflict )
 
-  # Run the tests.
-  with Simulator( dut, vcd_file = open( 'csr.vcd', 'w' ) ) as sim:
-    def proc():
-      yield from csr_test( dut )
-    sim.add_clock( 24e-6 )
-    sim.add_clock( 24e-6, domain = "nsync" )
-    sim.add_sync_process( proc )
-    sim.run()
+    # Instantiate a CSR module.
+    dut = CSR()
+
+    # Run the tests.
+    with Simulator( dut, vcd_file = open( 'csr.vcd', 'w' ) ) as sim:
+      def proc():
+        yield from csr_test( dut )
+      sim.add_clock( 24e-6 )
+      sim.add_sync_process( proc )
+      sim.run()

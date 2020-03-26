@@ -162,6 +162,23 @@ def rv32i_decode( self, cpu, instr ):
     self.ipc.eq( self.pc )
   ]
 
+# Helper method to perform atomic r/w logic for CSR instructions.
+def csr_rw( self, cpu ):
+  # Wait a tick if necessary.
+  with cpu.If( self.csr.rw == 0 ):
+    cpu.d.sync += self.csr.rw.eq( 1 )
+    cpu.d.sync += self.cws.eq( 1 )
+    cpu.next = "CPU_PC_DECODE"
+  with cpu.Else():
+    with cpu.If( self.cws == 0 ):
+      # Only read result if destination register is not r0.
+      with cpu.If( ( self.rc & 0x1F ) > 0 ):
+        cpu.d.sync += self.r[ self.rc ].eq( self.csr.rout )
+      cpu.next = "CPU_PC_LOAD"
+    with cpu.Else():
+      cpu.d.sync += self.cws.eq( self.cws - 1 )
+      cpu.next = "CPU_PC_DECODE"
+
 # Helper method to generate logic which moves the CPU's
 # Program Counter to a different memory location.
 def jump_to( self, cpu, npc ):

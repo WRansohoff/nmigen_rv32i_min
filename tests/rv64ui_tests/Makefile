@@ -60,7 +60,7 @@ SRC += ./xori.S
 # rv64mi
 SRC += ./mcsr.S
 SRC += ./sbreak.S
-SRC += ./scall.S
+# (scall test does not function in machine-mode-only environments.)
 # Non-standard test files.
 SRC += ./mcycle.S
 SRC += ./minstret.S

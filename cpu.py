@@ -9,6 +9,8 @@ from rom import *
 from ram import *
 from cpu_helpers import *
 
+import warnings
+
 ###############
 # CPU module: #
 ###############
@@ -51,9 +53,11 @@ class CPU( Elaboratable ):
     self.ipc    = Signal( 32, reset = 0x00000000 )
     # ROM wait states.
     self.ws     = Signal( 3, reset = 0b000 )
+    # CSR access wait states.
+    self.cws    = Signal( 2, reset = 0b00 )
     # The ALU submodule which performs logical operations.
     self.alu    = ALU()
-    # CSR 'system registers' module.
+    # CSR 'system registers'.
     self.csr    = CSR()
     # The ROM submodule (or multiplexed test ROMs) which act as
     # simulated program data storage for the CPU.
@@ -127,12 +131,8 @@ class CPU( Elaboratable ):
             self.ram.ren.eq( 1 )
           ]
           # Increment 'MINSTRET' unless the counter is inhibited.
-          with m.If( self.csr.mcountinhibit.ir == 0 ):
-            m.d.comb += [
-              self.csr.rin.eq( self.csr.minstret + 1 ),
-              self.csr.rsel.eq( CSRA_MINSTRET ),
-              self.csr.f.eq( F_CSRRW )
-            ]
+          with m.If( self.csr.mcountinhibit.shadow[ 2 ] == 0 ):
+            m.d.sync += self.csr.minstret.shadow.eq( self.csr.minstret.shadow + 1 )
           # Decode the fetched instruction and move on to run it.
           rv32i_decode( self, m, self.ram.dout )
           m.next = "CPU_PC_DECODE"
@@ -144,12 +144,8 @@ class CPU( Elaboratable ):
             # Reset the 'ROM wait-states' counter.
             m.d.sync += rws.eq( 0 )
             # Increment 'MINSTRET' unless the counter is inhibited.
-            with m.If( self.csr.mcountinhibit.ir == 0 ):
-              m.d.comb += [
-                self.csr.rin.eq( self.csr.minstret + 1 ),
-                self.csr.rsel.eq( CSRA_MINSTRET ),
-                self.csr.f.eq( F_CSRRW )
-              ]
+            with m.If( self.csr.mcountinhibit.shadow[ 2 ] == 0 ):
+              m.d.sync += self.csr.minstret.shadow.eq( self.csr.minstret.shadow + 1 )
             # Decode the fetched instruction and move on to run it.
             rv32i_decode( self, m, self.rom.out )
             m.next = "CPU_PC_DECODE"
@@ -306,10 +302,10 @@ class CPU( Elaboratable ):
                 self.csr.rsel.eq( CSRA_MCAUSE ),
                 self.csr.f.eq( F_CSRRW )
               ]
-              with m.If( self.csr.mtvec.mode == MTVEC_MODE_DIRECT ):
-                m.d.nsync += self.pc.eq( self.csr.mtvec.base << 2 )
+              with m.If( ( self.csr.mtvec.shadow & 0b11 ) == MTVEC_MODE_DIRECT ):
+                m.d.nsync += self.pc.eq( self.csr.mtvec.shadow & 0xFFFFFFFC )
               with m.Else():
-                m.d.nsync += self.pc.eq( ( self.csr.mtvec.base + 3 ) << 2 )
+                m.d.nsync += self.pc.eq( ( self.csr.mtvec.shadow & 0xFFFFFFFC ) + 0xC )
               m.next = "CPU_TRAP_ENTER"
             # 'MTRET' should return from an interrupt context.
             # For now, just skip to the next instruction if it
@@ -329,10 +325,7 @@ class CPU( Elaboratable ):
               self.csr.rsel.eq( self.imm ),
               self.csr.f.eq( F_CSRRW )
             ]
-            # Only read result if destination register is not r0.
-            with m.If( ( self.rc & 0x1F ) > 0 ):
-              m.d.sync += self.r[ self.rc ].eq( self.csr.rout )
-            m.next = "CPU_PC_LOAD"
+            csr_rw( self, m )
           # 'CSRRS' set specified bits in a CSR from a register.
           with m.Elif( self.f == F_CSRRS ):
             m.d.comb += [
@@ -340,11 +333,7 @@ class CPU( Elaboratable ):
               self.csr.rsel.eq( self.imm ),
               self.csr.f.eq( F_CSRRS )
             ]
-            # Read side effects should still occur if destination
-            # is r0, but the value should not be written back.
-            with m.If( ( self.rc & 0x1F ) > 0 ):
-              m.d.sync += self.r[ self.rc ].eq( self.csr.rout )
-            m.next = "CPU_PC_LOAD"
+            csr_rw( self, m )
           # 'CSRRC' clear specified bits in a CSR from a register.
           with m.Elif( self.f == F_CSRRC ):
             m.d.comb += [
@@ -352,11 +341,7 @@ class CPU( Elaboratable ):
               self.csr.rsel.eq( self.imm ),
               self.csr.f.eq( F_CSRRC )
             ]
-            # Read side effects should still occur if destination
-            # is r0, but the value should not be written back.
-            with m.If( ( self.rc & 0x1F ) > 0 ):
-              m.d.sync += self.r[ self.rc ].eq( self.csr.rout )
-            m.next = "CPU_PC_LOAD"
+            csr_rw( self, m )
           # Note: 'CSRRxI' operations treat the 'rs1' / 'ra'
           # value as a 5-bit sign-extended immediate.
           # 'CSRRWI': Write immediate value to CSR.
@@ -369,10 +354,7 @@ class CPU( Elaboratable ):
               m.d.comb += self.csr.rin.eq( 0xFFFFFFE0 | ( self.ra & 0x1F ) )
             with m.Else():
               m.d.comb += self.csr.rin.eq( ( self.ra & 0x1F ) )
-            # Only read result if destination register is not r0.
-            with m.If( ( self.rc & 0x1F ) > 0 ):
-              m.d.sync += self.r[ self.rc ].eq( self.csr.rout )
-            m.next = "CPU_PC_LOAD"
+            csr_rw( self, m )
           # 'CSRRSI' set immediate bits in a CSR.
           with m.Elif( self.f == F_CSRRSI ):
             m.d.comb += [
@@ -383,11 +365,7 @@ class CPU( Elaboratable ):
               m.d.comb += self.csr.rin.eq( 0xFFFFFFE0 | ( self.ra & 0x1F ) )
             with m.Else():
               m.d.comb += self.csr.rin.eq( ( self.ra & 0x1F ) )
-            # Read side effects should still occur if destination
-            # is r0, but the value should not be written back.
-            with m.If( ( self.rc & 0x1F )> 0 ):
-              m.d.sync += self.r[ self.rc ].eq( self.csr.rout )
-            m.next = "CPU_PC_LOAD"
+            csr_rw( self, m )
           # 'CSRRCI' clear immediate bits in a CSR.
           with m.Elif( self.f == F_CSRRCI ):
             m.d.comb += [
@@ -398,11 +376,7 @@ class CPU( Elaboratable ):
               m.d.comb += self.csr.rin.eq( 0xFFFFFFE0 | ( self.ra & 0x1F ) )
             with m.Else():
               m.d.comb += self.csr.rin.eq( ( self.ra & 0x1F ) )
-            # Read side effects should still occur if destination
-            # is r0, but the value should not be written back.
-            with m.If( ( self.rc & 0x1F ) > 0 ):
-              m.d.sync += self.r[ self.rc ].eq( self.csr.rout )
-            m.next = "CPU_PC_LOAD"
+            csr_rw( self, m )
           # Halt execution at an unrecognized 'SYSTEM' instruction.
           with m.Else():
             m.next = "CPU_PC_ROM_FETCH"
@@ -494,8 +468,8 @@ class CPU( Elaboratable ):
         m.next = "CPU_PC_LOAD"
       # "Trap Entry" - update PC and EPC CSR, and context switch.
       with m.State( "CPU_TRAP_ENTER" ):
+        m.d.comb += self.fsms.eq( CPU_TRAP_ENTER ) # TODO: Delete
         m.d.comb += [
-          self.fsms.eq( CPU_TRAP_ENTER ),
           self.csr.rin.eq( self.ipc ),
           self.csr.rsel.eq( CSRA_MEPC ),
           self.csr.f.eq( F_CSRRW )
@@ -504,13 +478,14 @@ class CPU( Elaboratable ):
         m.next = "CPU_PC_ROM_FETCH"
       # "Trap Exit" - update PC and context switch.
       with m.State( "CPU_TRAP_EXIT" ):
-        m.d.comb += self.fsms.eq( CPU_TRAP_EXIT )
+        m.d.comb += self.fsms.eq( CPU_TRAP_EXIT ) # TODO: Delete
         m.d.sync += self.irq.eq( 0 )
         m.d.nsync += self.pc.eq( self.csr.mepc ),
         m.next = "CPU_PC_ROM_FETCH"
       # "PC Load Letter" - increment the PC.
       with m.State( "CPU_PC_LOAD" ):
         m.d.comb += self.fsms.eq( CPU_PC_LOAD ) # TODO: Remove
+        m.d.sync += self.csr.rw.eq( 0 )
         jump_to( self, m, ( self.ipc + 4 ) )
         m.next = "CPU_PC_ROM_FETCH"
 
@@ -694,27 +669,29 @@ def cpu_mux_sim( tests ):
 
 # 'main' method to run a basic testbench.
 if __name__ == "__main__":
-  print( '--- CPU Tests ---' )
-  cpu_sim( scall_test )
-  cpu_sim( mcsr_test )
-  cpu_sim( sbreak_test )
-  # Run non-standard CSR tests individually.
-  cpu_sim( mcycle_test )
-  cpu_sim( minstret_test )
-  # Run auto-generated RV32I tests with a multiplexed ROM module
-  # containing a different program for each one.
-  # (The CPU gets reset between each program.)
-  cpu_mux_sim( rv32i_tests )
+  with warnings.catch_warnings():
+    warnings.filterwarnings( "ignore", category = DriverConflict )
 
-  # Miscellaneous tests which are not part of the RV32I test suite.
-  # Simulate hand-copied ADD and ADDI test ROMs.
-  cpu_mux_sim( add_mux_test )
-  # Simulate the 'run from RAM' test ROM.
-  cpu_sim( ram_pc_test )
-  # Simulate a basic 'quick test' ROM.
-  cpu_sim( quick_test )
-  # Simulate the 'infinite loop test' ROM.
-  cpu_sim( loop_test )
+    print( '--- CPU Tests ---' )
+    cpu_sim( mcsr_test )
+    cpu_sim( sbreak_test )
+    # Run non-standard CSR tests individually.
+    cpu_sim( mcycle_test )
+    cpu_sim( minstret_test )
+    # Run auto-generated RV32I tests with a multiplexed ROM module
+    # containing a different program for each one.
+    # (The CPU gets reset between each program.)
+    cpu_mux_sim( rv32i_tests )
 
-  # Done; print results.
-  print( "CPU Tests: %d Passed, %d Failed"%( p, f ) )
+    # Miscellaneous tests which are not part of the RV32I test suite.
+    # Simulate hand-copied ADD and ADDI test ROMs.
+    cpu_mux_sim( add_mux_test )
+    # Simulate the 'run from RAM' test ROM.
+    cpu_sim( ram_pc_test )
+    # Simulate a basic 'quick test' ROM.
+    cpu_sim( quick_test )
+    # Simulate the 'infinite loop test' ROM.
+    cpu_sim( loop_test )
+
+    # Done; print results.
+    print( "CPU Tests: %d Passed, %d Failed"%( p, f ) )

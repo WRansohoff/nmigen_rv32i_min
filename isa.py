@@ -113,11 +113,8 @@ CSRA_MHARTID    = 0xF14
 # Machine trap setup (Note - traps are not implemented yet):
 CSRA_MSTATUS    = 0x300
 CSRA_MISA       = 0x301
-CSRA_MEDELEG    = 0x302 # (Does not exist; no S-mode or N-ext)
-CSRA_MIDELEG    = 0x303 # (Does not exist; no S-mode or N-ext)
 CSRA_MIE        = 0x304
 CSRA_MTVEC      = 0x305
-CSRA_MCOUNTEREN = 0x306
 CSRA_MSTATUSH   = 0x310
 # Machine trap handling (Note - traps are not implemented yet):
 CSRA_MSCRATCH   = 0x340
@@ -129,7 +126,7 @@ CSRA_MTINST     = 0x34A
 CSRA_MTVAL2     = 0x34B
 # Machine memory protection: not impemented
 # Machine counter / timers:
-CSRA_MCYCLE     = 0xB00
+CSRA_MCYCLE           = 0xB00
 # TODO: Have the tests check CSRA_MINSTRET and remove 'cpu.fsms'?
 CSRA_MINSTRET         = 0xB02
 # Range of 29 'MHPCOUNTERx' registers (32 low bits).
@@ -187,6 +184,153 @@ MSTATUS_MBE_BIG = 0b1
 # This is a two-bit field, but values >= 2 are reserved.
 MTVEC_MODE_VECTORED = 0b1
 MTVEC_MODE_DIRECT   = 0b0
+# CSR memory map definitions.
+CSRS = {
+  'mhartid': {
+    'c_addr': CSRA_MHARTID,
+    'bits': { 'id': [ 0, 31, 'r', 0x00000000 ] }
+  },
+  'mvendorid': {
+    'c_addr': CSRA_MVENDORID,
+    'bits': {
+      'offset': [ 7, 31, 'r', ( VENDOR_ID & 0xFFFFFF80 ) >> 7 ],
+      'bank':   [ 0, 6,  'r', ( VENDOR_ID & 0x7F ) ]
+    }
+  },
+  'marchid': {
+    'c_addr': CSRA_MARCHID,
+    'bits': { 'imp': [ 0, 31, 'r', ARCH_ID ] }
+  },
+  'mimpid': {
+    'c_addr': CSRA_MIMPID,
+    'bits': { 'imp': [ 0, 31, 'r', MIMP_ID ] }
+  },
+  'misa': {
+    'c_addr': CSRA_MISA,
+    'bits': {
+      'mxl': [ 30, 31, 'r', MISA_MSL_32 ],
+      'ext': [ 0,  29, 'r', 0x00000100 ]
+    }
+  },
+  'mstatus': {
+    'c_addrl': CSRA_MSTATUS,
+    'c_addrh': CSRA_MSTATUSH,
+    'bits': {
+      'mie':  [ 3,  3,  'rw', 0 ],
+      'mpie': [ 7,  7,  'r',  0 ],
+      'mpp':  [ 11, 12, 'r',  0b11 ],
+      'mbe':  [ 37, 37, 'r',  0 ]
+    }
+  },
+  'mcycle': {
+    'c_addrl': CSRA_MCYCLE,
+    'c_addrh': CSRA_MCYCLEH,
+    'bits': { 'cycles': [ 0, 63, 'rw', 0 ] }
+  },
+  'minstret': {
+    'c_addrl': CSRA_MINSTRET,
+    'c_addrh': CSRA_MINSTRETH,
+    'bits': { 'instrs': [ 0, 63, 'rw', 0 ] }
+  },
+  'mie': {
+    'c_addr': CSRA_MIE,
+    'bits': {
+      'ms': [ 3,  3,  'rw', 0 ],
+      'mt': [ 7,  7,  'rw', 0 ],
+      'me': [ 11, 11, 'rw', 0 ]
+    }
+  },
+  'mip': {
+    'c_addr': CSRA_MIP,
+    'bits': {
+      'ms': [ 3,  3,  'rc', 0 ],
+      'mt': [ 7,  7,  'rc', 0 ],
+      'me': [ 11, 11, 'rc', 0 ]
+    }
+  },
+  'mtvec': {
+    'c_addr': CSRA_MTVEC,
+    'bits': {
+      'mode': [ 0, 0,  'rw', 0 ],
+      'res1': [ 1, 1,  'r',  0 ],
+      'base': [ 2, 31, 'rw', 0 ]
+    }
+  },
+  'mcause': {
+    'c_addr': CSRA_MCAUSE,
+    'bits': {
+      'interrupt': [ 31, 31, 'rw', 0 ],
+      'ecode':     [ 0, 30, 'rw', 0 ]
+    }
+  },
+  'mscratch': {
+    'c_addr': CSRA_MSCRATCH,
+    'bits': { 'scratch': [ 0, 31, 'rw', 0 ] }
+  },
+  'mepc': {
+    'c_addr': CSRA_MEPC,
+    'bits': {
+      'res1': [ 0, 1,  'r', 0 ],
+      'mepc': [ 2, 31, 'rw', 0 ]
+    }
+  },
+  'mtval': {
+    'c_addr': CSRA_MTVAL,
+    'bits': { 'einfo': [ 0, 31, 'rw', 0 ] }
+  },
+  'mcountinhibit': {
+    'c_addr': CSRA_MCOUNTINHIBIT,
+    'bits': {
+      'cy':   [ 0, 0, 'rw', 0 ],
+      'res1': [ 1, 1, 'r',  0 ],
+      'im':   [ 2, 2, 'rw', 0 ]
+    }
+  }
+}
+# Add repetitive timer / performance monitors CSRs
+for i in range( 0, 29 ):
+  CSRS[ 'mcountinhibit' ][ 'bits' ][ 'hpm%d'%( i + 3 ) ] = \
+    [ ( i + 3 ), ( i + 3 ), 'rw', 1 ]
+  CSRS[ 'mhpmcounter%d'%( i + 3 ) ] = {
+    'c_addrl': ( CSRA_MHPMCOUNTER_MIN + i ),
+    'c_addrh': ( CSRA_MHPMCOUNTERH_MIN + i ),
+    'bits': { 'count': [ 0, 63, 'rw', 0 ] }
+  }
+  CSRS[ 'mhpmevent%d'%( i + 3 ) ] = {
+    'c_addr': ( CSRA_MHPMEVENT_MIN + i ),
+    'bits': { 'event_bits': [ 0, 31, 'rw', 0 ] }
+  }
+# Calculate 'read', 'read-only', 'set', and 'clear' bitmasks,
+# and assign mutiplexer-local addresses to each CSR.
+bus_addr = 0
+for k, v in CSRS.items():
+  mask_r, mask_ro, mask_s, mask_c, rst = 0, 0, 0, 0, 0
+  for name, field in v[ 'bits' ].items():
+    if 'r' in field[ 2 ]:
+      for i in range( field[ 0 ], ( field[ 1 ] + 1 ) ):
+        mask_r |= ( 1 << i )
+        if ( not 'w' in field[ 2 ] ) & \
+           ( not 's' in field[ 2 ] ) & \
+           ( not 'c' in field[ 2 ] ):
+          mask_ro |= ( 1 << i )
+    if 'w' in field[ 2 ]:
+      for i in range( field[ 0 ], ( field[ 1 ] + 1 ) ):
+        mask_c |= ( 1 << i )
+        mask_s |= ( 1 << i )
+    if 'c' in field[ 2 ]:
+      for i in range( field[ 0 ], ( field[ 1 ] + 1 ) ):
+        mask_c |= ( 1 << i )
+    if 's' in field[ 2 ]:
+      for i in range( field[ 0 ], ( field[ 1 ] + 1 ) ):
+        mask_s |= ( 1 << i )
+    rst |= ( field[ 3 ] << field[ 0 ] )
+  v[ 'b_addr' ]  = bus_addr
+  bus_addr += 1
+  v[ 'mask_r' ]  = mask_r
+  v[ 'mask_ro' ] = mask_ro
+  v[ 'mask_s' ]  = mask_s
+  v[ 'mask_c' ]  = mask_c
+  v[ 'rst' ]     = rst
 
 ##############################################################
 # Helper methods to generate machine code for instructions.  #

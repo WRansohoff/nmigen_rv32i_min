@@ -604,7 +604,6 @@ from tests.test_roms.rv32i_xor import *
 from tests.test_roms.rv32i_xori import *
 from tests.test_roms.rv32i_mcsr import *
 from tests.test_roms.rv32i_sbreak import *
-from tests.test_roms.rv32i_scall import *
 rv32i_tests = [ 'RV32I instructions', 'rv32i_tests',
   [
     add_test, addi_test, and_test, andi_test, auipc_test, beq_test,
@@ -613,7 +612,7 @@ rv32i_tests = [ 'RV32I instructions', 'rv32i_tests',
     lhu_test, lw_test, lui_test, or_test, ori_test, sb_test,
     sh_test, sw_test, sll_test, slli_test, slt_test, slti_test,
     sltiu_test, sltu_test, sra_test, srai_test, srl_test, srli_test,
-    sub_test, xor_test, xori_test
+    sub_test, xor_test, xori_test, sbreak_test
   ]
 ]
 

@@ -43,7 +43,6 @@ So even though this table of test coverage looks okay, there's plenty more work 
 | Instruction |   Pass / Fail?   |
 |:-----------:|:----------------:|
 | `MCSR`      |:heavy_check_mark:|
-| `ECALL`     |        :x:       |
 | `EBREAK`    |        :x:       |
 | `ADD`       |:heavy_check_mark:|
 | `ADDI`      |:heavy_check_mark:|

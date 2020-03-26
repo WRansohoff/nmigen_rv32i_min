@@ -57,6 +57,9 @@ class CSReg( Element, Elaboratable ):
       m.d.comb += self.r_data.eq( self.shadow & self.mask_r )
     if self.access.writable():
       with m.If( self.w_stb ):
+        # New register value = (ones) & ~(zeros).
+        # ones  = (old_val & read_only) | (input & set_mask)
+        # zeros = ~(input) & clear_mask
         m.d.sync += self.shadow.eq( ( ( self.shadow & self.mask_ro ) |
                                     ( self.w_data & self.mask_s ) ) &
                                     ~( ~( self.w_data ) & self.mask_c ) )

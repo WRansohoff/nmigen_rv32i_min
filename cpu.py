@@ -55,7 +55,7 @@ class CPU( Elaboratable ):
     self.imm    = Signal( shape = Shape( width = 32, signed = True ),
                           reset = 0x00000000 )
     self.ipc    = Signal( 32, reset = 0x00000000 )
-    # Instruction-fetch wait states for RAM and ROM.
+    # Memory wait states for RAM and ROM.
     self.nvmws  = Signal( 3, reset = 0b001 )
     self.ramws  = Signal( 3, reset = 0b001 )
     # ALU access wait states.
@@ -164,7 +164,7 @@ class CPU( Elaboratable ):
       #              and prepare associated registers.
       with m.State( "CPU_PC_DECODE" ):
         m.d.comb += self.fsms.eq( CPU_PC_DECODE ) #TODO: Remove
-        # Reset both instruction-fetch wait-state counters.
+        # Reset both memory wait-state counters.
         m.d.sync += [
           nvmws_c.eq( 0 ),
           ramws_c.eq( 0 )
@@ -390,64 +390,70 @@ class CPU( Elaboratable ):
           ]
         with m.Else():
           m.d.comb += self.rom.addr.eq( self.mp )
-        # "Load Byte" operation:
-        with m.If( self.f == F_LB ):
-          with m.If( ( self.rc & 0x1F ) > 0 ):
-            with m.If( ( self.mp & 0xE0000000 ) == 0x20000000 ):
-              with m.If( self.ram.dout[ 7 ] ):
-                m.d.sync += self.r[ self.rc ].eq(
-                  ( self.ram.dout & 0xFF ) | 0xFFFFFF00 )
+        # Memory access wait-states.
+        with m.If( ( ( self.mp & 0xE0000000 ) == 0x20000000 ) & ( ramws_c < self.ramws ) ):
+          m.d.sync += ramws_c.eq( ramws_c + 1 )
+        with m.Elif( ( ( self.mp & 0xE0000000 ) != 0x20000000 ) & ( nvmws_c < self.nvmws ) ):
+          m.d.sync += nvmws_c.eq( nvmws_c + 1 )
+        with m.Else():
+          # "Load Byte" operation:
+          with m.If( self.f == F_LB ):
+            with m.If( ( self.rc & 0x1F ) > 0 ):
+              with m.If( ( self.mp & 0xE0000000 ) == 0x20000000 ):
+                with m.If( self.ram.dout[ 7 ] ):
+                  m.d.sync += self.r[ self.rc ].eq(
+                    ( self.ram.dout & 0xFF ) | 0xFFFFFF00 )
+                with m.Else():
+                  m.d.sync += self.r[ self.rc ].eq(
+                    ( self.ram.dout & 0xFF ) )
               with m.Else():
-                m.d.sync += self.r[ self.rc ].eq(
-                  ( self.ram.dout & 0xFF ) )
-            with m.Else():
-              with m.If( self.rom.out[ 7 ] ):
-                m.d.sync += self.r[ self.rc ].eq(
-                  ( self.rom.out & 0xFF ) | 0xFFFFFF00 )
+                with m.If( self.rom.out[ 7 ] ):
+                  m.d.sync += self.r[ self.rc ].eq(
+                    ( self.rom.out & 0xFF ) | 0xFFFFFF00 )
+                with m.Else():
+                  m.d.sync += self.r[ self.rc ].eq(
+                    ( self.rom.out & 0xFF ) )
+          # "Load Halfword" operation:
+          with m.Elif( self.f == F_LH ):
+            with m.If( ( self.rc & 0x1F ) > 0 ):
+              with m.If( ( self.mp & 0xE0000000 ) == 0x20000000 ):
+                with m.If( self.ram.dout[ 15 ] ):
+                  m.d.sync += self.r[ self.rc ].eq(
+                    ( self.ram.dout & 0xFFFF ) | 0xFFFF0000 )
+                with m.Else():
+                  m.d.sync += self.r[ self.rc ].eq(
+                    ( self.ram.dout & 0xFFFF ) )
               with m.Else():
-                m.d.sync += self.r[ self.rc ].eq(
-                  ( self.rom.out & 0xFF ) )
-        # "Load Halfword" operation:
-        with m.Elif( self.f == F_LH ):
-          with m.If( ( self.rc & 0x1F ) > 0 ):
-            with m.If( ( self.mp & 0xE0000000 ) == 0x20000000 ):
-              with m.If( self.ram.dout[ 15 ] ):
-                m.d.sync += self.r[ self.rc ].eq(
-                  ( self.ram.dout & 0xFFFF ) | 0xFFFF0000 )
+                with m.If( self.rom.out[ 15 ] ):
+                  m.d.sync += self.r[ self.rc ].eq(
+                    ( self.rom.out & 0xFFFF ) | 0xFFFF0000 )
+                with m.Else():
+                  m.d.sync += self.r[ self.rc ].eq(
+                    ( self.rom.out & 0xFFFF ) )
+          # "Load Word" operation:
+          with m.Elif( self.f == F_LW ):
+            with m.If( ( self.rc & 0x1F ) > 0 ):
+              with m.If( ( self.mp & 0xE0000000 ) == 0x20000000 ):
+                m.d.sync += self.r[ self.rc ].eq( self.ram.dout )
               with m.Else():
+                m.d.sync += self.r[ self.rc ].eq( self.rom.out )
+          # "Load Byte" (without sign extension) operation:
+          with m.Elif( self.f == F_LBU ):
+            with m.If( ( self.rc & 0x1F ) > 0 ):
+              with m.If( ( self.mp & 0xE0000000 ) == 0x20000000 ):
+                m.d.sync += self.r[ self.rc ].eq( self.ram.dout & 0xFF )
+              with m.Else():
+                m.d.sync += self.r[ self.rc ].eq( self.rom.out & 0xFF )
+          # "Load Halfword" (without sign extension) operation:
+          with m.Elif( self.f == F_LHU ):
+            with m.If( ( self.rc & 0x1F ) > 0 ):
+              with m.If( ( self.mp & 0xE0000000 ) == 0x20000000 ):
                 m.d.sync += self.r[ self.rc ].eq(
                   ( self.ram.dout & 0xFFFF ) )
-            with m.Else():
-              with m.If( self.rom.out[ 15 ] ):
-                m.d.sync += self.r[ self.rc ].eq(
-                  ( self.rom.out & 0xFFFF ) | 0xFFFF0000 )
               with m.Else():
                 m.d.sync += self.r[ self.rc ].eq(
                   ( self.rom.out & 0xFFFF ) )
-        # "Load Word" operation:
-        with m.Elif( self.f == F_LW ):
-          with m.If( ( self.rc & 0x1F ) > 0 ):
-            with m.If( ( self.mp & 0xE0000000 ) == 0x20000000 ):
-              m.d.sync += self.r[ self.rc ].eq( self.ram.dout )
-            with m.Else():
-              m.d.sync += self.r[ self.rc ].eq( self.rom.out )
-        # "Load Byte" (without sign extension) operation:
-        with m.Elif( self.f == F_LBU ):
-          with m.If( ( self.rc & 0x1F ) > 0 ):
-            with m.If( ( self.mp & 0xE0000000 ) == 0x20000000 ):
-              m.d.sync += self.r[ self.rc ].eq( self.ram.dout & 0xFF )
-            with m.Else():
-              m.d.sync += self.r[ self.rc ].eq( self.rom.out & 0xFF )
-        # "Load Halfword" (without sign extension) operation:
-        with m.Elif( self.f == F_LHU ):
-          with m.If( ( self.rc & 0x1F ) > 0 ):
-            with m.If( ( self.mp & 0xE0000000 ) == 0x20000000 ):
-              m.d.sync += self.r[ self.rc ].eq(
-                ( self.ram.dout & 0xFFFF ) )
-            with m.Else():
-              m.d.sync += self.r[ self.rc ].eq(
-                ( self.rom.out & 0xFFFF ) )
-        m.next = "CPU_PC_LOAD"
+          m.next = "CPU_PC_LOAD"
       # "Trap Entry" - update PC and EPC CSR, and context switch.
       with m.State( "CPU_TRAP_ENTER" ):
         m.d.comb += self.fsms.eq( CPU_TRAP_ENTER ) # TODO: Delete
@@ -549,6 +555,7 @@ def check_vals( expected, ni, cpu ):
 # Helper method to run a CPU device for a given number of cycles,
 # and verify its expected register values over time.
 def cpu_run( cpu, expected ):
+  global p, f
   # Record how many CPU instructions have executed.
   ni = -1
   am_fetching = False

@@ -1,4 +1,5 @@
 // RISC-V Compliance Test Header File
+// Modified from SiFive 'compliance_test.h'
 // Copyright (c) 2017, Codasip Ltd. All Rights Reserved.
 // See LICENSE for license details.
 //
@@ -16,9 +17,6 @@
 #define RV_COMPLIANCE_HALT       \
         li TESTNUM, 1;           \
         SWSIG (0, TESTNUM);      \
-        la t0, begin_signature;  \
-        la t1, read_signature;   \
-        la t2, end_signature;    \
         sub t2, t2, t0;          \
         srli t2, t2, 2;          \
         addi t2, t2, -1;         \

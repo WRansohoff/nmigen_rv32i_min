@@ -100,10 +100,7 @@ Other CSRs behave as defined in the specification, but they won't really functio
 | `MTVAL`         | :heavy_check_mark: |
 | `MCYCLE`        | :heavy_check_mark: |
 | `MINSTRET`      | :heavy_check_mark: |
-| `MHPMCOUNTERx`  |         :x:        |
-| `MHPMCOUNTERxH` |         :x:        |
 | `MCOUNTINHIBIT` | :heavy_check_mark: |
-| `MHPEVENT`      |         :x:        |
 
 # Notes to Self
 

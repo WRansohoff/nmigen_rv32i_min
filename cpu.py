@@ -662,8 +662,6 @@ if __name__ == "__main__":
       # Run auto-generated RV32I compliance tests with a multiplexed
       # ROM module containing a different program for each one.
       # (The CPU gets reset between each program.)
-      cpu_sim( add_test )
-      cpu_sim( minstret_test )
       cpu_mux_sim( rv32i_compliance )
       # Run non-standard CSR tests individually.
       cpu_sim( mcycle_test )

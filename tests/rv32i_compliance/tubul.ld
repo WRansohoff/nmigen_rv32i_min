@@ -5,7 +5,7 @@ ENTRY( _start )
 MEMORY
 {
   ROM   (rx)  : ORIGIN = 0x00000000, LENGTH = 1M
-  RAM   (rwx) : ORIGIN = 0x20000000, LENGTH = 2K
+  RAM   (rwx) : ORIGIN = 0x20000000, LENGTH = 1K
 }
 
 SECTIONS
@@ -22,6 +22,7 @@ SECTIONS
     *(.rodata .rodata.*)
     *(.srodata .srodata.*)
     *(.text .text.*)
+    *(.tohost .tohost.*)
   } >ROM
 
   . = ALIGN(4);

@@ -73,11 +73,11 @@ class CSR( Elaboratable ):
     # It shouldn't be complicated to do with a dictionary,
     # but it looks like the 'nmigen-soc' library includes a CSR
     # wishbone interface; maybe I can use that instead?
-    self.rsel = Signal( 12, reset = 0x00000000 )
+    self.rsel = Signal( 12, reset = 0x000 )
     self.rin  = Signal( 32, reset = 0x00000000 )
     self.rout = Signal( 32, reset = 0x00000000 )
     self.rw   = Signal( 1,  reset = 0b0 )
-    self.f    = Signal( 3,  reset = F_CSRRW )
+    self.f    = Signal( 3,  reset = 0b000 )
     gen_csrs( self )
 
   def elaborate( self, platform ):

@@ -564,58 +564,122 @@ add_mux_test = [ 'ADD/ADDI test cases', 'cpu_mux_add',
                   [ addu_test, addiu_test ] ]
 
 # Multiplexed ROM image for the collected RV32I instruction tests.
-from tests.test_roms.rv32i_add import *
-from tests.test_roms.rv32i_addi import *
-from tests.test_roms.rv32i_and import *
-from tests.test_roms.rv32i_andi import *
-from tests.test_roms.rv32i_auipc import *
-from tests.test_roms.rv32i_beq import *
-from tests.test_roms.rv32i_bge import *
-from tests.test_roms.rv32i_bgeu import *
-from tests.test_roms.rv32i_blt import *
-from tests.test_roms.rv32i_bltu import *
-from tests.test_roms.rv32i_bne import *
-from tests.test_roms.rv32i_fence_i import *
-from tests.test_roms.rv32i_jal import *
-from tests.test_roms.rv32i_jalr import *
-from tests.test_roms.rv32i_lb import *
-from tests.test_roms.rv32i_lbu import *
-from tests.test_roms.rv32i_lh import *
-from tests.test_roms.rv32i_lhu import *
-from tests.test_roms.rv32i_lw import *
-from tests.test_roms.rv32i_lui import *
-from tests.test_roms.rv32i_or import *
-from tests.test_roms.rv32i_ori import *
-from tests.test_roms.rv32i_sb import *
-from tests.test_roms.rv32i_sh import *
-from tests.test_roms.rv32i_sw import *
-from tests.test_roms.rv32i_sll import *
-from tests.test_roms.rv32i_slli import *
-from tests.test_roms.rv32i_slt import *
-from tests.test_roms.rv32i_slti import *
-from tests.test_roms.rv32i_sltu import *
-from tests.test_roms.rv32i_sltiu import *
-from tests.test_roms.rv32i_sra import *
-from tests.test_roms.rv32i_srai import *
-from tests.test_roms.rv32i_srl import *
-from tests.test_roms.rv32i_srli import *
-from tests.test_roms.rv32i_sub import *
-from tests.test_roms.rv32i_xor import *
-from tests.test_roms.rv32i_xori import *
-from tests.test_roms.rv32i_mcsr import *
-from tests.test_roms.rv32i_sbreak import *
+from tests.test_roms.rv32i_add_t import *
+from tests.test_roms.rv32i_addi_t import *
+from tests.test_roms.rv32i_and_t import *
+from tests.test_roms.rv32i_andi_t import *
+from tests.test_roms.rv32i_auipc_t import *
+from tests.test_roms.rv32i_beq_t import *
+from tests.test_roms.rv32i_bge_t import *
+from tests.test_roms.rv32i_bgeu_t import *
+from tests.test_roms.rv32i_blt_t import *
+from tests.test_roms.rv32i_bltu_t import *
+from tests.test_roms.rv32i_bne_t import *
+from tests.test_roms.rv32i_fence_i_t import *
+from tests.test_roms.rv32i_jal_t import *
+from tests.test_roms.rv32i_jalr_t import *
+from tests.test_roms.rv32i_lb_t import *
+from tests.test_roms.rv32i_lbu_t import *
+from tests.test_roms.rv32i_lh_t import *
+from tests.test_roms.rv32i_lhu_t import *
+from tests.test_roms.rv32i_lw_t import *
+from tests.test_roms.rv32i_lui_t import *
+from tests.test_roms.rv32i_or_t import *
+from tests.test_roms.rv32i_ori_t import *
+from tests.test_roms.rv32i_sb_t import *
+from tests.test_roms.rv32i_sh_t import *
+from tests.test_roms.rv32i_sw_t import *
+from tests.test_roms.rv32i_sll_t import *
+from tests.test_roms.rv32i_slli_t import *
+from tests.test_roms.rv32i_slt_t import *
+from tests.test_roms.rv32i_slti_t import *
+from tests.test_roms.rv32i_sltu_t import *
+from tests.test_roms.rv32i_sltiu_t import *
+from tests.test_roms.rv32i_sra_t import *
+from tests.test_roms.rv32i_srai_t import *
+from tests.test_roms.rv32i_srl_t import *
+from tests.test_roms.rv32i_srli_t import *
+from tests.test_roms.rv32i_sub_t import *
+from tests.test_roms.rv32i_xor_t import *
+from tests.test_roms.rv32i_xori_t import *
+from tests.test_roms.rv32i_mcsr_t import *
+from tests.test_roms.rv32i_sbreak_t import *
 rv32i_tests = [ 'RV32I instructions', 'rv32i_tests',
   [
-    add_test, addi_test, and_test, andi_test, auipc_test, beq_test,
-    bge_test, bgeu_test, blt_test, bltu_test, bne_test, mcsr_test,
-    fence_i_test, jal_test, jalr_test, lb_test, lbu_test, lh_test,
-    lhu_test, lw_test, lui_test, or_test, ori_test, sb_test,
-    sh_test, sw_test, sll_test, slli_test, slt_test, slti_test,
-    sltiu_test, sltu_test, sra_test, srai_test, srl_test, srli_test,
-    sub_test, xor_test, xori_test, sbreak_test
+    add_t_test, addi_t_test, and_t_test, andi_t_test, auipc_t_test,
+    beq_t_test, bge_t_test, bgeu_t_test, blt_t_test, bltu_t_test,
+    bne_t_test, mcsr_t_test, fence_i_t_test, jal_t_test, jalr_t_test,
+    lb_t_test, lbu_t_test, lh_t_test, lhu_t_test, lw_t_test,
+    lui_t_test, or_t_test, ori_t_test, sb_t_test, sh_t_test,
+    sw_t_test, sll_t_test, slli_t_test, slt_t_test, slti_t_test,
+    sltiu_t_test, sltu_t_test, sra_t_test, srai_t_test, srl_t_test,
+    srli_t_test, sub_t_test, xor_t_test, xori_t_test, sbreak_t_test
   ]
 ]
 
 # Non-standard compiled test programs.
-from tests.test_roms.rv32i_mcycle import *
-from tests.test_roms.rv32i_minstret import *
+from tests.test_roms.rv32i_mcycle_t import *
+from tests.test_roms.rv32i_minstret_t import *
+
+# Multiplexed ROM image for the collected RV32I compliance tests.
+from tests.compliance_roms.rv32i_add_c import *
+from tests.compliance_roms.rv32i_addi_c import *
+from tests.compliance_roms.rv32i_and_c import *
+from tests.compliance_roms.rv32i_andi_c import *
+from tests.compliance_roms.rv32i_auipc_c import *
+from tests.compliance_roms.rv32i_beq_c import *
+from tests.compliance_roms.rv32i_bge_c import *
+from tests.compliance_roms.rv32i_bgeu_c import *
+from tests.compliance_roms.rv32i_blt_c import *
+from tests.compliance_roms.rv32i_bltu_c import *
+from tests.compliance_roms.rv32i_bne_c import *
+from tests.compliance_roms.rv32i_delay_slots_c import *
+from tests.compliance_roms.rv32i_ebreak_c import *
+from tests.compliance_roms.rv32i_ecall_c import *
+from tests.compliance_roms.rv32i_io_c import *
+from tests.compliance_roms.rv32i_jal_c import *
+from tests.compliance_roms.rv32i_jalr_c import *
+from tests.compliance_roms.rv32i_lb_c import *
+from tests.compliance_roms.rv32i_lbu_c import *
+from tests.compliance_roms.rv32i_lh_c import *
+from tests.compliance_roms.rv32i_lhu_c import *
+from tests.compliance_roms.rv32i_lw_c import *
+from tests.compliance_roms.rv32i_lui_c import *
+from tests.compliance_roms.rv32i_nop_c import *
+from tests.compliance_roms.rv32i_misalign_jmp_c import *
+from tests.compliance_roms.rv32i_misalign_ldst_c import *
+from tests.compliance_roms.rv32i_or_c import *
+from tests.compliance_roms.rv32i_ori_c import *
+from tests.compliance_roms.rv32i_rf_size_c import *
+from tests.compliance_roms.rv32i_rf_width_c import *
+from tests.compliance_roms.rv32i_rf_x0_c import *
+from tests.compliance_roms.rv32i_sb_c import *
+from tests.compliance_roms.rv32i_sh_c import *
+from tests.compliance_roms.rv32i_sw_c import *
+from tests.compliance_roms.rv32i_sll_c import *
+from tests.compliance_roms.rv32i_slli_c import *
+from tests.compliance_roms.rv32i_slt_c import *
+from tests.compliance_roms.rv32i_slti_c import *
+from tests.compliance_roms.rv32i_sltiu_c import *
+from tests.compliance_roms.rv32i_sltu_c import *
+from tests.compliance_roms.rv32i_sra_c import *
+from tests.compliance_roms.rv32i_srai_c import *
+from tests.compliance_roms.rv32i_srl_c import *
+from tests.compliance_roms.rv32i_srli_c import *
+from tests.compliance_roms.rv32i_sub_c import *
+from tests.compliance_roms.rv32i_xor_c import *
+from tests.compliance_roms.rv32i_xori_c import *
+rv32i_compliance = [ 'RV32I compliance tests', 'rv32i_compliance',
+  [
+    add_c_test, addi_c_test, and_c_test, andi_c_test, auipc_c_test,
+    beq_c_test, bge_c_test, bgeu_c_test, blt_c_test, bltu_c_test,
+    bne_c_test, delay_slots_c_test, ebreak_c_test, ecall_c_test,
+    io_c_test, jal_c_test, jalr_c_test, lb_c_test, lbu_c_test,
+    lh_c_test, lhu_c_test, lw_c_test, lui_c_test, nop_c_test,
+    misalign_jmp_c_test, misalign_ldst_c_test, or_c_test, ori_c_test,
+    rf_size_c_test, rf_width_c_test, rf_x0_c_test, sb_c_test,
+    sh_c_test, sw_c_test, sll_c_test, slli_c_test, slt_c_test,
+    slti_c_test, sltiu_c_test, sltu_c_test, sra_c_test, srai_c_test,
+    srl_c_test, srli_c_test, sub_c_test, xor_c_test, xori_c_test
+  ]
+]

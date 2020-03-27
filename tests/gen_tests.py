@@ -14,10 +14,10 @@ test_path = "%s/"%( os.path.dirname( sys.argv[ 0 ] ) )
 # Helper method to get raw hex out of an object file memory section
 # This basically returns the compiled machine code for one
 # of the RISC-V assembly test files.
-def get_section_hex( op, sect ):
+def get_section_hex( op, sect, in_dir ):
   hdump = subprocess.run( [ od, '-s', '-j', sect,
-                            './%s/rv64ui_tests/%s.o'
-                            %( test_path, op ) ],
+                            './%s/%s/%s.o'
+                            %( test_path, in_dir, op ) ],
                           stdout = subprocess.PIPE
                         ).stdout.decode( 'utf-8' )
   hexl = []
@@ -37,12 +37,15 @@ def get_section_hex( op, sect ):
 
 # Helper method to write a Python file containing a simulated ROM
 # test image and testbench condition to verify that it ran correclty.
-def write_py_tests( op, hext, hexd ):
+def write_py_tests( op, hext, hexd, out_dir ):
   instrs = len( hext )
   opp = op
+  opn = op[ :-2 ].upper()
+  if op[ -2: ] == '_c':
+    opn += ' compliance'
   while len( opp ) < 5:
     opp = opp + ' '
-  py_fn = './%s/test_roms/rv32i_%s.py'%( test_path, op )
+  py_fn = './%s/%s/rv32i_%s.py'%( test_path, out_dir, op )
   with open( py_fn, 'w' ) as py:
     print( 'Generating %s tests...'%op, end = '' )
     # Write imports and headers.
@@ -92,25 +95,41 @@ def write_py_tests( op, hext, hexd ):
     # Write the test struct.
     py.write( "\r\n# Collected test program definition:\r\n%s_test = "
               "[ '%s tests', 'cpu_%s', %s_rom, %s_ram, %s_exp ]"
-              %( op, op.upper(), op, op, op, op ) )
+              %( op, opn, op, op, op, op ) )
   print( "Done!" )
 
-# Ensure that the 'tests/test_roms' directory exists.
+# Ensure that the test ROM directories exists.
 if not os.path.exists( './%s/test_roms'%test_path ):
   os.makedirs( './%s/test_roms'%test_path )
+if not os.path.exists( './%s/compliance_roms'%test_path ):
+  os.makedirs( './%s/compliance_roms'%test_path )
 # Run 'make clean && make' to re-compile the files.
 subprocess.run( [ 'make', 'clean' ],
                 cwd = './%s/rv64ui_tests/'%test_path )
 subprocess.run( [ 'make' ],
                 cwd = './%s/rv64ui_tests/'%test_path )
+subprocess.run( [ 'make', 'clean' ],
+                cwd = './%s/rv32i_compliance/'%test_path )
+subprocess.run( [ 'make' ],
+                cwd = './%s/rv32i_compliance/'%test_path )
 # Process all compiled test files.
 for fn in os.listdir( './%s/rv64ui_tests'%test_path ):
   if fn[ -1 ] == 'o':
     op = fn[ :-2 ]
     # Get machine code instructions for the operation's tests.
-    hext = get_section_hex( op, '.text' )
+    hext = get_section_hex( op, '.text', 'rv64ui_tests' )
     # Get initialized RAM data for the operation's tests.
-    hexd = get_section_hex( op, '.data' )
+    hexd = get_section_hex( op, '.data', 'rv64ui_tests' )
     # Write a Python file with the test ROM image and a simple
     # "expect r7 = 93, r10 = 0 after running all tests" condition.
-    write_py_tests( op, hext, hexd )
+    write_py_tests( '%s_t'%op, hext, hexd, 'test_roms' )
+for fn in os.listdir( './%s/rv32i_compliance'%test_path ):
+  if fn[ -1 ] == 'o':
+    op = fn[ :-2 ]
+    # Get machine code instructions for the operation's tests.
+    hext = get_section_hex( op, '.text', 'rv32i_compliance' )
+    # Get initialized RAM data for the operation's tests.
+    hexd = get_section_hex( op, '.data', 'rv32i_compliance' )
+    # Write a Python file with the test ROM image and a simple
+    # "expect r7 = 93, r10 = 0 after running all tests" condition.
+    write_py_tests( '%s_c'%op[ 2 : -3 ].lower(), hext, hexd, 'compliance_roms' )

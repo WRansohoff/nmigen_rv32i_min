@@ -16,11 +16,9 @@ This project uses [nMigen](https://github.com/nmigen/nmigen), which is a super c
 
 The ALU, CSR, RAM, and ROM Python files each have their own testbench to run some basic unit tests.
 
-The CPU module's testbench runs the standard `rv32ui` [`RISC-V` instruction set tests](https://github.com/riscv/riscv-tests) for each operation, compiled with GCC. These tests cover most of the basic `RV32I` instructions, with the exception of `ECALL` and `EBREAK`.
+The CPU module's testbench runs the standard `rv32ui` [`RISC-V` instruction set tests](https://github.com/riscv/riscv-tests) for each operation, and the `rv32i` [`RISC-V` compliance tests](https://github.com/riscv/riscv-compliance).
 
-I also included the `RV32MI` `CSR`, and `EBREAK` tests for the most basic 'machine mode' implementation. The `tests/rv64ui_tests/` directory contains assembly code for those test cases, copied [from the `isa/` directory of the `riscv-tests` repository](https://github.com/riscv/riscv-tests/tree/master/isa).
-
-The `tests/test_roms/` directory contains auto-generated Python files with corresponding machine code instructions in a format that the CPU testbenches can interpret. The auto-generated files are not included in the repository, so you'll need to run the `tests/gen_tests.py` script before you run the CPU testbenches:
+The `tests/test_roms/` and `tests/compliance_roms` directories contains auto-generated Python files with corresponding machine code instructions in a format that the CPU testbenches can interpret. The auto-generated files are not included in the repository, so you'll need to run the `tests/gen_tests.py` script before you run the CPU testbenches:
 
     python3 tests/gen_tests.py
 
@@ -35,6 +33,8 @@ Each test simulation also creates a `.vcd` file containing the waveform results,
 Note that I've only implemented a couple of basic traps, and I'll need to implement some buses before I can add any peripherals. Fortunately, [the `nmigen-soc` repository](https://github.com/nmigen/nmigen-soc) contains a [Wishbone bus implementation](https://opencores.org/howto/wishbone), but I need to do some reading to figure out how that works.
 
 So even though this table of test coverage looks okay, there's plenty more work to do before this CPU can blink an LED.
+
+## Basic Tests
 
 | Instruction |   Pass / Fail?   |
 |:-----------:|:----------------:|
@@ -78,6 +78,60 @@ So even though this table of test coverage looks okay, there's plenty more work 
 | `SUB`       |:heavy_check_mark:|
 | `XOR`       |:heavy_check_mark:|
 | `XORI`      |:heavy_check_mark:|
+
+## Compliance Tests
+
+Still a little bit of work to do here.
+
+|   Test Suite    |   Pass / Fail?   |
+|:---------------:|:----------------:|
+| `ADD`           |:heavy_check_mark:|
+| `ADDI`          |:heavy_check_mark:|
+| `AND`           |:heavy_check_mark:|
+| `ANDI`          |:heavy_check_mark:|
+| `AUIPC`         |:heavy_check_mark:|
+| `BEQ`           |:heavy_check_mark:|
+| `BGE`           |:heavy_check_mark:|
+| `BGEU`          |:heavy_check_mark:|
+| `BLT`           |:heavy_check_mark:|
+| `BLTU`          |:heavy_check_mark:|
+| `BNE`           |:heavy_check_mark:|
+| `DELAY_SLOTS`   |        :x:       |
+| `EBREAK`        |        :x:       |
+| `ECALL`         |        :x:       |
+| `IO`            |:heavy_check_mark:|
+| `JAL`           |:heavy_check_mark:|
+| `JALR`          |:heavy_check_mark:|
+| `LB`            |:heavy_check_mark:|
+| `LBU`           |:heavy_check_mark:|
+| `LH`            |:heavy_check_mark:|
+| `LHU`           |:heavy_check_mark:|
+| `LW`            |:heavy_check_mark:|
+| `LUI`           |:heavy_check_mark:|
+| `MISALIGN_JMP`  |        :x:       |
+| `MISALIGN_LDST` |:heavy_check_mark:|
+| `NOP`           |:heavy_check_mark:|
+| `OR`            |:heavy_check_mark:|
+| `ORI`           |:heavy_check_mark:|
+| `RF_SIZE`       |:heavy_check_mark:|
+| `RF_WIDTH`      |:heavy_check_mark:|
+| `RF_X0`         |:heavy_check_mark:|
+| `SB`            |:heavy_check_mark:|
+| `SH`            |:heavy_check_mark:|
+| `SW`            |:heavy_check_mark:|
+| `SLL`           |:heavy_check_mark:|
+| `SLLI`          |:heavy_check_mark:|
+| `SLT`           |:heavy_check_mark:|
+| `SLTI`          |:heavy_check_mark:|
+| `SLTIU`         |:heavy_check_mark:|
+| `SLTU`          |:heavy_check_mark:|
+| `SRA`           |:heavy_check_mark:|
+| `SRAI`          |:heavy_check_mark:|
+| `SRL`           |:heavy_check_mark:|
+| `SRLI`          |:heavy_check_mark:|
+| `SUB`           |:heavy_check_mark:|
+| `XOR`           |:heavy_check_mark:|
+| `XORI`          |:heavy_check_mark:|
 
 # Control and Status Registers
 

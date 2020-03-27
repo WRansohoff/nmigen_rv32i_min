@@ -141,6 +141,8 @@ class CPU( Elaboratable ):
           # Increment 'MINSTRET' unless the counter is inhibited.
           with m.If( self.csr.mcountinhibit.shadow[ 2 ] == 0 ):
             m.d.sync += self.csr.minstret.shadow.eq( self.csr.minstret.shadow + 1 )
+            with m.If( self.csr.minstret.shadow == 0xFFFFFFFF ):
+              m.d.sync += self.csr.minstreth.shadow.eq( self.csr.minstreth.shadow + 1 )
           # Decode the fetched instruction and move on to run it.
           rv32i_decode( self, m, self.ram.dout )
           m.next = "CPU_PC_DECODE"
@@ -154,6 +156,8 @@ class CPU( Elaboratable ):
             # Increment 'MINSTRET' unless the counter is inhibited.
             with m.If( self.csr.mcountinhibit.shadow[ 2 ] == 0 ):
               m.d.sync += self.csr.minstret.shadow.eq( self.csr.minstret.shadow + 1 )
+              with m.If( self.csr.minstret.shadow == 0xFFFFFFFF ):
+                m.d.sync += self.csr.minstreth.shadow.eq( self.csr.minstreth.shadow + 1 )
             # Decode the fetched instruction and move on to run it.
             rv32i_decode( self, m, self.rom.out )
             m.next = "CPU_PC_DECODE"
@@ -178,7 +182,8 @@ class CPU( Elaboratable ):
           jump_to( self, m, ( self.ipc + self.imm ) )
           m.next = "CPU_PC_ROM_FETCH"
         # "Jump And Link from Register" instruction:
-        # TODO: verify that funct3 bits == 0b000?
+        # funct3 bits should be 0b000, but for now there's no
+        # need to be a stickler about that.
         with m.Elif( self.opcode == OP_JALR ):
           jump_to( self, m,
                    ( self.r[ self.ra ] + self.imm ) & 0xFFFFFFFE )
@@ -186,7 +191,6 @@ class CPU( Elaboratable ):
             m.d.sync += self.r[ self.rc ].eq( self.ipc + 4 )
           m.next = "CPU_PC_ROM_FETCH"
         # "Conditional Branch" instructions:
-        # TODO: Should these defer to the ALU for compare operations?
         with m.Elif( self.opcode == OP_BRANCH ):
           # "Branch if EQual" operation:
           with m.If( ( self.f == F_BEQ ) &

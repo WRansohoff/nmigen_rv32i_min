@@ -129,6 +129,9 @@ CSRA_MTVAL2     = 0x34B
 CSRA_MCYCLE           = 0xB00
 # TODO: Have the tests check CSRA_MINSTRET and remove 'cpu.fsms'?
 CSRA_MINSTRET         = 0xB02
+# Machine counter setup:
+CSRA_MCOUNTINHIBIT    = 0x320
+# Note: HPM counters are not implemented.
 # Range of 29 'MHPCOUNTERx' registers (32 low bits).
 CSRA_MHPMCOUNTER_MIN  = 0xB03
 CSRA_MHPMCOUNTER_MAX  = 0xB1F
@@ -137,8 +140,6 @@ CSRA_MINSTRETH        = 0xB82
 # Range of 29 'MHPCOUNTERxH' registers (32 high bits).
 CSRA_MHPMCOUNTERH_MIN = 0xB83
 CSRA_MHPMCOUNTERH_MAX = 0xB9F
-# Machine counter setup:
-CSRA_MCOUNTINHIBIT    = 0x320
 # Range of 29 'MHPEVENTx' registers.
 CSRA_MHPMEVENT_MIN    = 0x323
 CSRA_MHPMEVENT_MAX    = 0x33F
@@ -213,24 +214,34 @@ CSRS = {
     }
   },
   'mstatus': {
-    'c_addrl': CSRA_MSTATUS,
-    'c_addrh': CSRA_MSTATUSH,
+    'c_addr': CSRA_MSTATUS,
     'bits': {
       'mie':  [ 3,  3,  'rw', 0 ],
       'mpie': [ 7,  7,  'r',  0 ],
       'mpp':  [ 11, 12, 'r',  0b11 ],
-      'mbe':  [ 37, 37, 'r',  0 ]
+    }
+  },
+  'mstatush': {
+    'c_addr': CSRA_MSTATUSH,
+    'bits': {
+      'mbe':  [ 5, 5, 'r',  0 ]
     }
   },
   'mcycle': {
-    'c_addrl': CSRA_MCYCLE,
-    'c_addrh': CSRA_MCYCLEH,
-    'bits': { 'cycles': [ 0, 63, 'rw', 0 ] }
+    'c_addr': CSRA_MCYCLE,
+    'bits': { 'cycles': [ 0, 31, 'rw', 0 ] }
+  },
+  'mcycleh': {
+    'c_addr': CSRA_MCYCLEH,
+    'bits': { 'cycles': [ 0, 31, 'rw', 0 ] }
   },
   'minstret': {
-    'c_addrl': CSRA_MINSTRET,
-    'c_addrh': CSRA_MINSTRETH,
-    'bits': { 'instrs': [ 0, 63, 'rw', 0 ] }
+    'c_addr': CSRA_MINSTRET,
+    'bits': { 'instrs': [ 0, 31, 'rw', 0 ] }
+  },
+  'minstreth': {
+    'c_addr': CSRA_MINSTRETH,
+    'bits': { 'instrs': [ 0, 31, 'rw', 0 ] }
   },
   'mie': {
     'c_addr': CSRA_MIE,
@@ -283,23 +294,12 @@ CSRS = {
     'bits': {
       'cy':   [ 0, 0, 'rw', 0 ],
       'res1': [ 1, 1, 'r',  0 ],
-      'im':   [ 2, 2, 'rw', 0 ]
+      'im':   [ 2, 2, 'rw', 0 ],
+      # Hardware performance monitors not implemented.
+      'res2': [ 3, 31, 'r', 0 ]
     }
   }
 }
-# Add repetitive timer / performance monitors CSRs
-for i in range( 0, 29 ):
-  CSRS[ 'mcountinhibit' ][ 'bits' ][ 'hpm%d'%( i + 3 ) ] = \
-    [ ( i + 3 ), ( i + 3 ), 'rw', 1 ]
-  CSRS[ 'mhpmcounter%d'%( i + 3 ) ] = {
-    'c_addrl': ( CSRA_MHPMCOUNTER_MIN + i ),
-    'c_addrh': ( CSRA_MHPMCOUNTERH_MIN + i ),
-    'bits': { 'count': [ 0, 63, 'rw', 0 ] }
-  }
-  CSRS[ 'mhpmevent%d'%( i + 3 ) ] = {
-    'c_addr': ( CSRA_MHPMEVENT_MIN + i ),
-    'bits': { 'event_bits': [ 0, 31, 'rw', 0 ] }
-  }
 # Calculate 'read', 'read-only', 'set', and 'clear' bitmasks,
 # and assign mutiplexer-local addresses to each CSR.
 bus_addr = 0

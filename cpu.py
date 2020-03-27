@@ -180,28 +180,23 @@ class CPU( Elaboratable ):
           with m.If( ( self.rc & 0x1F ) > 0 ):
             m.d.sync += self.r[ self.rc ].eq( self.ipc + 4 )
           jump_to( self, m, ( self.ipc + self.imm ) )
-          m.next = "CPU_PC_ROM_FETCH"
         # "Jump And Link from Register" instruction:
         # funct3 bits should be 0b000, but for now there's no
         # need to be a stickler about that.
         with m.Elif( self.opcode == OP_JALR ):
-          jump_to( self, m,
-                   ( self.r[ self.ra ] + self.imm ) & 0xFFFFFFFE )
           with m.If( ( self.rc & 0x1F ) > 0 ):
             m.d.sync += self.r[ self.rc ].eq( self.ipc + 4 )
-          m.next = "CPU_PC_ROM_FETCH"
+          jump_to( self, m, ( self.r[ self.ra ] + self.imm ) )
         # "Conditional Branch" instructions:
         with m.Elif( self.opcode == OP_BRANCH ):
           # "Branch if EQual" operation:
           with m.If( ( self.f == F_BEQ ) &
                      ( self.r[ self.ra ] == self.r[ self.rb ] ) ):
               jump_to( self, m, ( self.ipc + self.imm ) )
-              m.next = "CPU_PC_ROM_FETCH"
           # "Branch if Not Equal" operation:
           with m.Elif( ( self.f == F_BNE ) &
                        ( self.r[ self.ra ] != self.r[ self.rb ] ) ):
               jump_to( self, m, ( self.ipc + self.imm ) )
-              m.next = "CPU_PC_ROM_FETCH"
           # "Branch if Less Than" operation:
           with m.Elif( ( self.f == F_BLT ) &
                    ( ( ( self.r[ self.rb ].bit_select( 31, 1 ) ==
@@ -210,7 +205,6 @@ class CPU( Elaboratable ):
                        ( self.r[ self.ra ].bit_select( 31, 1 ) >
                          self.r[ self.rb ].bit_select( 31, 1 ) ) ) ):
               jump_to( self, m, ( self.ipc + self.imm ) )
-              m.next = "CPU_PC_ROM_FETCH"
           # "Branch if Greater or Equal" operation:
           with m.Elif( ( self.f == F_BGE ) &
                    ( ( ( self.r[ self.rb ].bit_select( 31, 1 ) ==
@@ -219,17 +213,14 @@ class CPU( Elaboratable ):
                        ( self.r[ self.rb ].bit_select( 31, 1 ) >
                          self.r[ self.ra ].bit_select( 31, 1 ) ) ) ):
               jump_to( self, m, ( self.ipc + self.imm ) )
-              m.next = "CPU_PC_ROM_FETCH"
           # "Branch if Less Than (Unsigned)" operation:
           with m.Elif( ( self.f == F_BLTU ) &
                        ( self.r[ self.ra ] < self.r[ self.rb ] ) ):
               jump_to( self, m, ( self.ipc + self.imm ) )
-              m.next = "CPU_PC_ROM_FETCH"
           # "Branch if Greater or Equal (Unsigned)" operation:
           with m.Elif( ( self.f == F_BGEU ) &
                        ( self.r[ self.ra ] >= self.r[ self.rb ] ) ):
               jump_to( self, m, ( self.ipc + self.imm ) )
-              m.next = "CPU_PC_ROM_FETCH"
           with m.Else():
             m.next = "CPU_PC_LOAD"
         # "Load from Memory" instructions:
@@ -285,12 +276,7 @@ class CPU( Elaboratable ):
                    & ( ( self.rc & 0x1F ) == 0 )
                    & ( self.f   == 0 )
                    & ( self.imm == 0x001 ) ):
-            m.d.sync += self.csr.mcause.shadow.eq( 3 )
-            with m.If( ( self.csr.mtvec.shadow & 0b11 ) == MTVEC_MODE_DIRECT ):
-              m.d.sync += self.pc.eq( self.csr.mtvec.shadow & 0xFFFFFFFC )
-            with m.Else():
-              m.d.sync += self.pc.eq( ( self.csr.mtvec.shadow & 0xFFFFFFFC ) + ( 3 << 2 ) )
-            m.next = "CPU_TRAP_ENTER"
+            trigger_trap( self, m, TRAP_BREAK )
           # "Environment Call" instructions:
           with m.Elif( self.f == F_TRAPS ):
             # An 'empty' ECALL instruction should raise an
@@ -298,12 +284,7 @@ class CPU( Elaboratable ):
             with m.If( ( ( self.ra & 0x1F ) == 0 ) &
                        ( ( self.rc & 0x1F ) == 0 ) &
                        ( self.imm == 0 ) ):
-              m.d.sync += self.csr.mcause.shadow.eq( 11 )
-              with m.If( ( self.csr.mtvec.shadow & 0b11 ) == MTVEC_MODE_DIRECT ):
-                m.d.sync += self.pc.eq( self.csr.mtvec.shadow & 0xFFFFFFFC )
-              with m.Else():
-                m.d.sync += self.pc.eq( ( self.csr.mtvec.shadow & 0xFFFFFFFC ) + ( 11 << 2 ) )
-              m.next = "CPU_TRAP_ENTER"
+              trigger_trap( self, m, TRAP_ECALL )
             # 'MTRET' should return from an interrupt context.
             # For now, just skip to the next instruction if it
             # occurs outside of an interrupt.
@@ -484,7 +465,6 @@ class CPU( Elaboratable ):
         m.d.comb += self.fsms.eq( CPU_PC_LOAD ) # TODO: Remove
         m.d.sync += self.csr.rw.eq( 0 )
         jump_to( self, m, ( self.ipc + 4 ) )
-        m.next = "CPU_PC_ROM_FETCH"
 
     # End of CPU module definition.
     return m

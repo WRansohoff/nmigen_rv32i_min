@@ -89,6 +89,10 @@ ALU_STRS = {
   ALU_SLL: "<<", ALU_SRL: ">>", ALU_SRA: ">>"
 }
 
+# ID numbers for different types of traps.
+TRAP_IMIS  = 1
+TRAP_BREAK = 3
+TRAP_ECALL = 11
 # CSR definitions, for 'ECALL' system instructions.
 # Like with other "I-type" instructions, the 'funct3' bits select
 # between different types of environment calls.

@@ -81,12 +81,6 @@ So even though this table of test coverage looks okay, there's plenty more work 
 
 ## Compliance Tests
 
-Only the misaligned jump tests fail. I'm also not completely sure about the 'misalign\_ldst' tests; it looks like they might expect an exception to be raised on a mis-aligned half-word store, but the spec says:
-
-"An EEI may guarantee that misaligned loads and stores are fully supported, and so the software running inside the execution environment will never experience a contained or fatal address-misaligned trap."
-
-So I think it's okay, even though that test has almost no assertions.
-
 |   Test Suite    |   Pass / Fail?   |
 |:---------------:|:----------------:|
 | `ADD`           |:heavy_check_mark:|
@@ -112,7 +106,7 @@ So I think it's okay, even though that test has almost no assertions.
 | `LHU`           |:heavy_check_mark:|
 | `LW`            |:heavy_check_mark:|
 | `LUI`           |:heavy_check_mark:|
-| `MISALIGN_JMP`  |        :x:       |
+| `MISALIGN_JMP`  |:heavy_check_mark:|
 | `MISALIGN_LDST` |:heavy_check_mark:|
 | `NOP`           |:heavy_check_mark:|
 | `OR`            |:heavy_check_mark:|

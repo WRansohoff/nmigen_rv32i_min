@@ -191,14 +191,37 @@ def csr_rw( self, cpu ):
       cpu.d.sync += self.cws.eq( self.cws - 1 )
       cpu.next = "CPU_PC_DECODE"
 
+# Helper method to enter the trap handler and jump to the
+# appropriate address.
+def trigger_trap( self, cpu, trap_num ):
+  # Set 'mcause'.
+  cpu.d.sync += self.csr.mcause.shadow.eq( trap_num )
+  # Set PC to the interrupt handler address.
+  with cpu.If( ( self.csr.mtvec.shadow & 0b11 ) == MTVEC_MODE_DIRECT ):
+    cpu.d.sync += self.pc.eq( self.csr.mtvec.shadow & 0xFFFFFFFC )
+  with cpu.Else():
+    cpu.d.sync += self.pc.eq(
+      ( self.csr.mtvec.shadow & 0xFFFFFFFC ) + ( trap_num << 2 )
+    )
+  # 'mepc' is currently populated in the 'CPU_TRAP_ENTER' FSM state.
+  cpu.next = "CPU_TRAP_ENTER"
+
 # Helper method to generate logic which moves the CPU's
 # Program Counter to a different memory location.
 def jump_to( self, cpu, npc ):
-  # Set the new PC value at the next falling clock edge.
-  cpu.d.sync += self.pc.eq( npc )
-  # Read PC from RAM if the address is in that memory space.
-  with cpu.If( ( npc & 0xE0000000 ) == 0x20000000 ):
-    cpu.d.comb += [
-      self.ram.addr.eq( npc & 0x1FFFFFFF ),
-      self.ram.ren.eq( 1 )
-    ]
+  # Can only jump to a word-aligned address.
+  with cpu.If( npc & 0b11 != 0 ):
+    # Write the bad address into the 'mtval' CSR.
+    cpu.d.sync += self.csr.mtval.shadow.eq( npc )
+    # Trigger an 'instruction address misaligned' trap.
+    trigger_trap( self, cpu, TRAP_IMIS )
+  with cpu.Else():
+    # Set the new PC value at the next falling clock edge.
+    cpu.d.sync += self.pc.eq( npc )
+    # Read PC from RAM if the address is in that memory space.
+    with cpu.If( ( npc & 0xE0000000 ) == 0x20000000 ):
+      cpu.d.comb += [
+        self.ram.addr.eq( npc & 0x1FFFFFFF ),
+        self.ram.ren.eq( 1 )
+      ]
+    cpu.next = "CPU_PC_ROM_FETCH"

@@ -56,7 +56,7 @@ class CPU( Elaboratable ):
                           reset = 0x00000000 )
     self.ipc    = Signal( 32, reset = 0x00000000 )
     # Memory wait states for RAM and ROM.
-    self.nvmws  = Signal( 3, reset = 0b001 )
+    self.nvmws  = Signal( 3, reset = 0b010 )
     self.ramws  = Signal( 3, reset = 0b001 )
     # ALU access wait states.
     self.aws    = Signal( 2, reset = 0b00 )
@@ -625,9 +625,9 @@ def cpu_mux_sim( tests ):
   sim_name = "%s.vcd"%tests[ 1 ]
   with Simulator( cpu, vcd_file = open( sim_name, 'w' ) ) as sim:
     def proc():
-      # Set two wait states for ROM access, to allow the ROM address
-      # and data to propagate through the multiplexer.
-      yield cpu.nvmws.eq( 0b010 )
+      # Set three wait states for ROM access, to allow the ROM
+      # address and data to propagate through the multiplexer.
+      yield cpu.nvmws.eq( 0b011 )
       # Run the programs and print pass/fail for individual tests.
       for i in range( len( tests[ 2 ] ) ):
         print( "  \033[93mSTART\033[0m running '%s' ROM image:"

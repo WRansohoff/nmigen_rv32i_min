@@ -15,12 +15,17 @@ class ROM( Elaboratable ):
     self.out  = Signal( 32, reset = LITTLE_END( data[ 0 ] ) )
     # Data storage.
     self.data = Memory( width = 32, depth = len( data ), init = data )
+    # Two read ports are used, to allow mis-aligned access.
+    self.rd1 = self.data.read_port()
+    self.rd2 = self.data.read_port()
     # Record size.
     self.size = len( data )
 
   def elaborate( self, platform ):
     # Core ROM module.
     m = Module()
+    m.submodules.rd1 = self.rd1
+    m.submodules.rd2 = self.rd2
 
     # Set the 'output' value to 0 if it is out of bounds.
     with m.If( self.addr >= ( self.size * 4 ) ):
@@ -30,35 +35,44 @@ class ROM( Elaboratable ):
     # set that byte to 0x00.
     # Word-aligned reads
     with m.Elif( ( self.addr & 0b11 ) == 0b00 ):
-      m.d.sync += self.out.eq(
-        LITTLE_END( self.data[ self.addr // 4 ] ) )
+      m.d.comb += self.rd1.addr.eq( self.addr // 4 )
+      m.d.sync += self.out.eq( LITTLE_END( self.rd1.data ) )
     # Halfword-aligned reads
     with m.Elif( ( self.addr & 0b11 ) == 0b10 ):
       with m.If( ( ( ( self.addr - 2 ) // 4 ) + 1 < self.size ) ):
+        m.d.comb += [
+          self.rd1.addr.eq( ( self.addr - 2 ) // 4 ),
+          self.rd2.addr.eq( ( ( self.addr - 2 ) // 4 ) + 1 ),
+        ]
         m.d.sync += self.out.eq( LITTLE_END(
-          ( self.data[ ( self.addr - 2 ) // 4 ] << 16 ) |
-          ( self.data[ ( ( self.addr - 2 ) // 4 ) + 1 ] >> 16 ) ) )
+          ( self.rd1.data << 16 ) | ( self.rd2.data >> 16 ) ) )
       with m.Else():
-        m.d.sync += self.out.eq( LITTLE_END(
-          ( self.data[ ( self.addr - 2 ) // 4 ] << 16 ) ) )
+        m.d.comb += self.rd1.addr.eq( ( self.addr - 2 ) // 4 )
+        m.d.sync += self.out.eq( LITTLE_END( self.rd1.data << 16 ) )
     # Byte-aligned reads (&1)
     with m.Elif( ( self.addr & 0b11 ) == 0b01 ):
       with m.If( ( ( ( self.addr - 1 ) // 4 ) + 1 < self.size ) ):
+        m.d.comb += [
+          self.rd1.addr.eq( ( self.addr - 1 ) // 4 ),
+          self.rd2.addr.eq( ( ( self.addr - 1 ) // 4 ) + 1 ),
+        ]
         m.d.sync += self.out.eq( LITTLE_END(
-          ( self.data[ ( self.addr - 1 ) // 4 ] << 8 ) |
-          ( self.data[ ( ( self.addr - 1 ) // 4 ) + 1 ] >> 24 ) ) )
+          ( self.rd1.data << 8 ) | ( self.rd2.data >> 24 ) ) )
       with m.Else():
-        m.d.sync += self.out.eq( LITTLE_END(
-          ( self.data[ ( self.addr - 1 ) // 4 ] << 8 ) ) )
+        m.d.comb += self.rd1.addr.eq( ( self.addr - 1 ) // 4 )
+        m.d.sync += self.out.eq( LITTLE_END( self.rd1.data << 8 ) )
     # Byte-aligned reads (&3)
     with m.Elif( ( self.addr & 0b11 ) == 0b11 ):
       with m.If( ( ( ( self.addr - 3 ) // 4 ) + 1 < self.size ) ):
+        m.d.comb += [
+          self.rd1.addr.eq( ( self.addr - 3 ) // 4 ),
+          self.rd2.addr.eq( ( ( self.addr - 3 ) // 4 ) + 1 ),
+        ]
         m.d.sync += self.out.eq( LITTLE_END(
-          ( self.data[ ( self.addr - 3 ) // 4 ] << 24 ) |
-          ( self.data[ ( ( self.addr - 3 ) // 4 ) + 1 ] >> 8 ) ) )
+          ( self.rd1.data << 24 ) | ( self.rd2.data >> 8 ) ) )
       with m.Else():
-        m.d.sync += self.out.eq( LITTLE_END(
-          ( self.data[ ( self.addr - 3 ) // 4 ] << 24 ) ) )
+        m.d.comb += self.rd1.addr.eq( ( self.addr - 3 ) // 4 )
+        m.d.sync += self.out.eq( LITTLE_END( self.rd1.data << 24 ) )
 
     # End of ROM module definition.
     return m
@@ -73,8 +87,9 @@ f = 0
 # Perform an individual ROM unit test.
 def rom_read_ut( rom, address, expected ):
   global p, f
-  # Set address, and wait one tick.
+  # Set address, and wait two ticks.
   yield rom.addr.eq( address )
+  yield Tick()
   yield Tick()
   # Done. Check the result after combinational logic settles.
   yield Settle()

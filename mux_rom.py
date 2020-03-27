@@ -54,9 +54,10 @@ f = 0
 # Perform an individual unit test.
 def muxrom_read_ut( mrom, select, address, expected ):
   global p, f
-  # Set select and address, then wait two ticks.
+  # Set select and address, then wait three ticks.
   yield mrom.select.eq( select )
   yield mrom.addr.eq( address )
+  yield Tick()
   yield Tick()
   yield Tick()
   # Done. Check the result after the combinational logic settles.

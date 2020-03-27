@@ -225,3 +225,11 @@ def jump_to( self, cpu, npc ):
         self.ram.ren.eq( 1 )
       ]
     cpu.next = "CPU_PC_ROM_FETCH"
+
+# Helper method to increment the 'minstret' CSR.
+def minstret_incr( self, cpu ):
+  # Increment 64-bit 'MINSTRET' counter unless it is inhibited.
+  with cpu.If( self.csr.mcountinhibit.shadow[ 2 ] == 0 ):
+    cpu.d.sync += self.csr.minstret.shadow.eq( self.csr.minstret.shadow + 1 )
+    with cpu.If( self.csr.minstret.shadow == 0xFFFFFFFF ):
+      cpu.d.sync += self.csr.minstreth.shadow.eq( self.csr.minstreth.shadow + 1 )

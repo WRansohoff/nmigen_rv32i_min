@@ -1,5 +1,6 @@
 from nmigen import *
 from nmigen.back.pysim import *
+from nmigen_boards.upduino_v2 import *
 
 from alu import *
 from csr import *
@@ -9,6 +10,7 @@ from rom import *
 from ram import *
 from cpu_helpers import *
 
+import sys
 import warnings
 
 ###############
@@ -53,8 +55,9 @@ class CPU( Elaboratable ):
     self.imm    = Signal( shape = Shape( width = 32, signed = True ),
                           reset = 0x00000000 )
     self.ipc    = Signal( 32, reset = 0x00000000 )
-    # ROM wait states.
-    self.ws     = Signal( 3, reset = 0b001 )
+    # Instruction-fetch wait states for RAM and ROM.
+    self.nvmws  = Signal( 3, reset = 0b001 )
+    self.ramws  = Signal( 3, reset = 0b001 )
     # ALU access wait states.
     self.aws    = Signal( 2, reset = 0b00 )
     # CSR access wait states.
@@ -92,8 +95,9 @@ class CPU( Elaboratable ):
 
     # Reset countdown.
     rsc = Signal( 2, reset = 0b11 )
-    # ROM wait state countdown.
-    rws = Signal( 3, reset = 0b00 )
+    # ROM/RAM wait state countdowns.
+    nvmws_c = Signal( 3, reset = 0b00 )
+    ramws_c = Signal( 3, reset = 0b00 )
 
     # r0 should always be 0.
     m.d.sync += self.r[ 0 ].eq( 0x00000000 )
@@ -134,30 +138,25 @@ class CPU( Elaboratable ):
         # If the PC address is in RAM, maintain combinatorial
         # logic to read the instruction from RAM.
         with m.If( ( ( self.pc ) & 0xE0000000 ) == 0x20000000 ):
-          m.d.comb += [
-            self.ram.addr.eq( ( self.pc ) & 0x1FFFFFFF ),
-            self.ram.ren.eq( 1 )
-          ]
-          # Increment 'MINSTRET' unless the counter is inhibited.
-          with m.If( self.csr.mcountinhibit.shadow[ 2 ] == 0 ):
-            m.d.sync += self.csr.minstret.shadow.eq( self.csr.minstret.shadow + 1 )
-            with m.If( self.csr.minstret.shadow == 0xFFFFFFFF ):
-              m.d.sync += self.csr.minstreth.shadow.eq( self.csr.minstreth.shadow + 1 )
-          # Decode the fetched instruction and move on to run it.
-          rv32i_decode( self, m, self.ram.dout )
-          m.next = "CPU_PC_DECODE"
+          with m.If( ramws_c < self.ramws ):
+            m.d.sync += ramws_c.eq( ramws_c + 1 )
+          with m.Else():
+            m.d.comb += [
+              self.ram.addr.eq( ( self.pc ) & 0x1FFFFFFF ),
+              self.ram.ren.eq( 1 )
+            ]
+            # Increment 'instructions retired' counter.
+            minstret_incr( self, m )
+            # Decode the fetched instruction and move on to run it.
+            rv32i_decode( self, m, self.ram.dout )
+            m.next = "CPU_PC_DECODE"
         # Otherwise, read from ROM.
         with m.Else():
-          with m.If( rws < self.ws ):
-            m.d.sync += rws.eq( rws + 1 )
+          with m.If( nvmws_c < self.nvmws ):
+            m.d.sync += nvmws_c.eq( nvmws_c + 1 )
           with m.Else():
-            # Reset the 'ROM wait-states' counter.
-            m.d.sync += rws.eq( 0 )
-            # Increment 'MINSTRET' unless the counter is inhibited.
-            with m.If( self.csr.mcountinhibit.shadow[ 2 ] == 0 ):
-              m.d.sync += self.csr.minstret.shadow.eq( self.csr.minstret.shadow + 1 )
-              with m.If( self.csr.minstret.shadow == 0xFFFFFFFF ):
-                m.d.sync += self.csr.minstreth.shadow.eq( self.csr.minstreth.shadow + 1 )
+            # Increment 'instructions retired' counter.
+            minstret_incr( self, m )
             # Decode the fetched instruction and move on to run it.
             rv32i_decode( self, m, self.rom.out )
             m.next = "CPU_PC_DECODE"
@@ -165,6 +164,11 @@ class CPU( Elaboratable ):
       #              and prepare associated registers.
       with m.State( "CPU_PC_DECODE" ):
         m.d.comb += self.fsms.eq( CPU_PC_DECODE ) #TODO: Remove
+        # Reset both instruction-fetch wait-state counters.
+        m.d.sync += [
+          nvmws_c.eq( 0 ),
+          ramws_c.eq( 0 )
+        ]
         # "Load Upper Immediate" instruction:
         with m.If( self.opcode == OP_LUI ):
           with m.If( ( self.rc & 0x1F ) > 0 ):
@@ -616,7 +620,7 @@ def cpu_mux_sim( tests ):
     def proc():
       # Set two wait states for ROM access, to allow the ROM address
       # and data to propagate through the multiplexer.
-      yield cpu.ws.eq( 0b010 )
+      yield cpu.nvmws.eq( 0b010 )
       # Run the programs and print pass/fail for individual tests.
       for i in range( len( tests[ 2 ] ) ):
         print( "  \033[93mSTART\033[0m running '%s' ROM image:"
@@ -644,25 +648,34 @@ def cpu_mux_sim( tests ):
 
 # 'main' method to run a basic testbench.
 if __name__ == "__main__":
-  with warnings.catch_warnings():
-    warnings.filterwarnings( "ignore", category = DriverConflict )
+  if ( len( sys.argv ) == 2 ) and ( sys.argv[ 1 ] == '-b' ):
+    # Build the application for an iCE40UP5K FPGA.
+    # Currently, this is meaningless, because it builds the CPU
+    # with a hard-coded 'infinite loop' ROM. But it's a start.
+    UpduinoV2Platform().build( CPU( loop_rom ), do_program = False )
+  else:
+    # Run testbench simulations.
+    with warnings.catch_warnings():
+      warnings.filterwarnings( "ignore", category = DriverConflict )
 
-    print( '--- CPU Tests ---' )
-    # Run auto-generated RV32I compliance tests with a multiplexed
-    # ROM module containing a different program for each one.
-    # (The CPU gets reset between each program.)
-    cpu_mux_sim( rv32i_compliance )
-    # Run non-standard CSR tests individually.
-    cpu_sim( mcycle_test )
-    cpu_sim( minstret_test )
+      print( '--- CPU Tests ---' )
+      # Run auto-generated RV32I compliance tests with a multiplexed
+      # ROM module containing a different program for each one.
+      # (The CPU gets reset between each program.)
+      cpu_sim( add_test )
+      cpu_sim( minstret_test )
+      cpu_mux_sim( rv32i_compliance )
+      # Run non-standard CSR tests individually.
+      cpu_sim( mcycle_test )
+      cpu_sim( minstret_test )
 
-    # Miscellaneous tests which are not part of the RV32I test suite.
-    # Simulate the 'run from RAM' test ROM.
-    cpu_sim( ram_pc_test )
-    # Simulate a basic 'quick test' ROM.
-    cpu_sim( quick_test )
-    # Simulate the 'infinite loop test' ROM.
-    cpu_sim( loop_test )
+      # Miscellaneous tests which are not part of the RV32I test suite.
+      # Simulate the 'run from RAM' test ROM.
+      cpu_sim( ram_pc_test )
+      # Simulate a basic 'quick test' ROM.
+      cpu_sim( quick_test )
+      # Simulate the 'infinite loop test' ROM.
+      cpu_sim( loop_test )
 
-    # Done; print results.
-    print( "CPU Tests: %d Passed, %d Failed"%( p, f ) )
+      # Done; print results.
+      print( "CPU Tests: %d Passed, %d Failed"%( p, f ) )

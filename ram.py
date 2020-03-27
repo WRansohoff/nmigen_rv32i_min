@@ -30,10 +30,36 @@ class RAM( Elaboratable ):
     # work to prevent out-of-bounds byte writes.
     self.data = Memory( width = 8, depth = ( self.size + 4 ),
       init = ( 0x00 for i in range( self.size + 4 ) ) )
+    # TODO: Make RAM word-addressed and only use two r/w ports.
+    # (To allow mis-aligned access)
+    self.rd1 = self.data.read_port()
+    self.rd2 = self.data.read_port()
+    self.rd3 = self.data.read_port()
+    self.rd4 = self.data.read_port()
+    self.wd1 = self.data.write_port()
+    self.wd2 = self.data.write_port()
+    self.wd3 = self.data.write_port()
+    self.wd4 = self.data.write_port()
 
   def elaborate( self, platform ):
     # Core RAM module.
     m = Module()
+    m.submodules.rd1 = self.rd1
+    m.submodules.rd2 = self.rd2
+    m.submodules.rd3 = self.rd3
+    m.submodules.rd4 = self.rd4
+    m.submodules.wd1 = self.wd1
+    m.submodules.wd2 = self.wd2
+    m.submodules.wd3 = self.wd3
+    m.submodules.wd4 = self.wd4
+
+    # Disable writes by default.
+    m.d.comb += [
+      self.wd1.en.eq( 0 ),
+      self.wd2.en.eq( 0 ),
+      self.wd3.en.eq( 0 ),
+      self.wd4.en.eq( 0 )
+    ]
 
     # Set the 'dout' value if 'ren' is set.
     with m.If( self.ren ):
@@ -43,21 +69,36 @@ class RAM( Elaboratable ):
       # Read the requested word of RAM. Fill in '0x00' for any bytes
       # which are out of range.
       with m.Elif( ( self.addr + 3 ) >= self.size ):
-        m.d.sync += self.dout.eq( ( ( self.data[ self.addr ] ) |
-          ( self.data[ self.addr + 1 ] << 8 ) |
-          ( self.data[ self.addr + 2 ] << 16 ) ) &
+        m.d.comb += [
+          self.rd1.addr.eq( self.addr ),
+          self.rd2.addr.eq( self.addr + 1 ),
+          self.rd3.addr.eq( self.addr + 2 )
+        ]
+        m.d.sync += self.dout.eq( ( self.rd1.data |
+          ( self.rd2.data << 8  ) |
+          ( self.rd3.data << 16 ) ) &
           0x00FFFFFF )
       with m.Elif( ( self.addr + 2 ) >= self.size ):
-        m.d.sync += self.dout.eq( ( ( self.data[ self.addr ] ) |
-          ( self.data[ self.addr + 1 ] << 8 ) ) &
-          0x0000FFFF )
+        m.d.comb += [
+          self.rd1.addr.eq( self.addr ),
+          self.rd2.addr.eq( self.addr + 1 )
+        ]
+        m.d.sync += self.dout.eq( ( ( self.rd1.data ) |
+          ( self.rd2.data << 8 ) ) & 0x0000FFFF )
       with m.Elif( ( self.addr + 1 ) >= self.size ):
-        m.d.sync += self.dout.eq( self.data[ self.addr ] & 0x000000FF )
+        m.d.comb += self.rd1.addr.eq( self.addr )
+        m.d.sync += self.dout.eq( self.rd1.data & 0x000000FF )
       with m.Else():
-        m.d.sync += self.dout.eq( ( ( self.data[ self.addr ] ) |
-          ( self.data[ self.addr + 1 ] << 8 ) |
-          ( self.data[ self.addr + 2 ] << 16 ) |
-          ( self.data[ self.addr + 3 ] << 24 ) ) )
+        m.d.comb += [
+          self.rd1.addr.eq( self.addr ),
+          self.rd2.addr.eq( self.addr + 1 ),
+          self.rd3.addr.eq( self.addr + 2 ),
+          self.rd4.addr.eq( self.addr + 3 )
+        ]
+        m.d.sync += self.dout.eq( ( self.rd1.data |
+          ( self.rd2.data << 8  ) |
+          ( self.rd3.data << 16 ) |
+          ( self.rd4.data << 24 ) ) )
 
     # Write the 'din' value if 'wen' is set.
     with m.If( self.wen ):
@@ -65,14 +106,27 @@ class RAM( Elaboratable ):
       with m.If( self.addr >= self.size ):
         pass
       # Write the requested word of data.
-      m.d.sync += self.data[ self.addr ].eq( self.din & 0x000000FF )
+      m.d.comb += [
+        self.wd1.addr.eq( self.addr ),
+        self.wd1.en.eq( 1 )
+      ]
+      m.d.sync += self.wd1.data.eq( self.din & 0x000000FF )
       with m.If( self.dw > 0 ):
-        m.d.sync += self.data[ self.addr + 1 ].eq(
-          ( self.din & 0x0000FF00 ) >> 8 )
+        m.d.comb += [
+          self.wd2.addr.eq( self.addr + 1 ),
+          self.wd2.en.eq( 1 )
+        ]
+        m.d.sync += self.wd2.data.eq( ( self.din & 0x0000FF00 ) >> 8 )
       with m.If( self.dw > 1 ):
+        m.d.comb += [
+          self.wd3.addr.eq( self.addr + 2 ),
+          self.wd4.addr.eq( self.addr + 3 ),
+          self.wd3.en.eq( 1 ),
+          self.wd4.en.eq( 1 )
+        ]
         m.d.sync += [
-          self.data[ self.addr + 2 ].eq( ( self.din & 0x00FF0000 ) >> 16 ),
-          self.data[ self.addr + 3 ].eq( ( self.din & 0xFF000000 ) >> 24 )
+          self.wd3.data.eq( ( self.din & 0x00FF0000 ) >> 16 ),
+          self.wd4.data.eq( ( self.din & 0xFF000000 ) >> 24 )
         ]
 
     # End of RAM module definition.
@@ -93,7 +147,8 @@ def ram_write_ut( ram, address, data, dw, success ):
   yield ram.din.eq( data )
   yield ram.wen.eq( 1 )
   yield ram.dw.eq( dw )
-  # Wait one tick, and un-set the 'wen' bit.
+  # Wait two ticks, and un-set the 'wen' bit.
+  yield Tick()
   yield Tick()
   yield ram.wen.eq( 0 )
   # Done. Check that the 'din' word was successfully set in RAM.
@@ -129,7 +184,8 @@ def ram_read_ut( ram, address, expected ):
   # Set address and 'ren' bit.
   yield ram.addr.eq( address )
   yield ram.ren.eq( 1 )
-  # Wait one tick, and un-set the 'ren' bit.
+  # Wait two ticks, and un-set the 'ren' bit.
+  yield Tick()
   yield Tick()
   yield ram.ren.eq( 0 )
   # Done. Check the 'dout' result after combinational logic settles.

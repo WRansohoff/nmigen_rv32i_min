@@ -648,20 +648,15 @@ if __name__ == "__main__":
     warnings.filterwarnings( "ignore", category = DriverConflict )
 
     print( '--- CPU Tests ---' )
-    cpu_mux_sim( rv32i_compliance )
-    cpu_sim( mcsr_t_test )
-    cpu_sim( sbreak_t_test )
-    # Run non-standard CSR tests individually.
-    cpu_sim( mcycle_t_test )
-    cpu_sim( minstret_t_test )
-    # Run auto-generated RV32I tests with a multiplexed ROM module
-    # containing a different program for each one.
+    # Run auto-generated RV32I compliance tests with a multiplexed
+    # ROM module containing a different program for each one.
     # (The CPU gets reset between each program.)
-    cpu_mux_sim( rv32i_tests )
+    cpu_mux_sim( rv32i_compliance )
+    # Run non-standard CSR tests individually.
+    cpu_sim( mcycle_test )
+    cpu_sim( minstret_test )
 
     # Miscellaneous tests which are not part of the RV32I test suite.
-    # Simulate hand-copied ADD and ADDI test ROMs.
-    cpu_mux_sim( add_mux_test )
     # Simulate the 'run from RAM' test ROM.
     cpu_sim( ram_pc_test )
     # Simulate a basic 'quick test' ROM.

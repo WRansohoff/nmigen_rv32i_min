@@ -63,6 +63,9 @@ SRC += ./I-SRLI-01.S
 SRC += ./I-SUB-01.S
 SRC += ./I-XOR-01.S
 SRC += ./I-XORI-01.S
+# Nonstandard tests.
+SRC += ./I-MCYCLE-01.S
+SRC += ./I-MINSTRET-01.S
 
 # Binary images to build.
 OBJS = $(SRC:.S=.o)

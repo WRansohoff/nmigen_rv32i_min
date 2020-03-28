@@ -62,8 +62,6 @@ class CPU( Elaboratable ):
     self.ramws  = Signal( 3, reset = 0b001 )
     # CPU register access wait states.
     self.rws    = Signal( 2, reset = 0b10 )
-    # ALU access wait states.
-    self.aws    = Signal( 2, reset = 0b00 )
     # CSR access wait states.
     self.cws    = Signal( 2, reset = 0b00 )
     # The ALU submodule which performs logical operations.
@@ -292,15 +290,15 @@ class CPU( Elaboratable ):
         # "Register-Based" instructions:
         with m.Elif( self.opcode == OP_REG ):
           alu_reg_op( self, m )
-          # Assert the CPU register 'write' signal.
-          with m.If( self.rc.addr[ :5 ] != 0 ):
-            m.d.comb += self.rc.en.eq( 1 )
+          with m.If( ( self.rc.addr & 0x1F ) > 0 ):
+            m.d.sync += self.rc.data.eq( self.alu.y )
+          m.next = "CPU_PC_LOAD"
         # "Immediate-Based" instructions:
         with m.Elif( self.opcode == OP_IMM ):
           alu_imm_op( self, m )
-          # Assert the CPU register 'write' signal.
-          with m.If( self.rc.addr[ :5 ] != 0 ):
-            m.d.comb += self.rc.en.eq( 1 )
+          with m.If( ( self.rc.addr & 0x1F ) > 0 ):
+            m.d.sync += self.rc.data.eq( self.alu.y )
+          m.next = "CPU_PC_LOAD"
         with m.Elif( self.opcode == OP_SYSTEM ):
           # "EBREAK" instruction: enter the interrupt context
           # with 'breakpoint' as the cause of the exception.
@@ -526,6 +524,18 @@ class CPU( Elaboratable ):
       # "PC Load Letter" - increment the PC.
       with m.State( "CPU_PC_LOAD" ):
         m.d.comb += self.fsms.eq( CPU_PC_LOAD ) # TODO: Remove
+        # Apply ALU results if necessary.
+        with m.If( self.opcode == OP_REG ):
+          alu_reg_op( self, m )
+          # Assert the CPU register 'write' signal.
+          with m.If( self.rc.addr[ :5 ] != 0 ):
+            m.d.comb += self.rc.en.eq( 1 )
+        with m.Elif( self.opcode == OP_IMM ):
+          alu_imm_op( self, m )
+          # Assert the CPU register 'write' signal.
+          with m.If( self.rc.addr[ :5 ] != 0 ):
+            m.d.comb += self.rc.en.eq( 1 )
+        # Clear the CSR r/w signal, and increment the PC.
         m.d.sync += self.csr.rw.eq( 0 )
         jump_to( self, m, ( self.ipc + 4 ) )
 

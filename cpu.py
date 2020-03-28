@@ -43,15 +43,16 @@ class CPU( Elaboratable ):
     # to handle context-switching in hardware.
     self.r  = Memory( width = 32, depth = 64,
                       init = ( 0x00000000 for i in range( 32 ) ) )
+    # Read ports for rs1 (ra), rs2 (rb), and rd (rc).
+    self.ra      = self.r.read_port()
+    self.rb      = self.r.read_port()
+    self.rc      = self.r.write_port()
     # CPU context flag; toggles 'normal' and 'interrupt' registers.
     self.irq    = Signal( 1, reset = 0b0 )
     # Intermediate instruction and PC storage.
     self.opcode = Signal( 7, reset = 0b0000000 )
     self.f      = Signal( 3, reset = 0b000 )
     self.ff     = Signal( 7, reset = 0b0000000 )
-    self.ra     = Signal( 6, reset = 0b000000 )
-    self.rb     = Signal( 6, reset = 0b000000 )
-    self.rc     = Signal( 6, reset = 0b000000 )
     self.imm    = Signal( shape = Shape( width = 32, signed = True ),
                           reset = 0x00000000 )
     self.ipc    = Signal( 32, reset = 0x00000000 )
@@ -92,6 +93,16 @@ class CPU( Elaboratable ):
     m.submodules.csr = self.csr
     m.submodules.rom = self.rom
     m.submodules.ram = self.ram
+    # Register the CPU register read/write ports.
+    m.submodules.ra  = self.ra
+    m.submodules.rb  = self.rb
+    m.submodules.rc  = self.rc
+
+    # CPU register write port is always enabled, unless it is x0.
+    with m.If( ( self.rc.addr & 0x1F ) != 0 ):
+      m.d.comb += self.rc.en.eq( 1 )
+    with m.Else():
+      m.d.comb += self.rc.en.eq( 0 )
 
     # Reset countdown.
     rsc = Signal( 2, reset = 0b11 )
@@ -171,59 +182,59 @@ class CPU( Elaboratable ):
         ]
         # "Load Upper Immediate" instruction:
         with m.If( self.opcode == OP_LUI ):
-          with m.If( ( self.rc & 0x1F ) > 0 ):
-            m.d.sync += self.r[ self.rc ].eq( self.imm )
+          with m.If( ( self.rc.addr & 0x1F ) > 0 ):
+            m.d.sync += self.rc.data.eq( self.imm )
           m.next = "CPU_PC_LOAD"
         # "Add Upper Immediate to PC" instruction:
         with m.Elif( self.opcode == OP_AUIPC ):
-          with m.If( ( self.rc & 0x1F ) > 0 ):
-            m.d.sync += self.r[ self.rc ].eq( self.imm + self.ipc )
+          with m.If( ( self.rc.addr & 0x1F ) > 0 ):
+            m.d.sync += self.rc.data.eq( self.imm + self.ipc )
           m.next = "CPU_PC_LOAD"
         # "Jump And Link" instruction:
         with m.Elif( self.opcode == OP_JAL ):
-          with m.If( ( self.rc & 0x1F ) > 0 ):
-            m.d.sync += self.r[ self.rc ].eq( self.ipc + 4 )
+          with m.If( ( self.rc.addr & 0x1F ) > 0 ):
+            m.d.sync += self.rc.data.eq( self.ipc + 4 )
           jump_to( self, m, ( self.ipc + self.imm ) )
         # "Jump And Link from Register" instruction:
         # funct3 bits should be 0b000, but for now there's no
         # need to be a stickler about that.
         with m.Elif( self.opcode == OP_JALR ):
-          with m.If( ( self.rc & 0x1F ) > 0 ):
-            m.d.sync += self.r[ self.rc ].eq( self.ipc + 4 )
-          jump_to( self, m, ( self.r[ self.ra ] + self.imm ) )
+          with m.If( ( self.rc.addr & 0x1F ) > 0 ):
+            m.d.sync += self.rc.data.eq( self.ipc + 4 )
+          jump_to( self, m, ( self.ra.data + self.imm ) )
         # "Conditional Branch" instructions:
         with m.Elif( self.opcode == OP_BRANCH ):
           # "Branch if EQual" operation:
           with m.If( ( self.f == F_BEQ ) &
-                     ( self.r[ self.ra ] == self.r[ self.rb ] ) ):
+                     ( self.ra.data == self.rb.data ) ):
               jump_to( self, m, ( self.ipc + self.imm ) )
           # "Branch if Not Equal" operation:
           with m.Elif( ( self.f == F_BNE ) &
-                       ( self.r[ self.ra ] != self.r[ self.rb ] ) ):
+                       ( self.ra.data != self.rb.data ) ):
               jump_to( self, m, ( self.ipc + self.imm ) )
           # "Branch if Less Than" operation:
           with m.Elif( ( self.f == F_BLT ) &
-                   ( ( ( self.r[ self.rb ].bit_select( 31, 1 ) ==
-                         self.r[ self.ra ].bit_select( 31, 1 ) ) &
-                       ( self.r[ self.ra ] < self.r[ self.rb ] ) ) |
-                       ( self.r[ self.ra ].bit_select( 31, 1 ) >
-                         self.r[ self.rb ].bit_select( 31, 1 ) ) ) ):
+                   ( ( ( self.rb.data.bit_select( 31, 1 ) ==
+                         self.ra.data.bit_select( 31, 1 ) ) &
+                       ( self.ra.data < self.rb.data ) ) |
+                       ( self.ra.data.bit_select( 31, 1 ) >
+                         self.rb.data.bit_select( 31, 1 ) ) ) ):
               jump_to( self, m, ( self.ipc + self.imm ) )
           # "Branch if Greater or Equal" operation:
           with m.Elif( ( self.f == F_BGE ) &
-                   ( ( ( self.r[ self.rb ].bit_select( 31, 1 ) ==
-                         self.r[ self.ra ].bit_select( 31, 1 ) ) &
-                       ( self.r[ self.ra ] >= self.r[ self.rb ] ) ) |
-                       ( self.r[ self.rb ].bit_select( 31, 1 ) >
-                         self.r[ self.ra ].bit_select( 31, 1 ) ) ) ):
+                   ( ( ( self.rb.data.bit_select( 31, 1 ) ==
+                         self.ra.data.bit_select( 31, 1 ) ) &
+                       ( self.ra.data >= self.rb.data ) ) |
+                       ( self.rb.data.bit_select( 31, 1 ) >
+                         self.ra.data.bit_select( 31, 1 ) ) ) ):
               jump_to( self, m, ( self.ipc + self.imm ) )
           # "Branch if Less Than (Unsigned)" operation:
           with m.Elif( ( self.f == F_BLTU ) &
-                       ( self.r[ self.ra ] < self.r[ self.rb ] ) ):
+                       ( self.ra.data < self.rb.data ) ):
               jump_to( self, m, ( self.ipc + self.imm ) )
           # "Branch if Greater or Equal (Unsigned)" operation:
           with m.Elif( ( self.f == F_BGEU ) &
-                       ( self.r[ self.ra ] >= self.r[ self.rb ] ) ):
+                       ( self.ra.data >= self.rb.data ) ):
               jump_to( self, m, ( self.ipc + self.imm ) )
           with m.Else():
             m.next = "CPU_PC_LOAD"
@@ -232,7 +243,7 @@ class CPU( Elaboratable ):
         # There are no alignment requirements (yet).
         with m.Elif( self.opcode == OP_LOAD ):
           # Populate 'mp' with the memory address to load from.
-          m.d.comb += self.mp.eq( self.r[ self.ra ] + self.imm )
+          m.d.comb += self.mp.eq( self.ra.data + self.imm )
           with m.If( ( self.mp & 0xE0000000 ) == 0x20000000 ):
             m.d.comb += [
               self.ram.addr.eq( self.mp & 0x1FFFFFFF ),
@@ -250,13 +261,13 @@ class CPU( Elaboratable ):
         # There are no alignment requirements (yet).
         with m.Elif( self.opcode == OP_STORE ):
           # Populate 'mp' with the memory address to load from.
-          m.d.comb += self.mp.eq( self.r[ self.ra ] + self.imm )
+          m.d.comb += self.mp.eq( self.ra.data + self.imm )
           with m.If( ( self.mp & 0xE0000000 ) == 0x20000000 ):
             m.d.comb += [
               self.ram.addr.eq( self.mp & 0x1FFFFFFF ),
               self.ram.wen.eq( 0b1 )
             ]
-            m.d.comb += self.ram.din.eq( self.r[ self.rb ] )
+            m.d.comb += self.ram.din.eq( self.rb.data )
             # "Store Byte" operation:
             with m.If( self.f == F_SB ):
               m.d.comb += self.ram.dw.eq( 0b00 )
@@ -276,8 +287,8 @@ class CPU( Elaboratable ):
         with m.Elif( self.opcode == OP_SYSTEM ):
           # "EBREAK" instruction: enter the interrupt context
           # with 'breakpoint' as the cause of the exception.
-          with m.If( ( ( self.ra & 0x1F )  == 0 )
-                   & ( ( self.rc & 0x1F ) == 0 )
+          with m.If( ( ( self.ra.addr & 0x1F )  == 0 )
+                   & ( ( self.rc.addr & 0x1F ) == 0 )
                    & ( self.f   == 0 )
                    & ( self.imm == 0x001 ) ):
             trigger_trap( self, m, TRAP_BREAK )
@@ -285,8 +296,8 @@ class CPU( Elaboratable ):
           with m.Elif( self.f == F_TRAPS ):
             # An 'empty' ECALL instruction should raise an
             # 'environment-call-from-M-mode" exception.
-            with m.If( ( ( self.ra & 0x1F ) == 0 ) &
-                       ( ( self.rc & 0x1F ) == 0 ) &
+            with m.If( ( ( self.ra.addr & 0x1F ) == 0 ) &
+                       ( ( self.rc.addr & 0x1F ) == 0 ) &
                        ( self.imm == 0 ) ):
               trigger_trap( self, m, TRAP_ECALL )
             # 'MTRET' should return from an interrupt context.
@@ -303,7 +314,7 @@ class CPU( Elaboratable ):
           # 'CSRRW': Write value from register to CSR.
           with m.Elif( self.f == F_CSRRW ):
             m.d.comb += [
-              self.csr.rin.eq( self.r[ self.ra ] ),
+              self.csr.rin.eq( self.ra.data ),
               self.csr.rsel.eq( self.imm ),
               self.csr.f.eq( F_CSRRW )
             ]
@@ -311,7 +322,7 @@ class CPU( Elaboratable ):
           # 'CSRRS' set specified bits in a CSR from a register.
           with m.Elif( self.f == F_CSRRS ):
             m.d.comb += [
-              self.csr.rin.eq( self.r[ self.ra ] ),
+              self.csr.rin.eq( self.ra.data ),
               self.csr.rsel.eq( self.imm ),
               self.csr.f.eq( F_CSRRS )
             ]
@@ -319,7 +330,7 @@ class CPU( Elaboratable ):
           # 'CSRRC' clear specified bits in a CSR from a register.
           with m.Elif( self.f == F_CSRRC ):
             m.d.comb += [
-              self.csr.rin.eq( self.r[ self.ra ] ),
+              self.csr.rin.eq( self.ra.data ),
               self.csr.rsel.eq( self.imm ),
               self.csr.f.eq( F_CSRRC )
             ]
@@ -332,10 +343,10 @@ class CPU( Elaboratable ):
               self.csr.rsel.eq( self.imm ),
               self.csr.f.eq( F_CSRRWI )
             ]
-            with m.If( self.ra[ 4 ] != 0 ):
-              m.d.comb += self.csr.rin.eq( 0xFFFFFFE0 | ( self.ra & 0x1F ) )
+            with m.If( self.ra.addr[ 4 ] != 0 ):
+              m.d.comb += self.csr.rin.eq( 0xFFFFFFE0 | ( self.ra.addr & 0x1F ) )
             with m.Else():
-              m.d.comb += self.csr.rin.eq( ( self.ra & 0x1F ) )
+              m.d.comb += self.csr.rin.eq( ( self.ra.addr & 0x1F ) )
             csr_rw( self, m )
           # 'CSRRSI' set immediate bits in a CSR.
           with m.Elif( self.f == F_CSRRSI ):
@@ -343,10 +354,10 @@ class CPU( Elaboratable ):
               self.csr.rsel.eq( self.imm ),
               self.csr.f.eq( F_CSRRSI )
             ]
-            with m.If( self.ra[ 4 ] != 0 ):
-              m.d.comb += self.csr.rin.eq( 0xFFFFFFE0 | ( self.ra & 0x1F ) )
+            with m.If( self.ra.addr[ 4 ] != 0 ):
+              m.d.comb += self.csr.rin.eq( 0xFFFFFFE0 | ( self.ra.addr & 0x1F ) )
             with m.Else():
-              m.d.comb += self.csr.rin.eq( ( self.ra & 0x1F ) )
+              m.d.comb += self.csr.rin.eq( ( self.ra.addr & 0x1F ) )
             csr_rw( self, m )
           # 'CSRRCI' clear immediate bits in a CSR.
           with m.Elif( self.f == F_CSRRCI ):
@@ -354,10 +365,10 @@ class CPU( Elaboratable ):
               self.csr.rsel.eq( self.imm ),
               self.csr.f.eq( F_CSRRCI )
             ]
-            with m.If( self.ra[ 4 ] != 0 ):
-              m.d.comb += self.csr.rin.eq( 0xFFFFFFE0 | ( self.ra & 0x1F ) )
+            with m.If( self.ra.addr[ 4 ] != 0 ):
+              m.d.comb += self.csr.rin.eq( 0xFFFFFFE0 | ( self.ra.addr & 0x1F ) )
             with m.Else():
-              m.d.comb += self.csr.rin.eq( ( self.ra & 0x1F ) )
+              m.d.comb += self.csr.rin.eq( ( self.ra.addr & 0x1F ) )
             csr_rw( self, m )
           # Halt execution at an unrecognized 'SYSTEM' instruction.
           with m.Else():
@@ -382,7 +393,7 @@ class CPU( Elaboratable ):
         m.d.comb += self.fsms.eq( CPU_LD ) # TODO: Remove
         # Maintain the cominatorial logic holding the memory
         # address at the 'mp' (memory pointer) value.
-        m.d.comb += self.mp.eq( self.r[ self.ra ] + self.imm )
+        m.d.comb += self.mp.eq( self.ra.data + self.imm )
         with m.If( ( self.mp & 0xE0000000 ) == 0x20000000 ):
           m.d.comb += [
             self.ram.addr.eq( self.mp & 0x1FFFFFFF ),
@@ -398,60 +409,60 @@ class CPU( Elaboratable ):
         with m.Else():
           # "Load Byte" operation:
           with m.If( self.f == F_LB ):
-            with m.If( ( self.rc & 0x1F ) > 0 ):
+            with m.If( ( self.rc.addr & 0x1F ) > 0 ):
               with m.If( ( self.mp & 0xE0000000 ) == 0x20000000 ):
                 with m.If( self.ram.dout[ 7 ] ):
-                  m.d.sync += self.r[ self.rc ].eq(
+                  m.d.sync += self.rc.data.eq(
                     ( self.ram.dout & 0xFF ) | 0xFFFFFF00 )
                 with m.Else():
-                  m.d.sync += self.r[ self.rc ].eq(
+                  m.d.sync += self.rc.data.eq(
                     ( self.ram.dout & 0xFF ) )
               with m.Else():
                 with m.If( self.rom.out[ 7 ] ):
-                  m.d.sync += self.r[ self.rc ].eq(
+                  m.d.sync += self.rc.data.eq(
                     ( self.rom.out & 0xFF ) | 0xFFFFFF00 )
                 with m.Else():
-                  m.d.sync += self.r[ self.rc ].eq(
+                  m.d.sync += self.rc.data.eq(
                     ( self.rom.out & 0xFF ) )
           # "Load Halfword" operation:
           with m.Elif( self.f == F_LH ):
-            with m.If( ( self.rc & 0x1F ) > 0 ):
+            with m.If( ( self.rc.addr & 0x1F ) > 0 ):
               with m.If( ( self.mp & 0xE0000000 ) == 0x20000000 ):
                 with m.If( self.ram.dout[ 15 ] ):
-                  m.d.sync += self.r[ self.rc ].eq(
+                  m.d.sync += self.rc.data.eq(
                     ( self.ram.dout & 0xFFFF ) | 0xFFFF0000 )
                 with m.Else():
-                  m.d.sync += self.r[ self.rc ].eq(
+                  m.d.sync += self.rc.data.eq(
                     ( self.ram.dout & 0xFFFF ) )
               with m.Else():
                 with m.If( self.rom.out[ 15 ] ):
-                  m.d.sync += self.r[ self.rc ].eq(
+                  m.d.sync += self.rc.data.eq(
                     ( self.rom.out & 0xFFFF ) | 0xFFFF0000 )
                 with m.Else():
-                  m.d.sync += self.r[ self.rc ].eq(
+                  m.d.sync += self.rc.data.eq(
                     ( self.rom.out & 0xFFFF ) )
           # "Load Word" operation:
           with m.Elif( self.f == F_LW ):
-            with m.If( ( self.rc & 0x1F ) > 0 ):
+            with m.If( ( self.rc.addr & 0x1F ) > 0 ):
               with m.If( ( self.mp & 0xE0000000 ) == 0x20000000 ):
-                m.d.sync += self.r[ self.rc ].eq( self.ram.dout )
+                m.d.sync += self.rc.data.eq( self.ram.dout )
               with m.Else():
-                m.d.sync += self.r[ self.rc ].eq( self.rom.out )
+                m.d.sync += self.rc.data.eq( self.rom.out )
           # "Load Byte" (without sign extension) operation:
           with m.Elif( self.f == F_LBU ):
-            with m.If( ( self.rc & 0x1F ) > 0 ):
+            with m.If( ( self.rc.addr & 0x1F ) > 0 ):
               with m.If( ( self.mp & 0xE0000000 ) == 0x20000000 ):
-                m.d.sync += self.r[ self.rc ].eq( self.ram.dout & 0xFF )
+                m.d.sync += self.rc.data.eq( self.ram.dout & 0xFF )
               with m.Else():
-                m.d.sync += self.r[ self.rc ].eq( self.rom.out & 0xFF )
+                m.d.sync += self.rc.data.eq( self.rom.out & 0xFF )
           # "Load Halfword" (without sign extension) operation:
           with m.Elif( self.f == F_LHU ):
-            with m.If( ( self.rc & 0x1F ) > 0 ):
+            with m.If( ( self.rc.addr & 0x1F ) > 0 ):
               with m.If( ( self.mp & 0xE0000000 ) == 0x20000000 ):
-                m.d.sync += self.r[ self.rc ].eq(
+                m.d.sync += self.rc.data.eq(
                   ( self.ram.dout & 0xFFFF ) )
               with m.Else():
-                m.d.sync += self.r[ self.rc ].eq(
+                m.d.sync += self.rc.data.eq(
                   ( self.rom.out & 0xFFFF ) )
           m.next = "CPU_PC_LOAD"
       # "Trap Entry" - update PC and EPC CSR, and context switch.

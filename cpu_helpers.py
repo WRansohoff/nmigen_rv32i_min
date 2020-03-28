@@ -36,12 +36,12 @@ def alu_reg_op( self, cpu ):
   # registers to the ALU inputs and output.
   cpu.d.comb += [
     self.alu.start.eq( 1 ),
-    self.alu.a.eq( self.r[ self.ra ] ),
-    self.alu.b.eq( self.r[ self.rb ] )
+    self.alu.a.eq( self.ra.data ),
+    self.alu.b.eq( self.rb.data )
   ]
   with cpu.If( self.aws == 0 ):
-    with cpu.If( self.rc > 0 ):
-      cpu.d.sync += self.r[ self.rc ].eq( self.alu.y )
+    with cpu.If( self.rc.addr > 0 ):
+      cpu.d.sync += self.rc.data.eq( self.alu.y )
     cpu.next = "CPU_PC_LOAD"
   with cpu.Else():
     cpu.d.sync += self.aws.eq( self.aws - 1 )
@@ -72,14 +72,14 @@ def alu_imm_op( self, cpu ):
       cpu.d.comb += self.alu.f.eq( ALU_SRL )
   # Set the ALU 'start' bit, and the constant 'immediate' value.
   cpu.d.comb += [
-    self.alu.a.eq( self.r[ self.ra ] ),
+    self.alu.a.eq( self.ra.data ),
     self.alu.b.eq( self.imm ),
     self.alu.start.eq( 1 )
   ]
   # Connect appropriate registers to the ALU inputs and output.
   with cpu.If( self.aws == 0 ):
-    with cpu.If( self.rc > 0 ):
-      cpu.d.sync += self.r[ self.rc ].eq( self.alu.y )
+    with cpu.If( self.rc.addr > 0 ):
+      cpu.d.sync += self.rc.data.eq( self.alu.y )
     cpu.next = "CPU_PC_LOAD"
   with cpu.Else():
     cpu.d.sync += self.aws.eq( self.aws - 1 )
@@ -164,10 +164,10 @@ def rv32i_decode( self, cpu, instr ):
   # they're placed in consistent locations when they are used.
   cpu.d.sync += [
     self.opcode.eq( instr.bit_select( 0, 7 ) ),
-    self.rc.eq( ( instr.bit_select( 7,  5 ) ) | ( self.irq << 5 ) ),
+    self.rc.addr.eq( ( instr.bit_select( 7,  5 ) ) | ( self.irq << 5 ) ),
     self.f.eq( instr.bit_select( 12, 3 ) ),
-    self.ra.eq( ( instr.bit_select( 15, 5 ) ) | ( self.irq << 5 ) ),
-    self.rb.eq( ( instr.bit_select( 20, 5 ) ) | ( self.irq << 5 ) ),
+    self.ra.addr.eq( ( instr.bit_select( 15, 5 ) ) | ( self.irq << 5 ) ),
+    self.rb.addr.eq( ( instr.bit_select( 20, 5 ) ) | ( self.irq << 5 ) ),
     self.ff.eq( instr.bit_select( 25, 7 ) ),
     self.ipc.eq( self.pc ),
     # Also set the ALU wait-state counter.
@@ -184,8 +184,8 @@ def csr_rw( self, cpu ):
   with cpu.Else():
     with cpu.If( self.cws == 0 ):
       # Only read result if destination register is not r0.
-      with cpu.If( ( self.rc & 0x1F ) > 0 ):
-        cpu.d.sync += self.r[ self.rc ].eq( self.csr.rout )
+      with cpu.If( ( self.rc.addr & 0x1F ) > 0 ):
+        cpu.d.sync += self.rc.data.eq( self.csr.rout )
       cpu.next = "CPU_PC_LOAD"
     with cpu.Else():
       cpu.d.sync += self.cws.eq( self.cws - 1 )

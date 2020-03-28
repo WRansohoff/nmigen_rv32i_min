@@ -32,7 +32,7 @@ Each test simulation also creates a `.vcd` file containing the waveform results,
 
 Note that I've only implemented the most basic exceptions, interrupts don't work, and I'll need to implement some buses before I can add any peripherals. Fortunately, [the `nmigen-soc` repository](https://github.com/nmigen/nmigen-soc) contains a [Wishbone bus implementation](https://opencores.org/howto/wishbone), but I need to do some reading to figure out how that works.
 
-The CPU also uses many more clock cycles than it should in its FSM implementation. I'm still working out the kinks in timing memory accesses, including CPU registers.
+The CPU also uses many more clock cycles than it should in its FSM implementation. I'm planning to re-work the state machine when I get around to implementing a pipeline and I-cache.
 
 So even though this table of test coverage looks okay, there's plenty more work to do before this CPU can blink an LED.
 
@@ -52,8 +52,8 @@ So even though this table of test coverage looks okay, there's plenty more work 
 | `BLTU`          |:heavy_check_mark:|
 | `BNE`           |:heavy_check_mark:|
 | `DELAY_SLOTS`   |:heavy_check_mark:|
-| `EBREAK`        |:x:|
-| `ECALL`         |:x:|
+| `EBREAK`        |:heavy_check_mark:|
+| `ECALL`         |:heavy_check_mark:|
 | `IO`            |:heavy_check_mark:|
 | `JAL`           |:heavy_check_mark:|
 | `JALR`          |:heavy_check_mark:|
@@ -63,7 +63,7 @@ So even though this table of test coverage looks okay, there's plenty more work 
 | `LHU`           |:heavy_check_mark:|
 | `LW`            |:heavy_check_mark:|
 | `LUI`           |:heavy_check_mark:|
-| `MISALIGN_JMP`  |:x:|
+| `MISALIGN_JMP`  |:heavy_check_mark:|
 | `MISALIGN_LDST` |:heavy_check_mark:|
 | `NOP`           |:heavy_check_mark:|
 | `OR`            |:heavy_check_mark:|

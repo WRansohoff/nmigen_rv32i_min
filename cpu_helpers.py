@@ -158,21 +158,14 @@ def rv32i_decode( self, cpu, instr ):
   ]
 
 # Helper method to perform atomic r/w logic for CSR instructions.
-def csr_rw( self, cpu ):
-  # Wait a tick if necessary.
-  with cpu.If( self.csr.rw == 0 ):
-    cpu.d.sync += self.csr.rw.eq( 1 )
-    cpu.d.sync += self.cws.eq( 1 )
-    cpu.next = "CPU_PC_DECODE"
-  with cpu.Else():
-    # Only read result if destination register is not r0.
-    with cpu.If( ( self.rc.addr & 0x1F ) > 0 ):
+def csr_rw( self, cpu, rws_c ):
+  # Enable CSR writes, but wait for CPU access to read the response.
+  cpu.d.sync += self.csr.rw.eq( 1 )
+  with cpu.If( rws_c >= self.rws ):
+    with cpu.If( self.rc.addr[ :5 ] != 0 ):
       cpu.d.sync += self.rc.data.eq( self.csr.rout )
-    with cpu.If( self.cws == 0 ):
-      cpu.next = "CPU_PC_LOAD"
-    with cpu.Else():
-      cpu.d.sync += self.cws.eq( self.cws - 1 )
-      cpu.next = "CPU_PC_DECODE"
+      cpu.d.comb += self.rc.en.eq( 1 )
+  cpu.next = "CPU_PC_LOAD"
 
 # Helper method to enter the trap handler and jump to the
 # appropriate address.

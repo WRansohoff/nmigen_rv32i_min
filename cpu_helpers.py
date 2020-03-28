@@ -199,7 +199,7 @@ def jump_to( self, cpu, npc ):
     # Trigger an 'instruction address misaligned' trap.
     trigger_trap( self, cpu, TRAP_IMIS )
   with cpu.Else():
-    # Set the new PC value at the next falling clock edge.
+    # Set the new PC value at the next rising clock edge.
     cpu.d.sync += self.pc.eq( npc )
     # Read PC from RAM if the address is in that memory space.
     with cpu.If( ( npc & 0xE0000000 ) == 0x20000000 ):

@@ -108,12 +108,14 @@ class CPU( Elaboratable ):
     ramws_c = Signal( 3, reset = 0b000 )
     rws_c   = Signal( 2, reset = 0b00 )
 
-    # CPU register write port is enabled unless it's x0.
-    with m.If( ( self.rc.addr & 0x1F ) == 0 ):
-      m.d.comb += self.rc.en.eq( 0 )
-    with m.Else():
-      m.d.comb += self.rc.en.eq( 1 )
-    # Reset CPU register access wait-states unless otherwise noted.
+    # Disable CPU register writes by default.
+    m.d.comb += self.rc.en.eq( 0 )
+    # Reset memory access wait-state counters if they are not used.
+    m.d.sync += [
+      nvmws_c.eq( 0 ),
+      ramws_c.eq( 0 ),
+      rws_c.eq( 0 )
+    ]
     m.d.sync += rws_c.eq( 0 )
 
     # Set the program counter to the simulated memory addresses
@@ -177,25 +179,29 @@ class CPU( Elaboratable ):
       #              and prepare associated registers.
       with m.State( "CPU_PC_DECODE" ):
         m.d.comb += self.fsms.eq( CPU_PC_DECODE ) #TODO: Remove
-        # Reset memory access wait-state counters.
-        m.d.sync += [
-          nvmws_c.eq( 0 ),
-          ramws_c.eq( 0 )
-        ]
         # "Load Upper Immediate" instruction:
         with m.If( self.opcode == OP_LUI ):
           with m.If( ( self.rc.addr & 0x1F ) > 0 ):
             m.d.sync += self.rc.data.eq( self.imm )
+            # Assert the CPU register 'write' signal.
+            with m.If( self.rc.addr[ :5 ] != 0 ):
+              m.d.comb += self.rc.en.eq( 1 )
           m.next = "CPU_PC_LOAD"
         # "Add Upper Immediate to PC" instruction:
         with m.Elif( self.opcode == OP_AUIPC ):
           with m.If( ( self.rc.addr & 0x1F ) > 0 ):
             m.d.sync += self.rc.data.eq( self.imm + self.ipc )
+            # Assert the CPU register 'write' signal.
+            with m.If( self.rc.addr[ :5 ] != 0 ):
+              m.d.comb += self.rc.en.eq( 1 )
           m.next = "CPU_PC_LOAD"
         # "Jump And Link" instruction:
         with m.Elif( self.opcode == OP_JAL ):
           with m.If( ( self.rc.addr & 0x1F ) > 0 ):
             m.d.sync += self.rc.data.eq( self.ipc + 4 )
+            # Assert the CPU register 'write' signal.
+            with m.If( self.rc.addr[ :5 ] != 0 ):
+              m.d.comb += self.rc.en.eq( 1 )
           jump_to( self, m, ( self.ipc + self.imm ) )
         # "Jump And Link from Register" instruction:
         # funct3 bits should be 0b000, but for now there's no
@@ -203,6 +209,9 @@ class CPU( Elaboratable ):
         with m.Elif( self.opcode == OP_JALR ):
           with m.If( ( self.rc.addr & 0x1F ) > 0 ):
             m.d.sync += self.rc.data.eq( self.ipc + 4 )
+            # Assert the CPU register 'write' signal.
+            with m.If( self.rc.addr[ :5 ] != 0 ):
+              m.d.comb += self.rc.en.eq( 1 )
           jump_to( self, m, ( self.ra.data + self.imm ) )
         # "Conditional Branch" instructions:
         with m.Elif( self.opcode == OP_BRANCH ):
@@ -283,9 +292,15 @@ class CPU( Elaboratable ):
         # "Register-Based" instructions:
         with m.Elif( self.opcode == OP_REG ):
           alu_reg_op( self, m )
+          # Assert the CPU register 'write' signal.
+          with m.If( self.rc.addr[ :5 ] != 0 ):
+            m.d.comb += self.rc.en.eq( 1 )
         # "Immediate-Based" instructions:
         with m.Elif( self.opcode == OP_IMM ):
           alu_imm_op( self, m )
+          # Assert the CPU register 'write' signal.
+          with m.If( self.rc.addr[ :5 ] != 0 ):
+            m.d.comb += self.rc.en.eq( 1 )
         with m.Elif( self.opcode == OP_SYSTEM ):
           # "EBREAK" instruction: enter the interrupt context
           # with 'breakpoint' as the cause of the exception.
@@ -395,14 +410,14 @@ class CPU( Elaboratable ):
             rws_c.eq( rws_c + 1 ),
             self.pc.eq( self.ipc )
           ]
-          # Disable CPU register write-back until wait-states
-          # elapse, to prevent spurious writes.
-          m.d.comb += self.rc.en.eq( 0 )
           m.next = "CPU_PC_DECODE"
       # "Load operation" - wait for a load instruction to finish
       # fetching data from memory.
       with m.State( "CPU_LD" ):
         m.d.comb += self.fsms.eq( CPU_LD ) # TODO: Remove
+        # Assert the CPU register 'write' signal.
+        with m.If( self.rc.addr[ :5 ] != 0 ):
+          m.d.comb += self.rc.en.eq( 1 )
         # Maintain the cominatorial logic holding the memory
         # address at the 'mp' (memory pointer) value.
         m.d.comb += self.mp.eq( self.ra.data + self.imm )
@@ -436,6 +451,9 @@ class CPU( Elaboratable ):
                 with m.Else():
                   m.d.sync += self.rc.data.eq(
                     ( self.rom.out & 0xFF ) )
+              # Assert the CPU register 'write' signal.
+              with m.If( self.rc.addr[ :5 ] != 0 ):
+                m.d.comb += self.rc.en.eq( 1 )
           # "Load Halfword" operation:
           with m.Elif( self.f == F_LH ):
             with m.If( ( self.rc.addr & 0x1F ) > 0 ):
@@ -453,6 +471,9 @@ class CPU( Elaboratable ):
                 with m.Else():
                   m.d.sync += self.rc.data.eq(
                     ( self.rom.out & 0xFFFF ) )
+              # Assert the CPU register 'write' signal.
+              with m.If( self.rc.addr[ :5 ] != 0 ):
+                m.d.comb += self.rc.en.eq( 1 )
           # "Load Word" operation:
           with m.Elif( self.f == F_LW ):
             with m.If( ( self.rc.addr & 0x1F ) > 0 ):
@@ -460,6 +481,9 @@ class CPU( Elaboratable ):
                 m.d.sync += self.rc.data.eq( self.ram.dout )
               with m.Else():
                 m.d.sync += self.rc.data.eq( self.rom.out )
+              # Assert the CPU register 'write' signal.
+              with m.If( self.rc.addr[ :5 ] != 0 ):
+                m.d.comb += self.rc.en.eq( 1 )
           # "Load Byte" (without sign extension) operation:
           with m.Elif( self.f == F_LBU ):
             with m.If( ( self.rc.addr & 0x1F ) > 0 ):
@@ -467,6 +491,9 @@ class CPU( Elaboratable ):
                 m.d.sync += self.rc.data.eq( self.ram.dout & 0xFF )
               with m.Else():
                 m.d.sync += self.rc.data.eq( self.rom.out & 0xFF )
+              # Assert the CPU register 'write' signal.
+              with m.If( self.rc.addr[ :5 ] != 0 ):
+                m.d.comb += self.rc.en.eq( 1 )
           # "Load Halfword" (without sign extension) operation:
           with m.Elif( self.f == F_LHU ):
             with m.If( ( self.rc.addr & 0x1F ) > 0 ):
@@ -476,6 +503,9 @@ class CPU( Elaboratable ):
               with m.Else():
                 m.d.sync += self.rc.data.eq(
                   ( self.rom.out & 0xFFFF ) )
+              # Assert the CPU register 'write' signal.
+              with m.If( self.rc.addr[ :5 ] != 0 ):
+                m.d.comb += self.rc.en.eq( 1 )
           m.next = "CPU_PC_LOAD"
       # "Trap Entry" - update PC and EPC CSR, and context switch.
       with m.State( "CPU_TRAP_ENTER" ):
@@ -682,9 +712,13 @@ if __name__ == "__main__":
     # Build the application for an iCE40UP5K FPGA.
     # Currently, this is meaningless, because it builds the CPU
     # with a hard-coded 'infinite loop' ROM. But it's a start.
-    UpduinoV2Platform().build( CPU( loop_rom ),
-                               do_build = True,
-                               do_program = False )
+    with warnings.catch_warnings():
+      # (Un-comment to suppress warning messages)
+      #warnings.filterwarnings( "ignore", category = DriverConflict )
+      #warnings.filterwarnings( "ignore", category = UnusedElaboratable )
+      UpduinoV2Platform().build( CPU( loop_rom ),
+                                 do_build = True,
+                                 do_program = False )
   else:
     # Run testbench simulations.
     with warnings.catch_warnings():

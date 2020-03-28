@@ -3,9 +3,11 @@ from nmigen_soc.csr.bus import *
 from nmigen_soc.csr.wishbone import *
 from nmigen_soc.wishbone import *
 from nmigen_soc.memory import *
+from nmigen_boards.upduino_v2 import *
 
 from isa import *
 
+import sys
 import warnings
 
 #############################################
@@ -320,16 +322,22 @@ def csr_test( csr ):
 
 # 'main' method to run a basic testbench.
 if __name__ == "__main__":
-  with warnings.catch_warnings():
-    warnings.filterwarnings( "ignore", category = DriverConflict )
+  if ( len( sys.argv ) == 2 ) and ( sys.argv[ 1 ] == '-b' ):
+    # Test building the module.
+    UpduinoV2Platform().build( CSR(),
+                               do_build = False,
+                               do_program = False )
+  else:
+    with warnings.catch_warnings():
+      warnings.filterwarnings( "ignore", category = DriverConflict )
 
-    # Instantiate a CSR module.
-    dut = CSR()
+      # Instantiate a CSR module.
+      dut = CSR()
 
-    # Run the tests.
-    with Simulator( dut, vcd_file = open( 'csr.vcd', 'w' ) ) as sim:
-      def proc():
-        yield from csr_test( dut )
-      sim.add_clock( 24e-6 )
-      sim.add_sync_process( proc )
-      sim.run()
+      # Run the tests.
+      with Simulator( dut, vcd_file = open( 'csr.vcd', 'w' ) ) as sim:
+        def proc():
+          yield from csr_test( dut )
+        sim.add_clock( 24e-6 )
+        sim.add_sync_process( proc )
+        sim.run()

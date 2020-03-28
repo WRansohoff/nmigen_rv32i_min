@@ -1,7 +1,10 @@
 from nmigen import *
 from nmigen.back.pysim import *
+from nmigen_boards.upduino_v2 import *
 
 from isa import *
+
+import sys
 
 ###############
 # ALU module: #
@@ -208,13 +211,19 @@ def alu_test( alu ):
 
 # 'main' method to run a basic testbench.
 if __name__ == "__main__":
-  # Instantiate an ALU module.
-  dut = ALU()
+  if ( len( sys.argv ) == 2 ) and ( sys.argv[ 1 ] == '-b' ):
+    # Test building the module.
+    UpduinoV2Platform().build( ALU(),
+                               do_build = False,
+                               do_program = False )
+  else:
+    # Instantiate an ALU module.
+    dut = ALU()
 
-  # Run the tests.
-  with Simulator( dut, vcd_file = open( 'alu.vcd', 'w' ) ) as sim:
-    def proc():
-      yield from alu_test( dut )
-    sim.add_clock( 24e-6 )
-    sim.add_sync_process( proc )
-    sim.run()
+    # Run the tests.
+    with Simulator( dut, vcd_file = open( 'alu.vcd', 'w' ) ) as sim:
+      def proc():
+        yield from alu_test( dut )
+      sim.add_clock( 24e-6 )
+      sim.add_sync_process( proc )
+      sim.run()

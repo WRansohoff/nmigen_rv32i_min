@@ -36,6 +36,8 @@ So even though this table of test coverage looks okay, there's plenty more work 
 
 ## Compliance Tests
 
+The remaining failures are down to timing issues caused by some re-writes that were necessary to remove simulator-only syntax.
+
 |   Test Suite    |   Pass / Fail?   |
 |:---------------:|:----------------:|
 | `ADD`           |:heavy_check_mark:|
@@ -52,26 +54,26 @@ So even though this table of test coverage looks okay, there's plenty more work 
 | `DELAY_SLOTS`   |:heavy_check_mark:|
 | `EBREAK`        |:heavy_check_mark:|
 | `ECALL`         |:heavy_check_mark:|
-| `IO`            |:heavy_check_mark:|
+| `IO`            |        :x:       |
 | `JAL`           |:heavy_check_mark:|
 | `JALR`          |:heavy_check_mark:|
-| `LB`            |:heavy_check_mark:|
-| `LBU`           |:heavy_check_mark:|
-| `LH`            |:heavy_check_mark:|
-| `LHU`           |:heavy_check_mark:|
-| `LW`            |:heavy_check_mark:|
+| `LB`            |:x:|
+| `LBU`           |:x:|
+| `LH`            |:x:|
+| `LHU`           |:x:|
+| `LW`            |:x:|
 | `LUI`           |:heavy_check_mark:|
 | `MISALIGN_JMP`  |:heavy_check_mark:|
 | `MISALIGN_LDST` |:heavy_check_mark:|
-| `NOP`           |:heavy_check_mark:|
+| `NOP`           |:x:|
 | `OR`            |:heavy_check_mark:|
 | `ORI`           |:heavy_check_mark:|
-| `RF_SIZE`       |:heavy_check_mark:|
+| `RF_SIZE`       |:x:|
 | `RF_WIDTH`      |:heavy_check_mark:|
 | `RF_X0`         |:heavy_check_mark:|
-| `SB`            |:heavy_check_mark:|
+| `SB`            |:x:|
 | `SH`            |:heavy_check_mark:|
-| `SW`            |:heavy_check_mark:|
+| `SW`            |:x:|
 | `SLL`           |:heavy_check_mark:|
 | `SLLI`          |:heavy_check_mark:|
 | `SLT`           |:heavy_check_mark:|

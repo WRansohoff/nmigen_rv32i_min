@@ -39,9 +39,9 @@ def alu_reg_op( self, cpu ):
     self.alu.a.eq( self.ra.data ),
     self.alu.b.eq( self.rb.data )
   ]
+  with cpu.If( ( self.rc.addr & 0x1F ) > 0 ):
+    cpu.d.sync += self.rc.data.eq( self.alu.y )
   with cpu.If( self.aws == 0 ):
-    with cpu.If( self.rc.addr > 0 ):
-      cpu.d.sync += self.rc.data.eq( self.alu.y )
     cpu.next = "CPU_PC_LOAD"
   with cpu.Else():
     cpu.d.sync += self.aws.eq( self.aws - 1 )
@@ -76,10 +76,9 @@ def alu_imm_op( self, cpu ):
     self.alu.b.eq( self.imm ),
     self.alu.start.eq( 1 )
   ]
-  # Connect appropriate registers to the ALU inputs and output.
+  with cpu.If( ( self.rc.addr & 0x1F ) > 0 ):
+     cpu.d.sync += self.rc.data.eq( self.alu.y )
   with cpu.If( self.aws == 0 ):
-    with cpu.If( self.rc.addr > 0 ):
-      cpu.d.sync += self.rc.data.eq( self.alu.y )
     cpu.next = "CPU_PC_LOAD"
   with cpu.Else():
     cpu.d.sync += self.aws.eq( self.aws - 1 )
@@ -101,14 +100,14 @@ def rv32i_decode( self, cpu, instr ):
                  ( instr.bit_select( 12, 3 ) == F_SRAI ) ) ):
       cpu.d.sync += self.imm.eq( instr.bit_select( 20, 5 ) )
     with cpu.Else():
-      with cpu.If( instr[ 31 ] ):
+      with cpu.If( instr.bit_select( 31, 1 ) ):
         cpu.d.sync += self.imm.eq(
           ( 0xFFFFF000 | instr.bit_select( 20, 12 ) ) )
       with cpu.Else():
         cpu.d.sync += self.imm.eq( instr.bit_select( 20, 12 ) )
   # S-type instructions have 12-bit immediates in two fields.
   with cpu.Elif( instr.bit_select( 0, 7 ) == OP_STORE ):
-    with cpu.If( instr[ 31 ] ):
+    with cpu.If( instr.bit_select( 31, 1 ) ):
       cpu.d.sync += self.imm.eq(
         ( 0xFFFFF000 | instr.bit_select( 7, 5 ) ) |
         ( instr.bit_select( 25, 7 ) << 5 ) )
@@ -124,7 +123,7 @@ def rv32i_decode( self, cpu, instr ):
   # J-type instructions have a 20-bit immediate encoding a
   # 21-bit value, with its bits scattered to the four winds.
   with cpu.Elif( instr.bit_select( 0, 7 ) == OP_JAL ):
-    with cpu.If( instr[ 31 ] ):
+    with cpu.If( instr.bit_select( 31, 1 ) ):
       cpu.d.sync += self.imm.eq( 0xFFE00000  |
         ( instr.bit_select( 21, 10 ) << 1  ) |
         ( instr.bit_select( 20, 1  ) << 11 ) |
@@ -139,7 +138,7 @@ def rv32i_decode( self, cpu, instr ):
   # B-type instructions have a 12-bit immediate encoding a
   # 13-bit value, with bits scattered around the instruction.
   with cpu.Elif( instr.bit_select( 0, 7 ) == OP_BRANCH ):
-    with cpu.If( instr[ 31 ] ):
+    with cpu.If( instr.bit_select( 31, 1 ) ):
       cpu.d.sync += self.imm.eq( 0xFFFFE000 |
         ( instr.bit_select( 8,  4 ) << 1  ) |
         ( instr.bit_select( 25, 6 ) << 5  ) |
@@ -182,10 +181,10 @@ def csr_rw( self, cpu ):
     cpu.d.sync += self.cws.eq( 1 )
     cpu.next = "CPU_PC_DECODE"
   with cpu.Else():
+    # Only read result if destination register is not r0.
+    with cpu.If( ( self.rc.addr & 0x1F ) > 0 ):
+      cpu.d.sync += self.rc.data.eq( self.csr.rout )
     with cpu.If( self.cws == 0 ):
-      # Only read result if destination register is not r0.
-      with cpu.If( ( self.rc.addr & 0x1F ) > 0 ):
-        cpu.d.sync += self.rc.data.eq( self.csr.rout )
       cpu.next = "CPU_PC_LOAD"
     with cpu.Else():
       cpu.d.sync += self.cws.eq( self.cws - 1 )
@@ -229,7 +228,7 @@ def jump_to( self, cpu, npc ):
 # Helper method to increment the 'minstret' CSR.
 def minstret_incr( self, cpu ):
   # Increment 64-bit 'MINSTRET' counter unless it is inhibited.
-  with cpu.If( self.csr.mcountinhibit.shadow[ 2 ] == 0 ):
+  with cpu.If( self.csr.mcountinhibit.shadow.bit_select( 2, 1 ) == 0 ):
     cpu.d.sync += self.csr.minstret.shadow.eq( self.csr.minstret.shadow + 1 )
     with cpu.If( self.csr.minstret.shadow == 0xFFFFFFFF ):
       cpu.d.sync += self.csr.minstreth.shadow.eq( self.csr.minstreth.shadow + 1 )

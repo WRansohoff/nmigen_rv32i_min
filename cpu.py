@@ -56,9 +56,12 @@ class CPU( Elaboratable ):
     self.imm    = Signal( shape = Shape( width = 32, signed = True ),
                           reset = 0x00000000 )
     self.ipc    = Signal( 32, reset = 0x00000000 )
+    # TODO: Redesign the FSM to require fewer and less scattered wait-states.
     # Memory wait states for RAM and ROM.
     self.nvmws  = Signal( 3, reset = 0b010 )
     self.ramws  = Signal( 3, reset = 0b001 )
+    # CPU register access wait states.
+    self.rws    = Signal( 2, reset = 0b10 )
     # ALU access wait states.
     self.aws    = Signal( 2, reset = 0b00 )
     # CSR access wait states.
@@ -98,22 +101,21 @@ class CPU( Elaboratable ):
     m.submodules.rb  = self.rb
     m.submodules.rc  = self.rc
 
-    # CPU register write port is always enabled, unless it is x0.
-    with m.If( ( self.rc.addr & 0x1F ) != 0 ):
-      m.d.comb += self.rc.en.eq( 1 )
-    with m.Else():
-      m.d.comb += self.rc.en.eq( 0 )
-
     # Reset countdown.
     rsc = Signal( 2, reset = 0b11 )
-    # ROM/RAM wait state countdowns.
-    nvmws_c = Signal( 3, reset = 0b00 )
-    ramws_c = Signal( 3, reset = 0b00 )
+    # Memory wait state countdowns.
+    nvmws_c = Signal( 3, reset = 0b000 )
+    ramws_c = Signal( 3, reset = 0b000 )
+    rws_c   = Signal( 2, reset = 0b00 )
 
-    # r0 should always be 0.
-    m.d.sync += self.r[ 0 ].eq( 0x00000000 )
-    # r32 should always be 0 (r0 in interrupt context)
-    m.d.sync += self.r[ 32 ].eq( 0x00000000 )
+    # CPU register write port is enabled unless it's x0.
+    with m.If( ( self.rc.addr & 0x1F ) == 0 ):
+      m.d.comb += self.rc.en.eq( 0 )
+    with m.Else():
+      m.d.comb += self.rc.en.eq( 1 )
+    # Reset CPU register access wait-states unless otherwise noted.
+    m.d.sync += rws_c.eq( 0 )
+
     # Set the program counter to the simulated memory addresses
     # by default. Load operations temporarily override this.
     m.d.comb += self.rom.addr.eq( self.pc )
@@ -149,13 +151,13 @@ class CPU( Elaboratable ):
         # If the PC address is in RAM, maintain combinatorial
         # logic to read the instruction from RAM.
         with m.If( ( ( self.pc ) & 0xE0000000 ) == 0x20000000 ):
+          m.d.comb += [
+            self.ram.addr.eq( ( self.pc ) & 0x1FFFFFFF ),
+            self.ram.ren.eq( 1 )
+          ]
           with m.If( ramws_c < self.ramws ):
             m.d.sync += ramws_c.eq( ramws_c + 1 )
           with m.Else():
-            m.d.comb += [
-              self.ram.addr.eq( ( self.pc ) & 0x1FFFFFFF ),
-              self.ram.ren.eq( 1 )
-            ]
             # Increment 'instructions retired' counter.
             minstret_incr( self, m )
             # Decode the fetched instruction and move on to run it.
@@ -175,7 +177,7 @@ class CPU( Elaboratable ):
       #              and prepare associated registers.
       with m.State( "CPU_PC_DECODE" ):
         m.d.comb += self.fsms.eq( CPU_PC_DECODE ) #TODO: Remove
-        # Reset both memory wait-state counters.
+        # Reset memory access wait-state counters.
         m.d.sync += [
           nvmws_c.eq( 0 ),
           ramws_c.eq( 0 )
@@ -265,9 +267,9 @@ class CPU( Elaboratable ):
           with m.If( ( self.mp & 0xE0000000 ) == 0x20000000 ):
             m.d.comb += [
               self.ram.addr.eq( self.mp & 0x1FFFFFFF ),
-              self.ram.wen.eq( 0b1 )
+              self.ram.wen.eq( 0b1 ),
+              self.ram.din.eq( self.rb.data )
             ]
-            m.d.comb += self.ram.din.eq( self.rb.data )
             # "Store Byte" operation:
             with m.If( self.f == F_SB ):
               m.d.comb += self.ram.dw.eq( 0b00 )
@@ -343,7 +345,7 @@ class CPU( Elaboratable ):
               self.csr.rsel.eq( self.imm ),
               self.csr.f.eq( F_CSRRWI )
             ]
-            with m.If( self.ra.addr[ 4 ] != 0 ):
+            with m.If( self.ra.addr.bit_select( 4, 1 ) != 0 ):
               m.d.comb += self.csr.rin.eq( 0xFFFFFFE0 | ( self.ra.addr & 0x1F ) )
             with m.Else():
               m.d.comb += self.csr.rin.eq( ( self.ra.addr & 0x1F ) )
@@ -354,7 +356,7 @@ class CPU( Elaboratable ):
               self.csr.rsel.eq( self.imm ),
               self.csr.f.eq( F_CSRRSI )
             ]
-            with m.If( self.ra.addr[ 4 ] != 0 ):
+            with m.If( self.ra.addr.bit_select( 4, 1 ) != 0 ):
               m.d.comb += self.csr.rin.eq( 0xFFFFFFE0 | ( self.ra.addr & 0x1F ) )
             with m.Else():
               m.d.comb += self.csr.rin.eq( ( self.ra.addr & 0x1F ) )
@@ -365,7 +367,7 @@ class CPU( Elaboratable ):
               self.csr.rsel.eq( self.imm ),
               self.csr.f.eq( F_CSRRCI )
             ]
-            with m.If( self.ra.addr[ 4 ] != 0 ):
+            with m.If( self.ra.addr.bit_select( 4, 1 ) != 0 ):
               m.d.comb += self.csr.rin.eq( 0xFFFFFFE0 | ( self.ra.addr & 0x1F ) )
             with m.Else():
               m.d.comb += self.csr.rin.eq( ( self.ra.addr & 0x1F ) )
@@ -387,6 +389,16 @@ class CPU( Elaboratable ):
         # should trigger an error.
         with m.Else():
           m.next = "CPU_PC_LOAD"
+        # (Always wait until register access wait-states elapse.)
+        with m.If( rws_c < self.rws ):
+          m.d.sync += [
+            rws_c.eq( rws_c + 1 ),
+            self.pc.eq( self.ipc )
+          ]
+          # Disable CPU register write-back until wait-states
+          # elapse, to prevent spurious writes.
+          m.d.comb += self.rc.en.eq( 0 )
+          m.next = "CPU_PC_DECODE"
       # "Load operation" - wait for a load instruction to finish
       # fetching data from memory.
       with m.State( "CPU_LD" ):
@@ -411,14 +423,14 @@ class CPU( Elaboratable ):
           with m.If( self.f == F_LB ):
             with m.If( ( self.rc.addr & 0x1F ) > 0 ):
               with m.If( ( self.mp & 0xE0000000 ) == 0x20000000 ):
-                with m.If( self.ram.dout[ 7 ] ):
+                with m.If( self.ram.dout.bit_select( 7, 1 ) ):
                   m.d.sync += self.rc.data.eq(
                     ( self.ram.dout & 0xFF ) | 0xFFFFFF00 )
                 with m.Else():
                   m.d.sync += self.rc.data.eq(
                     ( self.ram.dout & 0xFF ) )
               with m.Else():
-                with m.If( self.rom.out[ 7 ] ):
+                with m.If( self.rom.out.bit_select( 7, 1 ) ):
                   m.d.sync += self.rc.data.eq(
                     ( self.rom.out & 0xFF ) | 0xFFFFFF00 )
                 with m.Else():
@@ -428,14 +440,14 @@ class CPU( Elaboratable ):
           with m.Elif( self.f == F_LH ):
             with m.If( ( self.rc.addr & 0x1F ) > 0 ):
               with m.If( ( self.mp & 0xE0000000 ) == 0x20000000 ):
-                with m.If( self.ram.dout[ 15 ] ):
+                with m.If( self.ram.dout.bit_select( 15, 1 ) ):
                   m.d.sync += self.rc.data.eq(
                     ( self.ram.dout & 0xFFFF ) | 0xFFFF0000 )
                 with m.Else():
                   m.d.sync += self.rc.data.eq(
                     ( self.ram.dout & 0xFFFF ) )
               with m.Else():
-                with m.If( self.rom.out[ 15 ] ):
+                with m.If( self.rom.out.bit_select( 15, 1 ) ):
                   m.d.sync += self.rc.data.eq(
                     ( self.rom.out & 0xFFFF ) | 0xFFFF0000 )
                 with m.Else():
@@ -520,7 +532,7 @@ def check_vals( expected, ni, cpu ):
           print( "  \033[31mFAIL:\033[0m pc  == %s"
                  " after %d operations (got: %s)"
                  %( hexs( ex[ 'e' ] ), ni, hexs( cpc ) ) )
-      # Special case: RAM data.
+      # Special case: RAM data (must be word-aligned).
       elif type( ex[ 'r' ] ) == str and ex[ 'r' ][ 0:3 ] == "RAM":
         rama = int( ex[ 'r' ][ 3: ] )
         if ( rama % 4 ) != 0:
@@ -533,10 +545,10 @@ def check_vals( expected, ni, cpu ):
           cpdb = yield cpu.ram.data[ rama + 1 ]
           cpdc = yield cpu.ram.data[ rama + 2 ]
           cpdd = yield cpu.ram.data[ rama + 3 ]
-          cpd  = ( cpda |
-                 ( cpdb << 8  ) |
-                 ( cpdc << 16 ) |
-                 ( cpdd << 24 ) )
+          cpd = ( cpda |
+                ( cpdb << 8  ) |
+                ( cpdc << 16 ) |
+                ( cpdd << 24 ) )
           if hexs( cpd ) == hexs( ex[ 'e' ] ):
             p += 1
             print( "  \033[32mPASS:\033[0m RAM == %s @ 0x%08X"
@@ -670,7 +682,9 @@ if __name__ == "__main__":
     # Build the application for an iCE40UP5K FPGA.
     # Currently, this is meaningless, because it builds the CPU
     # with a hard-coded 'infinite loop' ROM. But it's a start.
-    UpduinoV2Platform().build( CPU( loop_rom ), do_program = False )
+    UpduinoV2Platform().build( CPU( loop_rom ),
+                               do_build = True,
+                               do_program = False )
   else:
     # Run testbench simulations.
     with warnings.catch_warnings():

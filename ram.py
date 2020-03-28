@@ -58,47 +58,50 @@ class RAM( Elaboratable ):
       self.wd1.en.eq( 0 ),
       self.wd2.en.eq( 0 ),
       self.wd3.en.eq( 0 ),
-      self.wd4.en.eq( 0 )
+      self.wd4.en.eq( 0 ),
+      self.dout.eq( 0 )
     ]
 
     # Set the 'dout' value if 'ren' is set.
     with m.If( self.ren ):
       # (Return 0 if the address is out of range.)
       with m.If( self.addr >= self.size ):
-        m.d.sync += self.dout.eq( 0x00000000 )
+        m.d.comb += self.dout.eq( 0x00000000 )
       # Read the requested word of RAM. Fill in '0x00' for any bytes
       # which are out of range.
       with m.Elif( ( self.addr + 3 ) >= self.size ):
         m.d.comb += [
           self.rd1.addr.eq( self.addr ),
           self.rd2.addr.eq( self.addr + 1 ),
-          self.rd3.addr.eq( self.addr + 2 )
+          self.rd3.addr.eq( self.addr + 2 ),
+          self.dout.eq( ( self.rd1.data |
+            ( self.rd2.data << 8  ) |
+            ( self.rd3.data << 16 ) ) &
+            0x00FFFFFF )
         ]
-        m.d.sync += self.dout.eq( ( self.rd1.data |
-          ( self.rd2.data << 8  ) |
-          ( self.rd3.data << 16 ) ) &
-          0x00FFFFFF )
       with m.Elif( ( self.addr + 2 ) >= self.size ):
         m.d.comb += [
           self.rd1.addr.eq( self.addr ),
-          self.rd2.addr.eq( self.addr + 1 )
+          self.rd2.addr.eq( self.addr + 1 ),
+          self.dout.eq( ( ( self.rd1.data ) |
+            ( self.rd2.data << 8 ) ) & 0x0000FFFF )
         ]
-        m.d.sync += self.dout.eq( ( ( self.rd1.data ) |
-          ( self.rd2.data << 8 ) ) & 0x0000FFFF )
       with m.Elif( ( self.addr + 1 ) >= self.size ):
-        m.d.comb += self.rd1.addr.eq( self.addr )
-        m.d.sync += self.dout.eq( self.rd1.data & 0x000000FF )
+        m.d.comb += [
+          self.rd1.addr.eq( self.addr ),
+          self.dout.eq( self.rd1.data & 0x000000FF )
+        ]
       with m.Else():
         m.d.comb += [
           self.rd1.addr.eq( self.addr ),
           self.rd2.addr.eq( self.addr + 1 ),
           self.rd3.addr.eq( self.addr + 2 ),
-          self.rd4.addr.eq( self.addr + 3 )
+          self.rd4.addr.eq( self.addr + 3 ),
+          self.dout.eq( ( self.rd1.data |
+            ( self.rd2.data << 8  ) |
+            ( self.rd3.data << 16 ) |
+            ( self.rd4.data << 24 ) ) )
         ]
-        m.d.sync += self.dout.eq( ( self.rd1.data |
-          ( self.rd2.data << 8  ) |
-          ( self.rd3.data << 16 ) |
-          ( self.rd4.data << 24 ) ) )
 
     # Write the 'din' value if 'wen' is set.
     with m.If( self.wen ):
@@ -146,6 +149,7 @@ def ram_write_ut( ram, address, data, dw, success ):
   yield ram.addr.eq( address )
   yield ram.din.eq( data )
   yield ram.wen.eq( 1 )
+  yield ram.ren.eq( 1 )
   yield ram.dw.eq( dw )
   # Wait two ticks, and un-set the 'wen' bit.
   yield Tick()
@@ -153,10 +157,7 @@ def ram_write_ut( ram, address, data, dw, success ):
   yield ram.wen.eq( 0 )
   # Done. Check that the 'din' word was successfully set in RAM.
   yield Settle()
-  actual = yield ram.data[ address ]
-  actual = actual | ( yield ram.data[ address + 1 ] << 8  )
-  actual = actual | ( yield ram.data[ address + 2 ] << 16 )
-  actual = actual | ( yield ram.data[ address + 3 ] << 24 )
+  actual = yield ram.dout
   if success:
     if data != actual:
       f += 1
@@ -187,7 +188,6 @@ def ram_read_ut( ram, address, expected ):
   # Wait two ticks, and un-set the 'ren' bit.
   yield Tick()
   yield Tick()
-  yield ram.ren.eq( 0 )
   # Done. Check the 'dout' result after combinational logic settles.
   yield Settle()
   actual = yield ram.dout
@@ -200,6 +200,7 @@ def ram_read_ut( ram, address, expected ):
     p += 1
     print( "\033[32mPASS:\033[0m RAM[ 0x%08X ] == 0x%08X"
            %( address, expected ) )
+  yield ram.ren.eq( 0 )
 
 # Top-level RAM test method.
 def ram_test( ram ):

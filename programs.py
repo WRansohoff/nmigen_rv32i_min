@@ -55,6 +55,16 @@ quick_rom = ROM( rom_img( [
   JAL( 1, 0x00000 )
 ] ) )
 
+# "LED Test" program: cycle through RGB LED colors.
+led_rom = ROM( rom_img( [
+  # r15 will hold the LED colors, r14 the loopback address.
+  ADDI( 15, 0, 1 ), ADDI( 13, 0, 8 ), AUIPC( 14, 0 ),
+  # Increment r15, reset to 0 if > 7.
+  ADDI( 15, 15, 1 ), BLT( 15, 13, 0x004 ), ADDI( 15, 0, 1 ),
+  # Set LED color, loop back.
+  LED( 15 ), JALR( 16, 14, 0 )
+] ) )
+
 ########################################
 # Expected runtime register values for #
 # the CPU test programs defined above: #
@@ -139,6 +149,12 @@ quick_exp = {
   'end': 52
 }
 
+# LED test program 'expected' values; just a stub to simulate it.
+led_exp = {
+  0:  [ { 'r': 'pc', 'e': 0x00000000 } ],
+  'end': 100
+}
+
 ############################################
 # Collected definitions for test programs. #
 # These are just arrays with string names, #
@@ -151,6 +167,8 @@ ram_pc_test  = [ 'run from RAM test', 'cpu_ram',
                  ram_rom, [], ram_exp ]
 quick_test   = [ 'quick test', 'cpu_quick',
                  quick_rom, [], quick_exp ]
+led_test     = [ 'led test', 'cpu_led',
+                 led_rom, [], led_exp ]
 
 # Multiplexed ROM image for the collected RV32I compliance tests.
 from tests.test_roms.rv32i_add import *

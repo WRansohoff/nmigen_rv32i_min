@@ -31,6 +31,11 @@ OP_REG    = 0b0110011
 OP_IMM    = 0b0010011
 OP_SYSTEM = 0b1110011
 OP_FENCE  = 0b0001111
+# Non-standard opcodes and bits, for preliminary hardware testing:
+OP_LED    = 0b1110110
+R_RED     = 0b001
+R_GRN     = 0b010
+R_BLU     = 0b100
 # RV32I "funct3" bits. These select different functions with
 # R-type, I-type, S-type, and B-type instructions.
 F_JALR    = 0b000
@@ -513,6 +518,8 @@ def LI( c, i ):
     return LUI( c, i ), ADDI( c, c, ( i & 0x0FFF ) )
 def NOP():
   return ADDI( 0, 0, 0x000 )
+def LED( a ):
+  return LITTLE_END( ( OP_LED & 0x7F ) | ( a & 0x1F ) << 15 )
 
 # Helper method to pretty-print a 2s-complement 32-bit hex string.
 def hexs( h ):

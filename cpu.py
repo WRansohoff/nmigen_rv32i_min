@@ -73,7 +73,13 @@ class CPU( Elaboratable ):
     self.rom    = rom_module
     # The RAM submodule which simulates re-writable data storage.
     # (1KB of RAM = 256 words)
-    self.ram    = RAM( 256 )
+    #self.ram    = RAM( 256 )
+    self.ram    = RAM( 4 )
+
+    # RGB LED signals for debugging.
+    self.red_on = Signal( 1, reset = 0b0 )
+    self.grn_on = Signal( 1, reset = 0b0 )
+    self.blu_on = Signal( 1, reset = 0b0 )
 
     # Debugging signal(s):
     # Track FSM state. TODO: There must be a way to access this
@@ -86,9 +92,9 @@ class CPU( Elaboratable ):
     # Core CPU module.
     m = Module()
     # Define the synchronous clock domain with a reset signal.
-    clock = ClockDomain( "sync", clk_edge = "pos" )
-    clock.rst = self.clk_rst
-    m.domains += clock
+    #clock = ClockDomain( "sync", clk_edge = "pos" )
+    #clock.rst = self.clk_rst
+    #m.domains += clock
     # Register the ALU, CSR, ROM and RAM submodules.
     m.submodules.alu = self.alu
     m.submodules.csr = self.csr
@@ -98,6 +104,17 @@ class CPU( Elaboratable ):
     m.submodules.ra  = self.ra
     m.submodules.rb  = self.rb
     m.submodules.rc  = self.rc
+
+    # LED pins, for testing.
+    if platform != None:
+      rled = platform.request( 'led_r', 0 )
+      gled = platform.request( 'led_g', 0 )
+      bled = platform.request( 'led_b', 0 )
+      m.d.sync += [
+        rled.o.eq( self.red_on ),
+        gled.o.eq( self.grn_on ),
+        bled.o.eq( self.blu_on )
+      ]
 
     # Reset countdown.
     rsc = Signal( 2, reset = 0b11 )
@@ -402,6 +419,16 @@ class CPU( Elaboratable ):
         # But if I ever implement an instruction cache, this
         # operation should empty and/or refresh it.
         with m.Elif( self.opcode == OP_FENCE ):
+          m.next = "CPU_PC_LOAD"
+        # Non-standard LED opcode. This is for testing on an FPGA
+        # before I have a working GPIO peripheral. Let's be honest,
+        # colorful LEDs are more important than debugging interfaces.
+        with m.Elif( self.opcode == OP_LED ):
+          m.d.sync += [
+            self.red_on.eq( ( self.ra.data & R_RED ) != 0 ),
+            self.grn_on.eq( ( self.ra.data & R_GRN ) != 0 ),
+            self.blu_on.eq( ( self.ra.data & R_BLU ) != 0 )
+          ]
           m.next = "CPU_PC_LOAD"
         # Unrecognized operations skip to loading the next
         # PC value, although the RISC-V spec says that this
@@ -754,9 +781,9 @@ if __name__ == "__main__":
     # with a hard-coded 'infinite loop' ROM. But it's a start.
     with warnings.catch_warnings():
       # (Un-comment to suppress warning messages)
-      #warnings.filterwarnings( "ignore", category = DriverConflict )
-      #warnings.filterwarnings( "ignore", category = UnusedElaboratable )
-      UpduinoV2Platform().build( CPU( loop_rom ),
+      warnings.filterwarnings( "ignore", category = DriverConflict )
+      warnings.filterwarnings( "ignore", category = UnusedElaboratable )
+      UpduinoV2Platform().build( CPU( led_rom ),
                                  do_build = True,
                                  do_program = False )
   else:
@@ -765,6 +792,7 @@ if __name__ == "__main__":
       warnings.filterwarnings( "ignore", category = DriverConflict )
 
       print( '--- CPU Tests ---' )
+      cpu_sim( led_test )
       # Run auto-generated RV32I compliance tests with a multiplexed
       # ROM module containing a different program for each one.
       # (The CPU gets reset between each program.)

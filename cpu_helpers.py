@@ -139,6 +139,9 @@ def rv32i_decode( self, cpu, instr ):
   # R-type operations have no immediates.
   with cpu.Elif( instr.bit_select( 0, 7 ) == OP_REG ):
     cpu.d.sync += self.imm.eq( 0x00000000 )
+  # LED-type operations have no immediates.
+  with cpu.Elif( instr.bit_select( 0, 7 ) == OP_LED ):
+    cpu.d.sync += self.imm.eq( 0x00000000 )
   # Unrecognized opcodes set the immediate value to 0.
   with cpu.Else():
     cpu.d.sync += self.imm.eq( 0x00000000 )

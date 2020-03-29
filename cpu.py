@@ -67,14 +67,16 @@ class CPU( Elaboratable ):
     # The ALU submodule which performs logical operations.
     self.alu    = ALU()
     # CSR 'system registers'.
-    self.csr    = CSR()
+    if CSR_EN:
+      self.csr    = CSR()
     # The ROM submodule (or multiplexed test ROMs) which act as
     # simulated program data storage for the CPU.
     self.rom    = rom_module
     # The RAM submodule which simulates re-writable data storage.
     # (1KB of RAM = 256 words)
-    #self.ram    = RAM( 256 )
-    self.ram    = RAM( 4 )
+    self.ram    = RAM( 256 )
+    # (Builds are faster with less simulated RAM)
+    #self.ram    = RAM( 4 )
 
     # RGB LED signals for debugging.
     self.red_on = Signal( 1, reset = 0b0 )
@@ -91,13 +93,10 @@ class CPU( Elaboratable ):
   def elaborate( self, platform ):
     # Core CPU module.
     m = Module()
-    # Define the synchronous clock domain with a reset signal.
-    #clock = ClockDomain( "sync", clk_edge = "pos" )
-    #clock.rst = self.clk_rst
-    #m.domains += clock
     # Register the ALU, CSR, ROM and RAM submodules.
     m.submodules.alu = self.alu
-    m.submodules.csr = self.csr
+    if CSR_EN:
+      m.submodules.csr = self.csr
     m.submodules.rom = self.rom
     m.submodules.ram = self.ram
     # Register the CPU register read/write ports.
@@ -146,11 +145,12 @@ class CPU( Elaboratable ):
     ]
 
     # Set CSR values to 0 by default.
-    m.d.comb += [
-      self.csr.rin.eq( 0 ),
-      self.csr.rsel.eq( 0 ),
-      self.csr.f.eq( 0 )
-    ]
+    if CSR_EN:
+      m.d.comb += [
+        self.csr.rin.eq( 0 ),
+        self.csr.rsel.eq( 0 ),
+        self.csr.f.eq( 0 )
+      ]
 
     # Main CPU FSM.
     with m.FSM() as fsm:
@@ -348,66 +348,67 @@ class CPU( Elaboratable ):
                 m.next = "CPU_PC_LOAD"
             with m.Else():
               m.next = "CPU_PC_LOAD"
-          # Defer to the CSR module for valid 'CSRRx' operations.
-          # 'CSRRW': Write value from register to CSR.
-          with m.Elif( self.f == F_CSRRW ):
-            m.d.comb += [
-              self.csr.rin.eq( self.ra.data ),
-              self.csr.rsel.eq( self.imm ),
-              self.csr.f.eq( F_CSRRW )
-            ]
-            csr_rw( self, m, rws_c )
-          # 'CSRRS' set specified bits in a CSR from a register.
-          with m.Elif( self.f == F_CSRRS ):
-            m.d.comb += [
-              self.csr.rin.eq( self.ra.data ),
-              self.csr.rsel.eq( self.imm ),
-              self.csr.f.eq( F_CSRRS )
-            ]
-            csr_rw( self, m, rws_c )
-          # 'CSRRC' clear specified bits in a CSR from a register.
-          with m.Elif( self.f == F_CSRRC ):
-            m.d.comb += [
-              self.csr.rin.eq( self.ra.data ),
-              self.csr.rsel.eq( self.imm ),
-              self.csr.f.eq( F_CSRRC )
-            ]
-            csr_rw( self, m, rws_c )
-          # Note: 'CSRRxI' operations treat the 'rs1' / 'ra'
-          # value as a 5-bit sign-extended immediate.
-          # 'CSRRWI': Write immediate value to CSR.
-          with m.Elif( self.f == F_CSRRWI ):
-            m.d.comb += [
-              self.csr.rsel.eq( self.imm ),
-              self.csr.f.eq( F_CSRRWI )
-            ]
-            with m.If( self.ra.addr.bit_select( 4, 1 ) != 0 ):
-              m.d.comb += self.csr.rin.eq( 0xFFFFFFE0 | ( self.ra.addr & 0x1F ) )
-            with m.Else():
-              m.d.comb += self.csr.rin.eq( ( self.ra.addr & 0x1F ) )
-            csr_rw( self, m, rws_c )
-          # 'CSRRSI' set immediate bits in a CSR.
-          with m.Elif( self.f == F_CSRRSI ):
-            m.d.comb += [
-              self.csr.rsel.eq( self.imm ),
-              self.csr.f.eq( F_CSRRSI )
-            ]
-            with m.If( self.ra.addr.bit_select( 4, 1 ) != 0 ):
-              m.d.comb += self.csr.rin.eq( 0xFFFFFFE0 | ( self.ra.addr & 0x1F ) )
-            with m.Else():
-              m.d.comb += self.csr.rin.eq( ( self.ra.addr & 0x1F ) )
-            csr_rw( self, m, rws_c )
-          # 'CSRRCI' clear immediate bits in a CSR.
-          with m.Elif( self.f == F_CSRRCI ):
-            m.d.comb += [
-              self.csr.rsel.eq( self.imm ),
-              self.csr.f.eq( F_CSRRCI )
-            ]
-            with m.If( self.ra.addr.bit_select( 4, 1 ) != 0 ):
-              m.d.comb += self.csr.rin.eq( 0xFFFFFFE0 | ( self.ra.addr & 0x1F ) )
-            with m.Else():
-              m.d.comb += self.csr.rin.eq( ( self.ra.addr & 0x1F ) )
-            csr_rw( self, m, rws_c )
+          if CSR_EN:
+            # Defer to the CSR module for valid 'CSRRx' operations.
+            # 'CSRRW': Write value from register to CSR.
+            with m.Elif( self.f == F_CSRRW ):
+              m.d.comb += [
+                self.csr.rin.eq( self.ra.data ),
+                self.csr.rsel.eq( self.imm ),
+                self.csr.f.eq( F_CSRRW )
+              ]
+              csr_rw( self, m, rws_c )
+            # 'CSRRS' set specified bits in a CSR from a register.
+            with m.Elif( self.f == F_CSRRS ):
+              m.d.comb += [
+                self.csr.rin.eq( self.ra.data ),
+                self.csr.rsel.eq( self.imm ),
+                self.csr.f.eq( F_CSRRS )
+              ]
+              csr_rw( self, m, rws_c )
+            # 'CSRRC' clear specified bits in a CSR from a register.
+            with m.Elif( self.f == F_CSRRC ):
+              m.d.comb += [
+                self.csr.rin.eq( self.ra.data ),
+                self.csr.rsel.eq( self.imm ),
+                self.csr.f.eq( F_CSRRC )
+              ]
+              csr_rw( self, m, rws_c )
+            # Note: 'CSRRxI' operations treat the 'rs1' / 'ra'
+            # value as a 5-bit sign-extended immediate.
+            # 'CSRRWI': Write immediate value to CSR.
+            with m.Elif( self.f == F_CSRRWI ):
+              m.d.comb += [
+                self.csr.rsel.eq( self.imm ),
+                self.csr.f.eq( F_CSRRWI )
+              ]
+              with m.If( self.ra.addr.bit_select( 4, 1 ) != 0 ):
+                m.d.comb += self.csr.rin.eq( 0xFFFFFFE0 | ( self.ra.addr & 0x1F ) )
+              with m.Else():
+                m.d.comb += self.csr.rin.eq( ( self.ra.addr & 0x1F ) )
+              csr_rw( self, m, rws_c )
+            # 'CSRRSI' set immediate bits in a CSR.
+            with m.Elif( self.f == F_CSRRSI ):
+              m.d.comb += [
+                self.csr.rsel.eq( self.imm ),
+                self.csr.f.eq( F_CSRRSI )
+              ]
+              with m.If( self.ra.addr.bit_select( 4, 1 ) != 0 ):
+                m.d.comb += self.csr.rin.eq( 0xFFFFFFE0 | ( self.ra.addr & 0x1F ) )
+              with m.Else():
+                m.d.comb += self.csr.rin.eq( ( self.ra.addr & 0x1F ) )
+              csr_rw( self, m, rws_c )
+            # 'CSRRCI' clear immediate bits in a CSR.
+            with m.Elif( self.f == F_CSRRCI ):
+              m.d.comb += [
+                self.csr.rsel.eq( self.imm ),
+                self.csr.f.eq( F_CSRRCI )
+              ]
+              with m.If( self.ra.addr.bit_select( 4, 1 ) != 0 ):
+                m.d.comb += self.csr.rin.eq( 0xFFFFFFE0 | ( self.ra.addr & 0x1F ) )
+              with m.Else():
+                m.d.comb += self.csr.rin.eq( ( self.ra.addr & 0x1F ) )
+              csr_rw( self, m, rws_c )
           # Halt execution at an unrecognized 'SYSTEM' instruction.
           with m.Else():
             m.next = "CPU_PC_ROM_FETCH"
@@ -542,18 +543,20 @@ class CPU( Elaboratable ):
       # "Trap Entry" - update PC and EPC CSR, and context switch.
       with m.State( "CPU_TRAP_ENTER" ):
         m.d.comb += self.fsms.eq( CPU_TRAP_ENTER ) # TODO: Delete
-        m.d.sync += [
-          self.csr.mepc.shadow.eq( self.ipc ),
-          self.irq.eq( 1 )
-        ]
+        if CSR_EN:
+          m.d.sync += [
+            self.csr.mepc.shadow.eq( self.ipc ),
+            self.irq.eq( 1 )
+          ]
         m.next = "CPU_PC_ROM_FETCH"
       # "Trap Exit" - update PC and context switch.
       with m.State( "CPU_TRAP_EXIT" ):
         m.d.comb += self.fsms.eq( CPU_TRAP_EXIT ) # TODO: Delete
-        m.d.sync += [
-          self.pc.eq( self.csr.mepc.shadow ),
-          self.irq.eq( 0 )
-        ]
+        if CSR_EN:
+          m.d.sync += [
+            self.pc.eq( self.csr.mepc.shadow ),
+            self.irq.eq( 0 )
+          ]
         m.next = "CPU_PC_ROM_FETCH"
       # "PC Load Letter" - increment the PC.
       with m.State( "CPU_PC_LOAD" ):
@@ -570,14 +573,18 @@ class CPU( Elaboratable ):
           with m.If( self.rc.addr[ :5 ] != 0 ):
             m.d.comb += self.rc.en.eq( 1 )
         with m.Elif( ( self.opcode == OP_LUI ) |
-                     ( self.opcode == OP_AUIPC ) |
-                     ( ( self.opcode == OP_SYSTEM ) & (
-                     ( self.f == F_CSRRW ) | ( self.f == F_CSRRWI ) |
-                     ( self.f == F_CSRRC ) | ( self.f == F_CSRRCI ) |
-                     ( self.f == F_CSRRS ) | ( self.f == F_CSRRSI ) ) ) ):
+                     ( self.opcode == OP_AUIPC ) ):
           # Assert the CPU register 'write' signal.
           with m.If( self.rc.addr[ :5 ] != 0 ):
             m.d.comb += self.rc.en.eq( 1 )
+        if CSR_EN:
+          with m.Elif( ( self.opcode == OP_SYSTEM ) & (
+                     ( self.f == F_CSRRW ) | ( self.f == F_CSRRWI ) |
+                     ( self.f == F_CSRRC ) | ( self.f == F_CSRRCI ) |
+                     ( self.f == F_CSRRS ) | ( self.f == F_CSRRSI ) ) ):
+            # Assert the CPU register 'write' signal.
+            with m.If( self.rc.addr[ :5 ] != 0 ):
+              m.d.comb += self.rc.en.eq( 1 )
         with m.Elif( self.opcode == OP_LOAD ):
           # Maintain the cominatorial logic holding the memory
           # address at the 'mp' (memory pointer) value.
@@ -593,7 +600,8 @@ class CPU( Elaboratable ):
           with m.If( self.rc.addr[ :5 ] != 0 ):
             m.d.comb += self.rc.en.eq( 1 )
         # Clear the CSR r/w signal, and increment the PC.
-        m.d.sync += self.csr.rw.eq( 0 )
+        if CSR_EN:
+          m.d.sync += self.csr.rw.eq( 0 )
         jump_to( self, m, ( self.ipc + 4 ) )
 
     # End of CPU module definition.
@@ -711,7 +719,8 @@ def cpu_run( cpu, expected ):
 def cpu_sim( test ):
   print( "\033[33mSTART\033[0m running '%s' program:"%test[ 0 ] )
   # Create the CPU device.
-  cpu = CPU( test[ 2 ] )
+  dut = CPU( test[ 2 ] )
+  cpu = ResetInserter( dut.clk_rst )( dut )
 
   # Run the simulation.
   sim_name = "%s.vcd"%test[ 1 ]
@@ -735,8 +744,9 @@ def cpu_sim( test ):
 def cpu_mux_sim( tests ):
   print( "\033[33mSTART\033[0m running '%s' test suite:"%tests[ 0 ] )
   # Create the CPU device.
-  cpu = CPU( MUXROM( Array( tests[ 2 ][ i ][ 2 ]
+  dut = CPU( MUXROM( Array( tests[ 2 ][ i ][ 2 ]
              for i in range( len( tests[ 2 ] ) ) ) ) )
+  cpu = ResetInserter( dut.clk_rst )( dut )
   num_i = 0
   for i in range( len( tests[ 2 ] ) ):
     num_i = num_i + tests[ 2 ][ i ][ 4 ][ 'end' ]
@@ -783,9 +793,11 @@ if __name__ == "__main__":
       # (Un-comment to suppress warning messages)
       warnings.filterwarnings( "ignore", category = DriverConflict )
       warnings.filterwarnings( "ignore", category = UnusedElaboratable )
-      UpduinoV2Platform().build( CPU( led_rom ),
+      # Disable CSRs so the design fits in an UP5K.
+      cpu = CPU( led_rom )
+      UpduinoV2Platform().build( ResetInserter( cpu.clk_rst )( cpu ),
                                  do_build = True,
-                                 do_program = False )
+                                 do_program = True )
   else:
     # Run testbench simulations.
     with warnings.catch_warnings():

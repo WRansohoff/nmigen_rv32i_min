@@ -6,6 +6,13 @@ from nmigen import *
 
 from alu import *
 
+# Flag to enable or disable the CSR module.
+# Since I'm so bad at HDL design, this CPU won't actually fit in
+# an iCE40UP5K unless CSR functionality is removed (~3000 gates saved!)
+# Note: Traps do not work with CSRs disabled.
+# TODO: remove this once I come up with a more efficient design.
+CSR_EN = True
+
 # ALU operation definitions. These implement the logic behind math
 # instructions, e.g. 'ADD' covers 'ADD', 'ADDI', etc.
 ALU_ADD   = 0b0001

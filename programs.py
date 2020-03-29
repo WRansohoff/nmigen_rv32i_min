@@ -61,6 +61,9 @@ led_rom = ROM( rom_img( [
   ADDI( 15, 0, 1 ), ADDI( 13, 0, 8 ), AUIPC( 14, 0 ),
   # Increment r15, reset to 0 if > 7.
   ADDI( 15, 15, 1 ), BLT( 15, 13, 0x004 ), ADDI( 15, 0, 1 ),
+  # Delay for 100000 instructions.
+  ADDI( 4, 0, 0 ), LI( 5, 100000 ),
+  ADDI( 4, 0, 1 ), BLT( 4, 5, -4 ),
   # Set LED color, loop back.
   LED( 15 ), JALR( 16, 14, 0 )
 ] ) )

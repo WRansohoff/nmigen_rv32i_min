@@ -252,6 +252,6 @@ if __name__ == "__main__":
   with Simulator( dut, vcd_file = open( 'ram.vcd', 'w' ) ) as sim:
     def proc():
       yield from ram_test( dut )
-    sim.add_clock( 24e6 )
+    sim.add_clock( 1e-6 )
     sim.add_sync_process( proc )
     sim.run()

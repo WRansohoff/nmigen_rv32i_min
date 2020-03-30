@@ -1,7 +1,6 @@
 from nmigen import *
 from nmigen.back.pysim import *
 from nmigen_boards.upduino_v2 import *
-
 from isa import *
 
 import sys
@@ -224,6 +223,6 @@ if __name__ == "__main__":
     with Simulator( dut, vcd_file = open( 'alu.vcd', 'w' ) ) as sim:
       def proc():
         yield from alu_test( dut )
-      sim.add_clock( 24e6 )
+      sim.add_clock( 1e-6 )
       sim.add_sync_process( proc )
       sim.run()

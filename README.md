@@ -2,7 +2,7 @@
 
 This is a work-in-progress implementation of [the core `RV32I` `RISC-V` instruction set](https://riscv.org/specifications/isa-spec-pdf/), written with nMigen.
 
-Currently it only runs very small pre-programmed ROM images, and it won't fit in an iCE40UP5K without disabling CSR instructions. But I'm planning to add a module to read GCC-compiled program data from SPI Flash once the design is smaller.
+Currently it only runs very small pre-programmed assembly ROM images, and it won't fit in an iCE40UP5K without disabling CSR instructions. But it seems to work! :grinning: I'm planning to add a module to read GCC-compiled program data from SPI Flash once the design is smaller.
 
 Know that I'm still learning how to use nMigen, and I wasn't experienced with digital logic design to begin with. So on the off chance that anybody stumbles across this, suggestions are always welcome!
 

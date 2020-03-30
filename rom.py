@@ -37,23 +37,20 @@ class ROM( Elaboratable ):
     with m.Elif( ( self.addr & 0b11 ) == 0b00 ):
       m.d.comb += self.rd1.addr.eq( self.addr >> 2 )
       m.d.sync += self.out.eq( LITTLE_END( self.rd1.data ) )
+    # Partially out-of-bounds reads.
     with m.Elif( ( self.addr + 4 ) >= self.size ):
       m.d.comb += self.rd1.addr.eq( self.addr >> 2 )
       m.d.sync += self.out.eq( LITTLE_END( self.rd1.data >>
                                ( ( self.addr & 0b11 ) << 3 ) ) )
     # Mis-aligned reads
     with m.Else():
-      with m.If( ( ( ( self.addr ) >> 2 ) + 1 ) < self.size ):
-        m.d.comb += [
-          self.rd1.addr.eq( self.addr >> 2 ),
-          self.rd2.addr.eq( ( self.addr >> 2 ) + 1 ),
-        ]
-        m.d.sync += self.out.eq( LITTLE_END(
-          ( self.rd1.data << ( ( self.addr & 0b11 ) << 3 ) ) |
-          ( self.rd2.data >> ( ( 32 - ( ( self.addr & 0b11 ) << 3 ) ) ) ) ) )
-      with m.Else():
-        m.d.comb += self.rd1.addr.eq( self.addr >> 2 )
-        m.d.sync += self.out.eq( LITTLE_END( self.rd1.data << ( ( self.addr & 0b11 ) << 3 ) ) )
+      m.d.comb += [
+        self.rd1.addr.eq( self.addr >> 2 ),
+        self.rd2.addr.eq( ( self.addr >> 2 ) + 1 ),
+      ]
+      m.d.sync += self.out.eq( LITTLE_END(
+        ( self.rd1.data << ( ( self.addr & 0b11 ) << 3 ) ) |
+        ( self.rd2.data >> ( ( 32 - ( ( self.addr & 0b11 ) << 3 ) ) ) ) ) )
 
     # End of ROM module definition.
     return m

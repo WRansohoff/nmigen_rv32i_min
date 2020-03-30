@@ -10,7 +10,7 @@ from isa import *
 class ROM( Elaboratable ):
   def __init__( self, data ):
     # Address bits to select up to `len( data )` words by byte.
-    self.addr = Signal( range( len( data ) * 4 ), reset = 0 )
+    self.addr = Signal( range( ( len( data ) * 4 ) + 1 ), reset = 0 )
     # Data word output.
     self.out  = Signal( 32, reset = LITTLE_END( data[ 0 ] ) )
     # Data storage.
@@ -19,7 +19,7 @@ class ROM( Elaboratable ):
     self.rd1 = self.data.read_port()
     self.rd2 = self.data.read_port()
     # Record size.
-    self.size = len( data )
+    self.size = len( data ) * 4
 
   def elaborate( self, platform ):
     # Core ROM module.
@@ -28,27 +28,27 @@ class ROM( Elaboratable ):
     m.submodules.rd2 = self.rd2
 
     # Set the 'output' value to 0 if it is out of bounds.
-    with m.If( self.addr >= ( self.size * 4 ) ):
+    with m.If( self.addr >= self.size ):
       m.d.sync += self.out.eq( 0 )
     # Set the 'output' value to the requested 'data' array index.
     # If a read would 'spill over' into an out-of-bounds data byte,
     # set that byte to 0x00.
     # Word-aligned reads
     with m.Elif( ( self.addr & 0b11 ) == 0b00 ):
-      m.d.comb += self.rd1.addr.eq( self.addr // 4 )
+      m.d.comb += self.rd1.addr.eq( self.addr >> 2 )
       m.d.sync += self.out.eq( LITTLE_END( self.rd1.data ) )
     # Mis-aligned reads
     with m.Else():
-      with m.If( ( ( ( self.addr & 0b11 ) >> 2 ) + 1 ) < self.size ):
+      with m.If( ( ( ( self.addr ) >> 2 ) + 1 ) < self.size ):
         m.d.comb += [
-          self.rd1.addr.eq( ( self.addr & 0b11 ) >> 2 ),
-          self.rd2.addr.eq( ( ( self.addr & 0b11 ) >> 2 ) + 1 ),
+          self.rd1.addr.eq( self.addr >> 2 ),
+          self.rd2.addr.eq( ( self.addr >> 2 ) + 1 ),
         ]
         m.d.sync += self.out.eq( LITTLE_END(
           ( self.rd1.data << ( ( self.addr & 0b11 ) << 3 ) ) |
           ( self.rd2.data >> ( ( 32 - ( ( self.addr & 0b11 ) << 3 ) ) ) ) ) )
       with m.Else():
-        m.d.comb += self.rd1.addr.eq( ( self.addr & 0b11 ) >> 2 )
+        m.d.comb += self.rd1.addr.eq( self.addr >> 2 )
         m.d.sync += self.out.eq( LITTLE_END( self.rd1.data << ( ( self.addr & 0b11 ) << 3 ) ) )
 
     # End of ROM module definition.
@@ -99,6 +99,16 @@ def rom_test( rom ):
   yield from rom_read_ut( rom, 0x1, LITTLE_END( 0x23456789 ) )
   yield from rom_read_ut( rom, 0x2, LITTLE_END( 0x456789AB ) )
   yield from rom_read_ut( rom, 0x3, LITTLE_END( 0x6789ABCD ) )
+  yield from rom_read_ut( rom, 0x5, LITTLE_END( 0xABCDEF42 ) )
+  yield from rom_read_ut( rom, 0x6, LITTLE_END( 0xCDEF4242 ) )
+  yield from rom_read_ut( rom, 0x7, LITTLE_END( 0xEF424242 ) )
+  # Test reading the last few bytes of data.
+  yield from rom_read_ut( rom, rom.size - 4, LITTLE_END( 0xDEADBEEF ) )
+  yield from rom_read_ut( rom, rom.size - 3, LITTLE_END( 0x00DEADBE ) )
+  yield from rom_read_ut( rom, rom.size - 2, LITTLE_END( 0x0000DEAD ) )
+  yield from rom_read_ut( rom, rom.size - 1, LITTLE_END( 0x000000EF ) )
+  # Test out-of-bounds read.
+  yield from rom_read_ut( rom, rom.size + 1, 0 )
 
   # Done.
   yield Tick()
@@ -113,6 +123,6 @@ if __name__ == "__main__":
   with Simulator( dut, vcd_file = open( 'rom.vcd', 'w' ) ) as sim:
     def proc():
       yield from rom_test( dut )
-    sim.add_clock( 24e6 )
+    sim.add_clock( 1e-6 )
     sim.add_sync_process( proc )
     sim.run()

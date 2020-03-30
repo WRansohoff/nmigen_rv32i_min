@@ -37,6 +37,10 @@ class ROM( Elaboratable ):
     with m.Elif( ( self.addr & 0b11 ) == 0b00 ):
       m.d.comb += self.rd1.addr.eq( self.addr >> 2 )
       m.d.sync += self.out.eq( LITTLE_END( self.rd1.data ) )
+    with m.Elif( ( self.addr + 4 ) >= self.size ):
+      m.d.comb += self.rd1.addr.eq( self.addr >> 2 )
+      m.d.sync += self.out.eq( LITTLE_END( self.rd1.data >>
+                               ( ( self.addr & 0b11 ) << 3 ) ) )
     # Mis-aligned reads
     with m.Else():
       with m.If( ( ( ( self.addr ) >> 2 ) + 1 ) < self.size ):
@@ -106,7 +110,7 @@ def rom_test( rom ):
   yield from rom_read_ut( rom, rom.size - 4, LITTLE_END( 0xDEADBEEF ) )
   yield from rom_read_ut( rom, rom.size - 3, LITTLE_END( 0x00DEADBE ) )
   yield from rom_read_ut( rom, rom.size - 2, LITTLE_END( 0x0000DEAD ) )
-  yield from rom_read_ut( rom, rom.size - 1, LITTLE_END( 0x000000EF ) )
+  yield from rom_read_ut( rom, rom.size - 1, LITTLE_END( 0x000000DE ) )
   # Test out-of-bounds read.
   yield from rom_read_ut( rom, rom.size + 1, 0 )
 

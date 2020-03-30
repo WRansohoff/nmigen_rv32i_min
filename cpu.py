@@ -142,7 +142,6 @@ class CPU( Elaboratable ):
     # the RAM's read/write enable bits to 0 by default.
     m.d.comb += [
       self.ram.addr.eq( 0 ),
-      self.ram.ren.eq( 0 ),
       self.ram.wen.eq( 0 )
     ]
 
@@ -170,10 +169,7 @@ class CPU( Elaboratable ):
         # If the PC address is in RAM, maintain combinatorial
         # logic to read the instruction from RAM.
         with m.If( ( ( self.pc ) & 0xE0000000 ) == 0x20000000 ):
-          m.d.comb += [
-            self.ram.addr.eq( ( self.pc ) & 0x1FFFFFFF ),
-            self.ram.ren.eq( 1 )
-          ]
+          m.d.comb += self.ram.addr.eq( ( self.pc ) & 0x1FFFFFFF )
           with m.If( ramws_c < self.ramws ):
             m.d.sync += ramws_c.eq( ramws_c + 1 )
           with m.Else():
@@ -277,10 +273,7 @@ class CPU( Elaboratable ):
           # Populate 'mp' with the memory address to load from.
           m.d.comb += self.mp.eq( self.ra.data + self.imm )
           with m.If( ( self.mp & 0xE0000000 ) == 0x20000000 ):
-            m.d.comb += [
-              self.ram.addr.eq( self.mp & 0x1FFFFFFF ),
-              self.ram.ren.eq( 0b1 )
-            ]
+            m.d.comb += self.ram.addr.eq( self.mp & 0x1FFFFFFF )
           with m.Else():
             m.d.comb += self.rom.addr.eq( self.mp )
           # Memory access is not instantaneous, so the next state is
@@ -301,16 +294,16 @@ class CPU( Elaboratable ):
             ]
             # Don't enable writes until the last wait-state tick.
             with m.If( rws_c >= self.rws ):
-              self.ram.wen.eq( 0b1 )
+              m.d.comb += self.ram.wen.eq( 0b1 )
             # "Store Byte" operation:
             with m.If( self.f == F_SB ):
-              m.d.comb += self.ram.dw.eq( 0b00 )
+              m.d.comb += self.ram.dw.eq( RAM_DW_8 )
             # "Store Halfword" operation:
             with m.Elif( self.f == F_SH ):
-              m.d.comb += self.ram.dw.eq( 0b01 )
+              m.d.comb += self.ram.dw.eq( RAM_DW_16 )
             # "Store Word" operation:
             with m.Elif( self.f == F_SW ):
-              m.d.comb += self.ram.dw.eq( 0b11 )
+              m.d.comb += self.ram.dw.eq( RAM_DW_32 )
           m.next = "CPU_LDST"
         # "Register-Based" instructions:
         with m.Elif( self.opcode == OP_REG ):
@@ -453,10 +446,7 @@ class CPU( Elaboratable ):
         # address at the 'mp' (memory pointer) value.
         m.d.comb += self.mp.eq( self.ra.data + self.imm )
         with m.If( ( self.mp & 0xE0000000 ) == 0x20000000 ):
-          m.d.comb += [
-            self.ram.addr.eq( self.mp & 0x1FFFFFFF ),
-            self.ram.ren.eq( 0b1 )
-          ]
+          m.d.comb += self.ram.addr.eq( self.mp & 0x1FFFFFFF )
           with m.If( self.opcode == OP_STORE ):
             m.d.comb += [
               self.ram.wen.eq( 1 ),
@@ -464,13 +454,13 @@ class CPU( Elaboratable ):
             ]
             # "Store Byte" operation:
             with m.If( self.f == F_SB ):
-              m.d.comb += self.ram.dw.eq( 0b00 )
+              m.d.comb += self.ram.dw.eq( RAM_DW_8 )
             # "Store Halfword" operation:
             with m.Elif( self.f == F_SH ):
-              m.d.comb += self.ram.dw.eq( 0b01 )
+              m.d.comb += self.ram.dw.eq( RAM_DW_16 )
             # "Store Word" operation:
             with m.Elif( self.f == F_SW ):
-              m.d.comb += self.ram.dw.eq( 0b11 )
+              m.d.comb += self.ram.dw.eq( RAM_DW_32 )
         with m.Else():
           m.d.comb += self.rom.addr.eq( self.mp )
         # Memory access wait-states.
@@ -592,10 +582,7 @@ class CPU( Elaboratable ):
           # address at the 'mp' (memory pointer) value.
           m.d.comb += self.mp.eq( self.ra.data + self.imm )
           with m.If( ( self.mp & 0xE0000000 ) == 0x20000000 ):
-            m.d.comb += [
-              self.ram.addr.eq( self.mp & 0x1FFFFFFF ),
-              self.ram.ren.eq( 0b1 )
-            ]
+            m.d.comb += self.ram.addr.eq( self.mp & 0x1FFFFFFF )
           with m.Else():
             m.d.comb += self.rom.addr.eq( self.mp )
           # Assert the CPU register 'write' signal.
@@ -648,14 +635,7 @@ def check_vals( expected, ni, cpu ):
                  " after %d operations (mis-aligned address)"
                  %( hexs( ex[ 'e' ] ), rama, ni ) )
         else:
-          cpda = yield cpu.ram.data[ rama ]
-          cpdb = yield cpu.ram.data[ rama + 1 ]
-          cpdc = yield cpu.ram.data[ rama + 2 ]
-          cpdd = yield cpu.ram.data[ rama + 3 ]
-          cpd = ( cpda |
-                ( cpdb << 8  ) |
-                ( cpdc << 16 ) |
-                ( cpdd << 24 ) )
+          cpd = yield cpu.ram.data[ rama // 4 ]
           if hexs( cpd ) == hexs( ex[ 'e' ] ):
             p += 1
             print( "  \033[32mPASS:\033[0m RAM == %s @ 0x%08X"
@@ -755,7 +735,9 @@ def cpu_mux_sim( tests ):
 
   # Run the simulation.
   sim_name = "%s.vcd"%tests[ 1 ]
-  with Simulator( cpu, vcd_file = open( sim_name, 'w' ) ) as sim:
+  # (Only create vcd files if necessary; with mux ROMs, they get big)
+  #with Simulator( cpu, vcd_file = open( sim_name, 'w' ) ) as sim:
+  with Simulator( cpu, vcd_file = None ) as sim:
     def proc():
       # Set three wait states for ROM access, to allow the ROM
       # address and data to propagate through the multiplexer.

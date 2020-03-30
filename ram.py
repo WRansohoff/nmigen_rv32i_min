@@ -5,109 +5,141 @@ from nmigen.back.pysim import *
 # RAM module: #
 ###############
 
+# Data input width definitions.
+RAM_DW_8  = 3
+RAM_DW_16 = 2
+RAM_DW_32 = 0
+
 class RAM( Elaboratable ):
   def __init__( self, size_words ):
     # Record size.
     self.size = ( size_words * 4 )
     # Address bits to select up to `size_words * 4` bytes.
-    self.addr = Signal( range( self.size ), reset = 0 )
+    # (+1 to detect edge-case out-of-range writes)
+    self.addr = Signal( range( self.size + 1 ), reset = 0 )
     # Data word output.
     self.dout = Signal( 32, reset = 0x00000000 )
-    # 'Read Enable' input bit.
-    self.ren  = Signal( 1, reset = 0b0 )
     # Data word input.
     self.din  = Signal( 32, reset = 0x00000000 )
-    # Width of data input (0 = byte, 1 = halfword, 2 or 3 = word).
+    # Width of data input.
     self.dw   = Signal( 2, reset = 0b00 )
     # 'Write Enable' input bit.
     self.wen  = Signal( 1, reset = 0b0 )
-    # Data storage, organized as bytes rather than words.
-    # Most actual hardware isn't this convenient, but this is
-    # simulated RAM, so it's possible to gather data by the byte.
-    # An extra word of data is added so that writes can go all
-    # the way up to 'size - 1' and still work. I'm not sure why,
-    # but 'with m.If( ( i + n ) < self.size ):' doesn't seem to
-    # work to prevent out-of-bounds byte writes.
-    self.data = Memory( width = 8, depth = ( self.size + 4 ),
-      init = ( 0x00 for i in range( self.size + 4 ) ) )
-    # TODO: Make RAM word-addressed and only use two r/w ports.
-    # (To allow mis-aligned access)
+    # 'Write wait-state' bit.
+    # Mis-aligned data must be read before re-writing.
+    self.wws  = Signal( 1, reset = 0b0 )
+    # Data storage.
+    self.data = Memory( width = 32, depth = ( self.size // 4 ),
+      init = ( 0x000000 for i in range( self.size // 4 ) ) )
+    # Use two r/w ports to allow mis-aligned access
     self.rd1 = self.data.read_port()
     self.rd2 = self.data.read_port()
-    self.rd3 = self.data.read_port()
-    self.rd4 = self.data.read_port()
     self.wd1 = self.data.write_port()
     self.wd2 = self.data.write_port()
-    self.wd3 = self.data.write_port()
-    self.wd4 = self.data.write_port()
 
   def elaborate( self, platform ):
     # Core RAM module.
     m = Module()
     m.submodules.rd1 = self.rd1
     m.submodules.rd2 = self.rd2
-    m.submodules.rd3 = self.rd3
-    m.submodules.rd4 = self.rd4
     m.submodules.wd1 = self.wd1
     m.submodules.wd2 = self.wd2
-    m.submodules.wd3 = self.wd3
-    m.submodules.wd4 = self.wd4
 
-    # Disable writes by default.
+    # Reset write data and wait-states when not in use, and
+    # disable writes by default.
     m.d.comb += [
       self.wd1.en.eq( 0 ),
       self.wd2.en.eq( 0 ),
-      self.wd3.en.eq( 0 ),
-      self.wd4.en.eq( 0 ),
+      self.wd1.data.eq( 0 ),
+      self.wd2.data.eq( 0 ),
       self.dout.eq( 0 )
     ]
+    m.d.sync += [
+      self.wws.eq( 0 ),
+    ]
 
-    # Set the 'dout' value if 'ren' is set.
-    with m.If( self.ren ):
-      # (Return 0 if the address is out of range.)
-      with m.If( self.addr >= self.size ):
-        m.d.comb += self.dout.eq( 0x00000000 )
-      # Read the requested word of RAM. Fill in '0x00' for any bytes
-      # which are out of range.
-      with m.Elif( ( self.addr + 3 ) >= self.size ):
-        m.d.comb += [
-          self.rd1.addr.eq( self.addr ),
-          self.rd2.addr.eq( self.addr + 1 ),
-          self.rd3.addr.eq( self.addr + 2 ),
-          self.dout.eq( ( self.rd1.data |
-            ( self.rd2.data << 8  ) |
-            ( self.rd3.data << 16 ) ) &
-            0x00FFFFFF )
-        ]
-      with m.Elif( ( self.addr + 2 ) >= self.size ):
-        m.d.comb += [
-          self.rd1.addr.eq( self.addr ),
-          self.rd2.addr.eq( self.addr + 1 ),
-          self.dout.eq( ( ( self.rd1.data ) |
-            ( self.rd2.data << 8 ) ) & 0x0000FFFF )
-        ]
-      with m.Elif( ( self.addr + 1 ) >= self.size ):
-        m.d.comb += [
-          self.rd1.addr.eq( self.addr ),
-          self.dout.eq( self.rd1.data & 0x000000FF )
-        ]
-      with m.Else():
-        m.d.comb += [
-          self.rd1.addr.eq( self.addr ),
-          self.rd2.addr.eq( self.addr + 1 ),
-          self.rd3.addr.eq( self.addr + 2 ),
-          self.rd4.addr.eq( self.addr + 3 ),
-          self.dout.eq( ( self.rd1.data |
-            ( self.rd2.data << 8  ) |
-            ( self.rd3.data << 16 ) |
-            ( self.rd4.data << 24 ) ) )
-        ]
+    # Set the 'dout' value based on address and RAM data.
+    # (Return 0 if the address is out of range.)
+    with m.If( self.addr >= self.size ):
+      m.d.comb += self.dout.eq( 0x00000000 )
+    # Word-aligned reads.
+    with m.Elif( ( self.addr & 0b11 ) == 0b00 ):
+      m.d.comb += [
+        self.rd1.addr.eq( self.addr >> 2 ),
+        self.dout.eq( self.rd1.data )
+      ]
+    # Partially out-of-bounds reads.
+    with m.Elif( ( self.addr + 4 ) >= self.size ):
+      m.d.comb += [
+        self.rd1.addr.eq( self.addr >> 2 ),
+        self.dout.eq( self.rd1.data >> ( ( self.addr & 0b11 ) << 3 ) )
+      ]
+    # Mis-aligned reads.
+    with m.Else():
+      m.d.comb += [
+        self.rd1.addr.eq( self.addr >> 2 ),
+        self.rd2.addr.eq( ( self.addr >> 2 ) + 1 ),
+        self.dout.eq(
+          ( self.rd1.data >> ( ( self.addr & 0b11 ) << 3 ) ) |
+          ( self.rd2.data << ( ( 32 - ( ( self.addr & 0b11 ) << 3 ) ) ) ) )
+      ]
 
     # Write the 'din' value if 'wen' is set.
     with m.If( self.wen ):
       # (nop if the write address is out of range.)
       with m.If( self.addr >= self.size ):
         pass
+      # Word-aligned 32-bit writes.
+      with m.Elif( ( ( self.addr & 0b11 ) == 0b00 ) & ( self.dw == RAM_DW_32 ) ):
+        m.d.comb += [
+          self.wd1.addr.eq( self.addr >> 2 ),
+          self.wd1.en.eq( 1 ),
+          self.wd1.data.eq( self.din )
+        ]
+      # Writes requiring wait-states:
+      with m.Elif( self.wws == 0 ):
+        m.d.sync += self.wws.eq( self.wws + 1 )
+      with m.Else():
+        m.d.sync += self.wws.eq( 0 )
+        # Word-aligned partial writes.
+        with m.If( ( self.addr & 0b11 ) == 0b00 ):
+          m.d.comb += [
+            self.wd1.addr.eq( self.addr >> 2 ),
+            self.wd1.en.eq( 1 ),
+            self.wd1.data.eq( self.rd1.data | ( self.din & ( 0xFFFFFFFF >> ( self.dw << 3 ) ) ) )
+          ]
+        # Partially out-of-bounds writes.
+        with m.Elif( ( self.addr + 4 ) >= self.size ):
+          # Assume that 'rd1' holds current data from the same address.
+          m.d.comb += [
+            self.wd1.addr.eq( self.addr >> 2 ),
+            self.wd1.en.eq( 1 ),
+            self.wd1.data.eq( ( self.rd1.data &
+              ~( ( 0xFFFFFFFF >> ( self.dw << 3 ) ) << ( ( self.addr & 0b11 ) << 3 ) ) ) |
+              ( self.din << ( ( ( self.addr & 0b11 ) << 3 ) ) ) )
+          ]
+        # Mis-aligned writes.
+        with m.Else():
+          # Assume that read ports hold data from the same addresses.
+          m.d.comb += [
+            self.wd1.addr.eq( self.addr >> 2 ),
+            self.wd2.addr.eq( ( self.addr >> 2 ) + 1 ),
+            self.wd1.en.eq( 1 ),
+            self.wd2.en.eq( 1 ),
+            self.wd1.data.eq( ( self.rd1.data &
+              ~( ( 0xFFFFFFFF >> ( self.dw << 3 ) ) << ( ( self.addr & 0b11 ) << 3 ) ) ) |
+              ( self.din << ( ( ( self.addr & 0b11 ) << 3 ) ) ) ),
+            self.wd2.data.eq( ( self.rd2.data &
+              ~( ( 0xFFFFFFFF << ( self.dw << 3 ) ) >> ( 32 - ( ( self.addr & 0b11 ) << 3 ) ) ) ) |
+              ( self.din >> ( ( 32 - ( ( self.addr & 0b11 ) << 3 ) ) ) ) ),
+            #self.wd2.data.eq( ( self.rd2.data &
+            #  ( 0xFFFFFFFF << ( 32 - ( ( self.addr & 0b11 ) << 3 ) ) ) ) |
+            #  ( self.din >> ( 32 - ( ( self.addr & 0b11 ) << 3 ) ) ) )
+            #self.wd2.data.eq( self.rd2.data ),
+            #self.wd1.data.eq( self.rd1.data | ( self.din >> ( ( self.addr & 0b11 ) << 3 ) ) ),
+            #self.wd2.data.eq( self.rd2.data | ( self.din << ( 32 - ( ( self.addr & 0b11 ) << 3 ) ) ) )
+          ]
+      '''
       # Write the requested word of data.
       m.d.comb += [
         self.wd1.addr.eq( self.addr ),
@@ -131,6 +163,7 @@ class RAM( Elaboratable ):
           self.wd3.data.eq( ( self.din & 0x00FF0000 ) >> 16 ),
           self.wd4.data.eq( ( self.din & 0xFF000000 ) >> 24 )
         ]
+      '''
 
     # End of RAM module definition.
     return m
@@ -149,9 +182,9 @@ def ram_write_ut( ram, address, data, dw, success ):
   yield ram.addr.eq( address )
   yield ram.din.eq( data )
   yield ram.wen.eq( 1 )
-  yield ram.ren.eq( 1 )
   yield ram.dw.eq( dw )
   # Wait two ticks, and un-set the 'wen' bit.
+  yield Tick()
   yield Tick()
   yield Tick()
   yield ram.wen.eq( 0 )
@@ -178,13 +211,13 @@ def ram_write_ut( ram, address, data, dw, success ):
       print( "\033[31mFAIL:\033[0m RAM[ 0x%08X ] != "
              "0x%08X (got: 0x%08X)"
              %( address, data, actual ) )
+  yield Tick()
 
 # Perform an inidividual RAM read unit test.
 def ram_read_ut( ram, address, expected ):
   global p, f
   # Set address and 'ren' bit.
   yield ram.addr.eq( address )
-  yield ram.ren.eq( 1 )
   # Wait two ticks, and un-set the 'ren' bit.
   yield Tick()
   yield Tick()
@@ -200,7 +233,6 @@ def ram_read_ut( ram, address, expected ):
     p += 1
     print( "\033[32mPASS:\033[0m RAM[ 0x%08X ] == 0x%08X"
            %( address, expected ) )
-  yield ram.ren.eq( 0 )
 
 # Top-level RAM test method.
 def ram_test( ram ):
@@ -210,8 +242,8 @@ def ram_test( ram ):
   print( "--- RAM Tests ---" )
 
   # Test writing data to RAM.
-  yield from ram_write_ut( ram, 0x00, 0x01234567, 2, 1 )
-  yield from ram_write_ut( ram, 0x0C, 0x89ABCDEF, 3, 1 )
+  yield from ram_write_ut( ram, 0x00, 0x01234567, RAM_DW_32, 1 )
+  yield from ram_write_ut( ram, 0x0C, 0x89ABCDEF, RAM_DW_32, 1 )
   # Test reading data back out of RAM.
   yield from ram_read_ut( ram, 0x00, 0x01234567 )
   yield from ram_read_ut( ram, 0x04, 0x00000000 )
@@ -223,21 +255,36 @@ def ram_test( ram ):
   yield from ram_read_ut( ram, 0x07, 0x00000000 )
   yield from ram_read_ut( ram, 0x0A, 0xCDEF0000 )
   # Test byte-aligned and halfword-aligned writes.
-  yield from ram_write_ut( ram, 0x01, 0xDEADBEEF, 2, 1 )
-  yield from ram_write_ut( ram, 0x02, 0xDEC0FFEE, 2, 1 )
-  yield from ram_write_ut( ram, 0x03, 0xFABFACEE, 2, 1 )
+  yield from ram_write_ut( ram, 0x01, 0xDEADBEEF, RAM_DW_32, 1 )
+  yield from ram_write_ut( ram, 0x02, 0xDEC0FFEE, RAM_DW_32, 1 )
+  yield from ram_write_ut( ram, 0x03, 0xFABFACEE, RAM_DW_32, 1 )
   # Test byte and halfword writes.
-  yield from ram_write_ut( ram, 0x00, 0xDEADBEEF, 0, 0 )
-  yield from ram_write_ut( ram, 0x10, 0x0000BEEF, 0, 0 )
-  yield from ram_write_ut( ram, 0x20, 0x000000EF, 0, 1 )
-  yield from ram_write_ut( ram, 0x40, 0xDEADBEEF, 1, 0 )
-  yield from ram_write_ut( ram, 0x50, 0x0000BEEF, 1, 1 )
+  yield from ram_write_ut( ram, 0x00, 0xDEADBEEF, RAM_DW_8, 0 )
+  yield from ram_write_ut( ram, 0x10, 0x0000BEEF, RAM_DW_8, 0 )
+  yield from ram_write_ut( ram, 0x20, 0x000000EF, RAM_DW_8, 1 )
+  yield from ram_write_ut( ram, 0x40, 0xDEADBEEF, RAM_DW_16, 0 )
+  yield from ram_write_ut( ram, 0x50, 0x0000BEEF, RAM_DW_16, 1 )
+  # Test out-of-bounds write.
+  yield from ram_write_ut( ram, ram.size + 5, 0x01234567, RAM_DW_32, 0 )
   # Test reading from the last few bytes of RAM.
-  yield from ram_write_ut( ram, ram.size - 4, 0x01234567, 2, 1 )
+  yield from ram_write_ut( ram, ram.size - 4, 0x01234567, RAM_DW_32, 1 )
   yield from ram_read_ut( ram, ram.size - 4, 0x01234567 )
   yield from ram_read_ut( ram, ram.size - 3, 0x00012345 )
   yield from ram_read_ut( ram, ram.size - 2, 0x00000123 )
   yield from ram_read_ut( ram, ram.size - 1, 0x00000001 )
+  # Test writing to the end of RAM.
+  yield from ram_write_ut( ram, ram.size - 4, 0xABCDEF89, RAM_DW_32, 1 )
+  yield from ram_write_ut( ram, ram.size - 3, 0x00000012, RAM_DW_8, 0 )
+  yield from ram_read_ut( ram, ram.size - 4, 0xABCD1289 )
+  yield from ram_write_ut( ram, ram.size - 4, 0xABCDEF89, RAM_DW_32, 1 )
+  yield from ram_write_ut( ram, ram.size - 3, 0x00003412, RAM_DW_16, 0 )
+  yield from ram_read_ut( ram, ram.size - 4, 0xAB341289 )
+  yield from ram_write_ut( ram, ram.size - 4, 0xABCDEF89, RAM_DW_32, 1 )
+  yield from ram_write_ut( ram, ram.size - 1, 0x00000012, RAM_DW_8, 1 )
+  yield from ram_read_ut( ram, ram.size - 4, 0x12CDEF89 )
+  yield from ram_write_ut( ram, ram.size - 4, 0xABCDEF89, RAM_DW_32, 1 )
+  yield from ram_write_ut( ram, ram.size - 3, 0x00234567, RAM_DW_32, 1 )
+  yield from ram_read_ut( ram, ram.size - 4, 0x23456789 )
 
   # Done.
   yield Tick()

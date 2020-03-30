@@ -554,8 +554,5 @@ def rom_img( arr ):
 def ram_img( arr ):
   a = []
   for i in arr:
-    a.append( ( i & 0xFF000000 ) >> 24 )
-    a.append( ( i & 0x00FF0000 ) >> 16 )
-    a.append( ( i & 0x0000FF00 ) >> 8  )
-    a.append( i & 0x000000FF )
+    a.append( i )
   return a

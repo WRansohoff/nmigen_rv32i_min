@@ -37,42 +37,19 @@ class ROM( Elaboratable ):
     with m.Elif( ( self.addr & 0b11 ) == 0b00 ):
       m.d.comb += self.rd1.addr.eq( self.addr // 4 )
       m.d.sync += self.out.eq( LITTLE_END( self.rd1.data ) )
-    # Halfword-aligned reads
-    with m.Elif( ( self.addr & 0b11 ) == 0b10 ):
-      with m.If( ( ( ( self.addr - 2 ) // 4 ) + 1 < self.size ) ):
+    # Mis-aligned reads
+    with m.Else():
+      with m.If( ( ( ( self.addr & 0b11 ) >> 2 ) + 1 ) < self.size ):
         m.d.comb += [
-          self.rd1.addr.eq( ( self.addr - 2 ) // 4 ),
-          self.rd2.addr.eq( ( ( self.addr - 2 ) // 4 ) + 1 ),
+          self.rd1.addr.eq( ( self.addr & 0b11 ) >> 2 ),
+          self.rd2.addr.eq( ( ( self.addr & 0b11 ) >> 2 ) + 1 ),
         ]
         m.d.sync += self.out.eq( LITTLE_END(
-          ( self.rd1.data << 16 ) | ( self.rd2.data >> 16 ) ) )
+          ( self.rd1.data << ( ( self.addr & 0b11 ) << 3 ) ) |
+          ( self.rd2.data >> ( ( 32 - ( ( self.addr & 0b11 ) << 3 ) ) ) ) ) )
       with m.Else():
-        m.d.comb += self.rd1.addr.eq( ( self.addr - 2 ) // 4 )
-        m.d.sync += self.out.eq( LITTLE_END( self.rd1.data << 16 ) )
-    # Byte-aligned reads (&1)
-    with m.Elif( ( self.addr & 0b11 ) == 0b01 ):
-      with m.If( ( ( ( self.addr - 1 ) // 4 ) + 1 < self.size ) ):
-        m.d.comb += [
-          self.rd1.addr.eq( ( self.addr - 1 ) // 4 ),
-          self.rd2.addr.eq( ( ( self.addr - 1 ) // 4 ) + 1 ),
-        ]
-        m.d.sync += self.out.eq( LITTLE_END(
-          ( self.rd1.data << 8 ) | ( self.rd2.data >> 24 ) ) )
-      with m.Else():
-        m.d.comb += self.rd1.addr.eq( ( self.addr - 1 ) // 4 )
-        m.d.sync += self.out.eq( LITTLE_END( self.rd1.data << 8 ) )
-    # Byte-aligned reads (&3)
-    with m.Elif( ( self.addr & 0b11 ) == 0b11 ):
-      with m.If( ( ( ( self.addr - 3 ) // 4 ) + 1 < self.size ) ):
-        m.d.comb += [
-          self.rd1.addr.eq( ( self.addr - 3 ) // 4 ),
-          self.rd2.addr.eq( ( ( self.addr - 3 ) // 4 ) + 1 ),
-        ]
-        m.d.sync += self.out.eq( LITTLE_END(
-          ( self.rd1.data << 24 ) | ( self.rd2.data >> 8 ) ) )
-      with m.Else():
-        m.d.comb += self.rd1.addr.eq( ( self.addr - 3 ) // 4 )
-        m.d.sync += self.out.eq( LITTLE_END( self.rd1.data << 24 ) )
+        m.d.comb += self.rd1.addr.eq( ( self.addr & 0b11 ) >> 2 )
+        m.d.sync += self.out.eq( LITTLE_END( self.rd1.data << ( ( self.addr & 0b11 ) << 3 ) ) )
 
     # End of ROM module definition.
     return m

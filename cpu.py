@@ -73,10 +73,12 @@ class CPU( Elaboratable ):
     # simulated program data storage for the CPU.
     self.rom    = rom_module
     # The RAM submodule which simulates re-writable data storage.
-    # (1KB of RAM = 256 words)
-    self.ram    = RAM( 256 )
-    # (Builds are faster with less simulated RAM)
-    #self.ram    = RAM( 4 )
+    if CSR_EN:
+      # (1KB of RAM = 256 words)
+      self.ram    = RAM( 256 )
+    else:
+      # (Builds are smaller and faster with less simulated RAM)
+      self.ram    = RAM( 4 )
 
     # RGB LED signals for debugging.
     self.red_on = Signal( 1, reset = 0b0 )
@@ -797,7 +799,7 @@ if __name__ == "__main__":
       cpu = CPU( led_rom )
       UpduinoV2Platform().build( ResetInserter( cpu.clk_rst )( cpu ),
                                  do_build = True,
-                                 do_program = True )
+                                 do_program = False )
   else:
     # Run testbench simulations.
     with warnings.catch_warnings():

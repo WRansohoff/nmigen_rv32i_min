@@ -12,6 +12,7 @@ from alu import *
 # Note: Traps do not work with CSRs disabled.
 # TODO: remove this once I come up with a more efficient design.
 CSR_EN = True
+#CSR_EN = False
 
 # ALU operation definitions. These implement the logic behind math
 # instructions, e.g. 'ADD' covers 'ADD', 'ADDI', etc.

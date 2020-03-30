@@ -119,6 +119,6 @@ if __name__ == "__main__":
   with Simulator( dut, vcd_file = open( 'mux_rom.vcd', 'w' ) ) as sim:
     def proc():
       yield from muxrom_test( dut )
-    sim.add_clock( 24e-6 )
+    sim.add_clock( 24e6 )
     sim.add_sync_process( proc )
     sim.run()

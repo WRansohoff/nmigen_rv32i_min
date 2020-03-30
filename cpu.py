@@ -735,7 +735,7 @@ def cpu_sim( test ):
       yield from cpu_run( cpu, test[ 4 ] )
       print( "\033[35mDONE\033[0m running %s: executed %d instructions"
              %( test[ 0 ], test[ 4 ][ 'end' ] ) )
-    sim.add_clock( 24e-6 )
+    sim.add_clock( 24e6 )
     sim.add_sync_process( proc )
     sim.run()
 
@@ -779,7 +779,7 @@ def cpu_mux_sim( tests ):
                %( tests[ 2 ][ i ][ 0 ], tests[ 2 ][ i ][ 4 ][ 'end' ] ) )
       print( "\033[35mDONE\033[0m running %s: executed %d instructions"
              %( tests[ 0 ], num_i ) )
-    sim.add_clock( 24e-6 )
+    sim.add_clock( 24e6 )
     sim.add_sync_process( proc )
     sim.run()
 

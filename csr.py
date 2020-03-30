@@ -325,7 +325,7 @@ if __name__ == "__main__":
   if ( len( sys.argv ) == 2 ) and ( sys.argv[ 1 ] == '-b' ):
     # Test building the module.
     UpduinoV2Platform().build( CSR(),
-                               do_build = False,
+                               do_build = True,
                                do_program = False )
   else:
     with warnings.catch_warnings():
@@ -338,6 +338,6 @@ if __name__ == "__main__":
       with Simulator( dut, vcd_file = open( 'csr.vcd', 'w' ) ) as sim:
         def proc():
           yield from csr_test( dut )
-        sim.add_clock( 24e-6 )
+        sim.add_clock( 24e6 )
         sim.add_sync_process( proc )
         sim.run()

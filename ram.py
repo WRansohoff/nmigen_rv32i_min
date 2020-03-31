@@ -83,8 +83,8 @@ class RAM( Elaboratable ):
         self.rd1.addr.eq( self.addr >> 2 ),
         self.rd2.addr.eq( ( self.addr >> 2 ) + 1 ),
         self.dout.eq( LITTLE_END(
-          ( self.rd1.data >> ( ( self.addr & 0b11 ) << 3 ) ) |
-          ( self.rd2.data << ( ( 32 - ( ( self.addr & 0b11 ) << 3 ) ) ) ) ) )
+          ( self.rd1.data << ( ( self.addr & 0b11 ) << 3 ) ) |
+          ( self.rd2.data >> ( ( 32 - ( ( self.addr & 0b11 ) << 3 ) ) ) ) ) )
       ]
 
     # Write the 'din' value if 'wen' is set.

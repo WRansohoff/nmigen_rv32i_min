@@ -636,7 +636,7 @@ def check_vals( expected, ni, cpu ):
                  %( hexs( ex[ 'e' ] ), rama, ni ) )
         else:
           cpd = yield cpu.ram.data[ rama // 4 ]
-          if hexs( cpd ) == hexs( ex[ 'e' ] ):
+          if hexs( LITTLE_END( cpd ) ) == hexs( ex[ 'e' ] ):
             p += 1
             print( "  \033[32mPASS:\033[0m RAM == %s @ 0x%08X"
                    " after %d operations"

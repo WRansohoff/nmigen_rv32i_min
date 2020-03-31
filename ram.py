@@ -1,6 +1,8 @@
 from nmigen import *
 from nmigen.back.pysim import *
 
+from isa import *
+
 ###############
 # RAM module: #
 ###############
@@ -66,22 +68,23 @@ class RAM( Elaboratable ):
     with m.Elif( ( self.addr & 0b11 ) == 0b00 ):
       m.d.comb += [
         self.rd1.addr.eq( self.addr >> 2 ),
-        self.dout.eq( self.rd1.data )
+        self.dout.eq( LITTLE_END( self.rd1.data ) )
       ]
     # Partially out-of-bounds reads.
     with m.Elif( ( self.addr + 4 ) >= self.size ):
       m.d.comb += [
         self.rd1.addr.eq( self.addr >> 2 ),
-        self.dout.eq( self.rd1.data >> ( ( self.addr & 0b11 ) << 3 ) )
+        self.dout.eq( LITTLE_END( self.rd1.data >>
+                      ( ( self.addr & 0b11 ) << 3 ) ) )
       ]
     # Mis-aligned reads.
     with m.Else():
       m.d.comb += [
         self.rd1.addr.eq( self.addr >> 2 ),
         self.rd2.addr.eq( ( self.addr >> 2 ) + 1 ),
-        self.dout.eq(
+        self.dout.eq( LITTLE_END(
           ( self.rd1.data >> ( ( self.addr & 0b11 ) << 3 ) ) |
-          ( self.rd2.data << ( ( 32 - ( ( self.addr & 0b11 ) << 3 ) ) ) ) )
+          ( self.rd2.data << ( ( 32 - ( ( self.addr & 0b11 ) << 3 ) ) ) ) ) )
       ]
 
     # Write the 'din' value if 'wen' is set.
@@ -94,7 +97,7 @@ class RAM( Elaboratable ):
         m.d.comb += [
           self.wd1.addr.eq( self.addr >> 2 ),
           self.wd1.en.eq( 1 ),
-          self.wd1.data.eq( self.din )
+          self.wd1.data.eq( LITTLE_END( self.din ) )
         ]
       # Writes requiring wait-states:
       with m.Elif( self.wws == 0 ):
@@ -132,38 +135,7 @@ class RAM( Elaboratable ):
             self.wd2.data.eq( ( self.rd2.data &
               ~( ( 0xFFFFFFFF << ( self.dw << 3 ) ) >> ( 32 - ( ( self.addr & 0b11 ) << 3 ) ) ) ) |
               ( self.din >> ( ( 32 - ( ( self.addr & 0b11 ) << 3 ) ) ) ) ),
-            #self.wd2.data.eq( ( self.rd2.data &
-            #  ( 0xFFFFFFFF << ( 32 - ( ( self.addr & 0b11 ) << 3 ) ) ) ) |
-            #  ( self.din >> ( 32 - ( ( self.addr & 0b11 ) << 3 ) ) ) )
-            #self.wd2.data.eq( self.rd2.data ),
-            #self.wd1.data.eq( self.rd1.data | ( self.din >> ( ( self.addr & 0b11 ) << 3 ) ) ),
-            #self.wd2.data.eq( self.rd2.data | ( self.din << ( 32 - ( ( self.addr & 0b11 ) << 3 ) ) ) )
           ]
-      '''
-      # Write the requested word of data.
-      m.d.comb += [
-        self.wd1.addr.eq( self.addr ),
-        self.wd1.en.eq( 1 )
-      ]
-      m.d.sync += self.wd1.data.eq( self.din & 0x000000FF )
-      with m.If( self.dw > 0 ):
-        m.d.comb += [
-          self.wd2.addr.eq( self.addr + 1 ),
-          self.wd2.en.eq( 1 )
-        ]
-        m.d.sync += self.wd2.data.eq( ( self.din & 0x0000FF00 ) >> 8 )
-      with m.If( self.dw > 1 ):
-        m.d.comb += [
-          self.wd3.addr.eq( self.addr + 2 ),
-          self.wd4.addr.eq( self.addr + 3 ),
-          self.wd3.en.eq( 1 ),
-          self.wd4.en.eq( 1 )
-        ]
-        m.d.sync += [
-          self.wd3.data.eq( ( self.din & 0x00FF0000 ) >> 16 ),
-          self.wd4.data.eq( ( self.din & 0xFF000000 ) >> 24 )
-        ]
-      '''
 
     # End of RAM module definition.
     return m

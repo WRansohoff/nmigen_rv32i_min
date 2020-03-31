@@ -12,7 +12,7 @@ class ROM( Elaboratable ):
     # Address bits to select up to `len( data )` words by byte.
     self.addr = Signal( range( ( len( data ) * 4 ) + 1 ), reset = 0 )
     # Data word output.
-    self.out  = Signal( 32, reset = data[ 0 ] )
+    self.out  = Signal( 32, reset = LITTLE_END( data[ 0 ] ) )
     # Data storage.
     self.data = Memory( width = 32, depth = len( data ), init = data )
     # Two read ports are used, to allow mis-aligned access.
@@ -36,21 +36,21 @@ class ROM( Elaboratable ):
     # Word-aligned reads
     with m.Elif( ( self.addr & 0b11 ) == 0b00 ):
       m.d.comb += self.rd1.addr.eq( self.addr >> 2 )
-      m.d.sync += self.out.eq( self.rd1.data )
+      m.d.sync += self.out.eq( LITTLE_END( self.rd1.data ) )
     # Partially out-of-bounds reads.
     with m.Elif( ( self.addr + 4 ) >= self.size ):
       m.d.comb += self.rd1.addr.eq( self.addr >> 2 )
-      m.d.sync += self.out.eq( self.rd1.data >>
-                               ( ( self.addr & 0b11 ) << 3 ) )
+      m.d.sync += self.out.eq( LITTLE_END( self.rd1.data >>
+                               ( ( self.addr & 0b11 ) << 3 ) ) )
     # Mis-aligned reads
     with m.Else():
       m.d.comb += [
         self.rd1.addr.eq( self.addr >> 2 ),
         self.rd2.addr.eq( ( self.addr >> 2 ) + 1 ),
       ]
-      m.d.sync += self.out.eq(
+      m.d.sync += self.out.eq( LITTLE_END(
         ( self.rd1.data << ( ( self.addr & 0b11 ) << 3 ) ) |
-        ( self.rd2.data >> ( ( 32 - ( ( self.addr & 0b11 ) << 3 ) ) ) ) )
+        ( self.rd2.data >> ( ( 32 - ( ( self.addr & 0b11 ) << 3 ) ) ) ) ) )
 
     # End of ROM module definition.
     return m
@@ -92,22 +92,22 @@ def rom_test( rom ):
   print( "--- ROM Tests ---" )
 
   # Test the ROM's "happy path" (reading valid data).
-  yield from rom_read_ut( rom, 0x0, 0x01234567 )
-  yield from rom_read_ut( rom, 0x4, 0x89ABCDEF )
-  yield from rom_read_ut( rom, 0x8, 0x42424242 )
-  yield from rom_read_ut( rom, 0xC, 0xDEADBEEF )
+  yield from rom_read_ut( rom, 0x0, LITTLE_END( 0x01234567 ) )
+  yield from rom_read_ut( rom, 0x4, LITTLE_END( 0x89ABCDEF ) )
+  yield from rom_read_ut( rom, 0x8, LITTLE_END( 0x42424242 ) )
+  yield from rom_read_ut( rom, 0xC, LITTLE_END( 0xDEADBEEF ) )
   # Test byte-aligned and halfword-aligned addresses.
-  yield from rom_read_ut( rom, 0x1, 0x23456789 )
-  yield from rom_read_ut( rom, 0x2, 0x456789AB )
-  yield from rom_read_ut( rom, 0x3, 0x6789ABCD )
-  yield from rom_read_ut( rom, 0x5, 0xABCDEF42 )
-  yield from rom_read_ut( rom, 0x6, 0xCDEF4242 )
-  yield from rom_read_ut( rom, 0x7, 0xEF424242 )
+  yield from rom_read_ut( rom, 0x1, LITTLE_END( 0x23456789 ) )
+  yield from rom_read_ut( rom, 0x2, LITTLE_END( 0x456789AB ) )
+  yield from rom_read_ut( rom, 0x3, LITTLE_END( 0x6789ABCD ) )
+  yield from rom_read_ut( rom, 0x5, LITTLE_END( 0xABCDEF42 ) )
+  yield from rom_read_ut( rom, 0x6, LITTLE_END( 0xCDEF4242 ) )
+  yield from rom_read_ut( rom, 0x7, LITTLE_END( 0xEF424242 ) )
   # Test reading the last few bytes of data.
-  yield from rom_read_ut( rom, rom.size - 4, 0xDEADBEEF )
-  yield from rom_read_ut( rom, rom.size - 3, 0x00DEADBE )
-  yield from rom_read_ut( rom, rom.size - 2, 0x0000DEAD )
-  yield from rom_read_ut( rom, rom.size - 1, 0x000000DE )
+  yield from rom_read_ut( rom, rom.size - 4, LITTLE_END( 0xDEADBEEF ) )
+  yield from rom_read_ut( rom, rom.size - 3, LITTLE_END( 0x00DEADBE ) )
+  yield from rom_read_ut( rom, rom.size - 2, LITTLE_END( 0x0000DEAD ) )
+  yield from rom_read_ut( rom, rom.size - 1, LITTLE_END( 0x000000DE ) )
   # Test out-of-bounds read.
   yield from rom_read_ut( rom, rom.size + 1, 0 )
 

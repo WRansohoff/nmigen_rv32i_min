@@ -37,8 +37,6 @@ class CPU( Elaboratable ):
     self.pc = Signal( 32, reset = 0x00000000 )
     # Intermediate load/store memory pointer.
     self.mp = Signal( 32, reset = 0x00000000 )
-    # Buffer to hold an intermediary memory word.
-    self.mw = Signal( 32, reset = 0x00000000 )
     # The main 32 CPU registers for 'normal' and 'interrupt' contexts.
     # I don't think that the base specification includes priority
     # levels, so for now, we only need one extra set of registers
@@ -147,13 +145,6 @@ class CPU( Elaboratable ):
       self.ram.wen.eq( 0 )
     ]
 
-    # TODO: Perform little-endian translation outside of mem modules.
-    with m.If( ( self.mp & 0xE0000000 ) == 0x20000000 ):
-      #m.d.comb += self.mw.eq( LITTLE_END( self.ram.dout ) )
-      m.d.comb += self.mw.eq( self.ram.dout )
-    with m.Else():
-      m.d.comb += self.mw.eq( LITTLE_END( self.rom.out ) )
-
     # Set CSR values to 0 by default.
     if CSR_EN:
       m.d.comb += [
@@ -195,7 +186,7 @@ class CPU( Elaboratable ):
             # Increment 'instructions retired' counter.
             minstret_incr( self, m )
             # Decode the fetched instruction and move on to run it.
-            rv32i_decode( self, m, LITTLE_END( self.rom.out ) )
+            rv32i_decode( self, m, self.rom.out )
             m.next = "CPU_PC_DECODE"
       # "Decode PC": Figure out what sort of instruction to execute,
       #              and prepare associated registers.
@@ -484,23 +475,40 @@ class CPU( Elaboratable ):
           # "Load Byte" operation:
           with m.If( self.f == F_LB ):
             with m.If( ( self.rc.addr & 0x1F ) > 0 ):
-              m.d.sync += self.rc.data.eq( Cat( self.mw[ :8 ], Repl( self.mw[ 7 ], 24 ) ) )
+              with m.If( ( self.mp & 0xE0000000 ) == 0x20000000 ):
+                m.d.sync += self.rc.data.eq( Cat( self.ram.dout[ :8 ], Repl( self.ram.dout[ 7 ], 24 ) ) )
+              with m.Else():
+                m.d.sync += self.rc.data.eq( Cat( self.rom.out[ :8 ], Repl( self.ram.dout[ 7 ], 24 ) ) )
           # "Load Halfword" operation:
           with m.Elif( self.f == F_LH ):
             with m.If( ( self.rc.addr & 0x1F ) > 0 ):
-              m.d.sync += self.rc.data.eq( Cat( self.mw[ :16 ], Repl( self.mw[ 15 ], 16 ) ) )
+              with m.If( ( self.mp & 0xE0000000 ) == 0x20000000 ):
+                m.d.sync += self.rc.data.eq( Cat( self.ram.dout[ :16 ], Repl( self.ram.dout[ 15 ], 16 ) ) )
+              with m.Else():
+                m.d.sync += self.rc.data.eq( Cat( self.rom.out[ :16 ], Repl( self.ram.dout[ 15 ], 16 ) ) )
           # "Load Word" operation:
           with m.Elif( self.f == F_LW ):
             with m.If( ( self.rc.addr & 0x1F ) > 0 ):
-              m.d.sync += self.rc.data.eq( self.mw )
+              with m.If( ( self.mp & 0xE0000000 ) == 0x20000000 ):
+                m.d.sync += self.rc.data.eq( self.ram.dout )
+              with m.Else():
+                m.d.sync += self.rc.data.eq( self.rom.out )
           # "Load Byte" (without sign extension) operation:
           with m.Elif( self.f == F_LBU ):
             with m.If( ( self.rc.addr & 0x1F ) > 0 ):
-              m.d.sync += self.rc.data.eq( self.mw & 0xFF )
+              with m.If( ( self.mp & 0xE0000000 ) == 0x20000000 ):
+                m.d.sync += self.rc.data.eq( self.ram.dout & 0xFF )
+              with m.Else():
+                m.d.sync += self.rc.data.eq( self.rom.out & 0xFF )
           # "Load Halfword" (without sign extension) operation:
           with m.Elif( self.f == F_LHU ):
             with m.If( ( self.rc.addr & 0x1F ) > 0 ):
-              m.d.sync += self.rc.data.eq( self.mw & 0xFFFF )
+              with m.If( ( self.mp & 0xE0000000 ) == 0x20000000 ):
+                m.d.sync += self.rc.data.eq(
+                  ( self.ram.dout & 0xFFFF ) )
+              with m.Else():
+                m.d.sync += self.rc.data.eq(
+                  ( self.rom.out & 0xFFFF ) )
           m.next = "CPU_PC_LOAD"
         with m.Else():
           m.next = "CPU_PC_LOAD"

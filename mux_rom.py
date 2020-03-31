@@ -84,22 +84,22 @@ def muxrom_test( mrom ):
 
   # Test reading from the first ROM.
   yield from muxrom_read_ut( mrom, 0, 0x0,
-    ( yield mrom.roms[ 0 ].data[ 0 ] ) )
+    LITTLE_END( ( yield mrom.roms[ 0 ].data[ 0 ] ) ) )
   yield from muxrom_read_ut( mrom, 0, 0x4,
-    ( yield mrom.roms[ 0 ].data[ 1 ] ) )
+    LITTLE_END( ( yield mrom.roms[ 0 ].data[ 1 ] ) ) )
   # Test reading from the second ROM.
   yield from muxrom_read_ut( mrom, 1, 0x8,
-    ( yield mrom.roms[ 1 ].data[ 2 ] ) )
+    LITTLE_END( ( yield mrom.roms[ 1 ].data[ 2 ] ) ) )
   yield from muxrom_read_ut( mrom, 1, 0xC,
-    ( yield mrom.roms[ 1 ].data[ 3 ] ) )
+    LITTLE_END( ( yield mrom.roms[ 1 ].data[ 3 ] ) ) )
   # Test reading from the third ROM.
   yield from muxrom_read_ut( mrom, 2, 0x0,
-    ( yield mrom.roms[ 2 ].data[ 0 ] ) )
+    LITTLE_END( ( yield mrom.roms[ 2 ].data[ 0 ] ) ) )
   yield from muxrom_read_ut( mrom, 2, 0x4,
-    ( yield mrom.roms[ 2 ].data[ 1 ] ) )
+    LITTLE_END( ( yield mrom.roms[ 2 ].data[ 1 ] ) ) )
   # Test byte-aligned and halfword-aligned reads.
-  yield from muxrom_read_ut( mrom, 0, 0x1, 0x23456789 )
-  yield from muxrom_read_ut( mrom, 1, 0x2, 0x456789AB )
+  yield from muxrom_read_ut( mrom, 0, 0x1, 0x89674523 )
+  yield from muxrom_read_ut( mrom, 1, 0x2, 0xAB896745 )
   # Test reading from an out-of-range ROM.
   yield from muxrom_read_ut( mrom, 3, 0x0, 0x00000000 )
 

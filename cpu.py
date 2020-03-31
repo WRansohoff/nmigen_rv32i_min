@@ -149,8 +149,7 @@ class CPU( Elaboratable ):
 
     # TODO: Perform little-endian translation outside of mem modules.
     with m.If( ( self.mp & 0xE0000000 ) == 0x20000000 ):
-      #m.d.comb += self.mw.eq( LITTLE_END( self.ram.dout ) )
-      m.d.comb += self.mw.eq( self.ram.dout )
+      m.d.comb += self.mw.eq( LITTLE_END( self.ram.dout ) )
     with m.Else():
       m.d.comb += self.mw.eq( LITTLE_END( self.rom.out ) )
 
@@ -185,7 +184,7 @@ class CPU( Elaboratable ):
             # Increment 'instructions retired' counter.
             minstret_incr( self, m )
             # Decode the fetched instruction and move on to run it.
-            rv32i_decode( self, m, self.ram.dout )
+            rv32i_decode( self, m, LITTLE_END( self.ram.dout ) )
             m.next = "CPU_PC_DECODE"
         # Otherwise, read from ROM.
         with m.Else():
@@ -299,7 +298,7 @@ class CPU( Elaboratable ):
           with m.If( ( self.mp & 0xE0000000 ) == 0x20000000 ):
             m.d.comb += [
               self.ram.addr.eq( self.mp & 0x1FFFFFFF ),
-              self.ram.din.eq( self.rb.data )
+              self.ram.din.eq( LITTLE_END( self.rb.data ) )
             ]
             # Don't enable writes until the last wait-state tick.
             with m.If( rws_c >= self.rws ):
@@ -459,7 +458,7 @@ class CPU( Elaboratable ):
           with m.If( self.opcode == OP_STORE ):
             m.d.comb += [
               self.ram.wen.eq( 1 ),
-              self.ram.din.eq( self.rb.data )
+              self.ram.din.eq( LITTLE_END( self.rb.data ) )
             ]
             # "Store Byte" operation:
             with m.If( self.f == F_SB ):
@@ -484,11 +483,11 @@ class CPU( Elaboratable ):
           # "Load Byte" operation:
           with m.If( self.f == F_LB ):
             with m.If( ( self.rc.addr & 0x1F ) > 0 ):
-              m.d.sync += self.rc.data.eq( Cat( self.mw[ :8 ], Repl( self.mw[ 7 ], 24 ) ) )
+              m.d.sync += self.rc.data.eq( Cat( self.mw & 0xFF, Repl( self.mw[ 7 ], 24 ) ) )
           # "Load Halfword" operation:
           with m.Elif( self.f == F_LH ):
             with m.If( ( self.rc.addr & 0x1F ) > 0 ):
-              m.d.sync += self.rc.data.eq( Cat( self.mw[ :16 ], Repl( self.mw[ 15 ], 16 ) ) )
+              m.d.sync += self.rc.data.eq( Cat( self.mw & 0xFFFF, Repl( self.mw[ 15 ], 16 ) ) )
           # "Load Word" operation:
           with m.Elif( self.f == F_LW ):
             with m.If( ( self.rc.addr & 0x1F ) > 0 ):

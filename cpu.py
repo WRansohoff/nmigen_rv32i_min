@@ -476,36 +476,16 @@ class CPU( Elaboratable ):
           with m.If( self.f == F_LB ):
             with m.If( ( self.rc.addr & 0x1F ) > 0 ):
               with m.If( ( self.mp & 0xE0000000 ) == 0x20000000 ):
-                with m.If( self.ram.dout.bit_select( 7, 1 ) ):
-                  m.d.sync += self.rc.data.eq(
-                    ( self.ram.dout & 0xFF ) | 0xFFFFFF00 )
-                with m.Else():
-                  m.d.sync += self.rc.data.eq(
-                    ( self.ram.dout & 0xFF ) )
+                m.d.sync += self.rc.data.eq( Cat( self.ram.dout[ :8 ], Repl( self.ram.dout[ 7 ], 24 ) ) )
               with m.Else():
-                with m.If( self.rom.out.bit_select( 7, 1 ) ):
-                  m.d.sync += self.rc.data.eq(
-                    ( self.rom.out & 0xFF ) | 0xFFFFFF00 )
-                with m.Else():
-                  m.d.sync += self.rc.data.eq(
-                    ( self.rom.out & 0xFF ) )
+                m.d.sync += self.rc.data.eq( Cat( self.rom.out[ :8 ], Repl( self.ram.dout[ 7 ], 24 ) ) )
           # "Load Halfword" operation:
           with m.Elif( self.f == F_LH ):
             with m.If( ( self.rc.addr & 0x1F ) > 0 ):
               with m.If( ( self.mp & 0xE0000000 ) == 0x20000000 ):
-                with m.If( self.ram.dout.bit_select( 15, 1 ) ):
-                  m.d.sync += self.rc.data.eq(
-                    ( self.ram.dout & 0xFFFF ) | 0xFFFF0000 )
-                with m.Else():
-                  m.d.sync += self.rc.data.eq(
-                    ( self.ram.dout & 0xFFFF ) )
+                m.d.sync += self.rc.data.eq( Cat( self.ram.dout[ :16 ], Repl( self.ram.dout[ 15 ], 16 ) ) )
               with m.Else():
-                with m.If( self.rom.out.bit_select( 15, 1 ) ):
-                  m.d.sync += self.rc.data.eq(
-                    ( self.rom.out & 0xFFFF ) | 0xFFFF0000 )
-                with m.Else():
-                  m.d.sync += self.rc.data.eq(
-                    ( self.rom.out & 0xFFFF ) )
+                m.d.sync += self.rc.data.eq( Cat( self.rom.out[ :16 ], Repl( self.ram.dout[ 15 ], 16 ) ) )
           # "Load Word" operation:
           with m.Elif( self.f == F_LW ):
             with m.If( ( self.rc.addr & 0x1F ) > 0 ):

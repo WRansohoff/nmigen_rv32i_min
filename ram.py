@@ -74,7 +74,7 @@ class RAM( Elaboratable ):
     with m.Elif( ( self.addr + 4 ) >= self.size ):
       m.d.comb += [
         self.rd1.addr.eq( self.addr >> 2 ),
-        self.dout.eq( LITTLE_END( self.rd1.data >>
+        self.dout.eq( LITTLE_END( self.rd1.data <<
                       ( ( self.addr & 0b11 ) << 3 ) ) )
       ]
     # Mis-aligned reads.
@@ -109,7 +109,7 @@ class RAM( Elaboratable ):
           m.d.comb += [
             self.wd1.addr.eq( self.addr >> 2 ),
             self.wd1.en.eq( 1 ),
-            self.wd1.data.eq( self.rd1.data | ( self.din & ( 0xFFFFFFFF >> ( self.dw << 3 ) ) ) )
+            self.wd1.data.eq( self.rd1.data | LITTLE_END( ( self.din & ( 0xFFFFFFFF >> ( self.dw << 3 ) ) ) ) )
           ]
         # Partially out-of-bounds writes.
         with m.Elif( ( self.addr + 4 ) >= self.size ):
@@ -118,8 +118,8 @@ class RAM( Elaboratable ):
             self.wd1.addr.eq( self.addr >> 2 ),
             self.wd1.en.eq( 1 ),
             self.wd1.data.eq( ( self.rd1.data &
-              ~( ( 0xFFFFFFFF >> ( self.dw << 3 ) ) << ( ( self.addr & 0b11 ) << 3 ) ) ) |
-              ( self.din << ( ( ( self.addr & 0b11 ) << 3 ) ) ) )
+              ~( ( 0xFFFFFFFF << ( self.dw << 3 ) )[ :32 ] >> ( ( self.addr & 0b11 ) << 3 ) ) ) |
+              ( LITTLE_END( self.din << ( ( ( self.addr & 0b11 ) << 3 ) ) ) ) )
           ]
         # Mis-aligned writes.
         with m.Else():
@@ -130,11 +130,11 @@ class RAM( Elaboratable ):
             self.wd1.en.eq( 1 ),
             self.wd2.en.eq( 1 ),
             self.wd1.data.eq( ( self.rd1.data &
-              ~( ( 0xFFFFFFFF >> ( self.dw << 3 ) ) << ( ( self.addr & 0b11 ) << 3 ) ) ) |
-              ( self.din << ( ( ( self.addr & 0b11 ) << 3 ) ) ) ),
+              ~( ( 0xFFFFFFFF << ( self.dw << 3 ) )[ :32 ] >> ( ( self.addr & 0b11 ) << 3 ) ) ) |
+              ( LITTLE_END( self.din << ( ( ( self.addr & 0b11 ) << 3 ) ) ) ) ),
             self.wd2.data.eq( ( self.rd2.data &
-              ~( ( 0xFFFFFFFF << ( self.dw << 3 ) ) >> ( 32 - ( ( self.addr & 0b11 ) << 3 ) ) ) ) |
-              ( self.din >> ( ( 32 - ( ( self.addr & 0b11 ) << 3 ) ) ) ) ),
+              ~( LITTLE_END( ( 0xFFFFFFFF << ( self.dw << 3 ) )[ :32 ] >> ( 32 - ( ( self.addr & 0b11 ) << 3 ) ) ) ) ) |
+              ( LITTLE_END( self.din >> ( ( 32 - ( ( self.addr & 0b11 ) << 3 ) ) ) ) ) )
           ]
 
     # End of RAM module definition.
@@ -231,10 +231,14 @@ def ram_test( ram ):
   yield from ram_write_ut( ram, 0x02, 0xDEC0FFEE, RAM_DW_32, 1 )
   yield from ram_write_ut( ram, 0x03, 0xFABFACEE, RAM_DW_32, 1 )
   # Test byte and halfword writes.
+  yield from ram_write_ut( ram, 0x00, 0x0F0A0B0C, RAM_DW_32, 1 )
   yield from ram_write_ut( ram, 0x00, 0xDEADBEEF, RAM_DW_8, 0 )
+  yield from ram_read_ut( ram, 0x00, 0x0F0A0BEF )
   yield from ram_write_ut( ram, 0x10, 0x0000BEEF, RAM_DW_8, 0 )
+  yield from ram_read_ut( ram, 0x10, 0x000000EF )
   yield from ram_write_ut( ram, 0x20, 0x000000EF, RAM_DW_8, 1 )
   yield from ram_write_ut( ram, 0x40, 0xDEADBEEF, RAM_DW_16, 0 )
+  yield from ram_read_ut( ram, 0x40, 0x0000BEEF )
   yield from ram_write_ut( ram, 0x50, 0x0000BEEF, RAM_DW_16, 1 )
   # Test out-of-bounds write.
   yield from ram_write_ut( ram, ram.size + 5, 0x01234567, RAM_DW_32, 0 )
@@ -257,6 +261,7 @@ def ram_test( ram ):
   yield from ram_write_ut( ram, ram.size - 4, 0xABCDEF89, RAM_DW_32, 1 )
   yield from ram_write_ut( ram, ram.size - 3, 0x00234567, RAM_DW_32, 1 )
   yield from ram_read_ut( ram, ram.size - 4, 0x23456789 )
+  yield from ram_read_ut( ram, ram.size - 3, 0x00234567 )
 
   # Done.
   yield Tick()

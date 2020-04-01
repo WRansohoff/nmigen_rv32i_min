@@ -308,12 +308,14 @@ class CPU( Elaboratable ):
         # "Register-Based" instructions:
         with m.Elif( self.opcode == OP_REG ):
           alu_reg_op( self, m )
-          m.d.sync += self.rc.data.eq( self.alu.y )
+          with m.If( ( self.rc.addr & 0x1F ) != 0 ):
+            m.d.sync += self.rc.data.eq( self.alu.y )
           m.next = "CPU_PC_LOAD"
         # "Immediate-Based" instructions:
         with m.Elif( self.opcode == OP_IMM ):
           alu_imm_op( self, m )
-          m.d.sync += self.rc.data.eq( self.alu.y )
+          with m.If( ( self.rc.addr & 0x1F ) != 0 ):
+            m.d.sync += self.rc.data.eq( self.alu.y )
           m.next = "CPU_PC_LOAD"
         with m.Elif( self.opcode == OP_SYSTEM ):
           # "EBREAK" instruction: enter the interrupt context

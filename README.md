@@ -119,6 +119,4 @@ There is a flag in `isa.py` to disable CSR functionality, which shrinks the desi
 
 - The spec does not define behavior when an unspecified opcode is encountered. For now, I'll just skip to incrementing the PC if that happens. But once I implement traps, it might merit raising an exception.
 
-- I should use `signal.to_signed()` instead of if/else checks for sign extension.
-
 - There's a `Mux(...)` expression which might be able to replace some more of the repetitive 'if/else' logic.

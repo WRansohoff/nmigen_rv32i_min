@@ -23,10 +23,11 @@ CPU_RESET        = 0
 CPU_PC_LOAD      = 1
 CPU_PC_ROM_FETCH = 2
 CPU_PC_DECODE    = 3
-CPU_LDST         = 4
-CPU_TRAP_ENTER   = 5
-CPU_TRAP_EXIT    = 6
-CPU_STATES_MAX   = 6
+CPU_JUMP         = 4
+CPU_LDST         = 5
+CPU_TRAP_ENTER   = 6
+CPU_TRAP_EXIT    = 7
+CPU_STATES_MAX   = 7
 
 # CPU module.
 class CPU( Elaboratable ):
@@ -210,7 +211,7 @@ class CPU( Elaboratable ):
           m.next = "CPU_PC_LOAD"
         # "Jump And Link" instruction:
         with m.Elif( self.opcode == OP_JAL ):
-          jump_to( self, m, ( self.ipc + self.imm ) )
+          m.next = "CPU_JUMP"
           with m.If( ( self.rc.addr & 0x1F ) > 0 ):
             m.d.sync += self.rc.data.eq( self.ipc + 4 )
             # Assert the CPU register 'write' signal on the
@@ -235,35 +236,44 @@ class CPU( Elaboratable ):
           # "Branch if EQual" operation:
           with m.If( ( self.f == F_BEQ ) &
                      ( self.ra.data == self.rb.data ) ):
-              jump_to( self, m, ( self.ipc + self.imm ) )
-          # "Branch if Not Equal" operation:
+            m.next = "CPU_JUMP"
           with m.Elif( ( self.f == F_BNE ) &
                        ( self.ra.data != self.rb.data ) ):
-              jump_to( self, m, ( self.ipc + self.imm ) )
+            m.next = "CPU_JUMP"
           # "Branch if Less Than" operation:
-          with m.Elif( ( self.f == F_BLT ) &
-                   ( ( ( self.rb.data.bit_select( 31, 1 ) ==
-                         self.ra.data.bit_select( 31, 1 ) ) &
+          # It would be nice to use '.as_signed()', but that adds
+          # about 100 gates compared to this mess.
+          with m.Elif( self.f == F_BLT ):
+            with m.If( ( ( self.rb.data[ 31 ] ==
+                         self.ra.data[ 31 ] ) &
                        ( self.ra.data < self.rb.data ) ) |
-                       ( self.ra.data.bit_select( 31, 1 ) >
-                         self.rb.data.bit_select( 31, 1 ) ) ) ):
-              jump_to( self, m, ( self.ipc + self.imm ) )
+                       ( self.ra.data[ 31 ] >
+                         self.rb.data[ 31 ] ) ):
+              m.next = "CPU_JUMP"
+            with m.Else():
+              m.next = "CPU_PC_LOAD"
           # "Branch if Greater or Equal" operation:
-          with m.Elif( ( self.f == F_BGE ) &
-                   ( ( ( self.rb.data.bit_select( 31, 1 ) ==
-                         self.ra.data.bit_select( 31, 1 ) ) &
+          with m.Elif( self.f == F_BGE ):
+            with m.If( ( ( ( self.rb.data[ 31 ] ==
+                         self.ra.data[ 31 ] ) &
                        ( self.ra.data >= self.rb.data ) ) |
-                       ( self.rb.data.bit_select( 31, 1 ) >
-                         self.ra.data.bit_select( 31, 1 ) ) ) ):
-              jump_to( self, m, ( self.ipc + self.imm ) )
-          # "Branch if Less Than (Unsigned)" operation:
-          with m.Elif( ( self.f == F_BLTU ) &
-                       ( self.ra.data < self.rb.data ) ):
-              jump_to( self, m, ( self.ipc + self.imm ) )
-          # "Branch if Greater or Equal (Unsigned)" operation:
-          with m.Elif( ( self.f == F_BGEU ) &
-                       ( self.ra.data >= self.rb.data ) ):
-              jump_to( self, m, ( self.ipc + self.imm ) )
+                       ( self.rb.data[ 31 ] >
+                         self.ra.data[ 31 ] ) ) ):
+              m.next = "CPU_JUMP"
+            with m.Else():
+              m.next = "CPU_PC_LOAD"
+          # Unsigned BLT operation:
+          with m.Elif( self.f == F_BLTU ):
+            with m.If( self.ra.data < self.rb.data ):
+              m.next = "CPU_JUMP"
+            with m.Else():
+              m.next = "CPU_PC_LOAD"
+          # Unsigned BGE operation:
+          with m.Elif( self.f == F_BGEU ):
+            with m.If( self.ra.data >= self.rb.data ):
+              m.next = "CPU_JUMP"
+            with m.Else():
+              m.next = "CPU_PC_LOAD"
           with m.Else():
             m.next = "CPU_PC_LOAD"
         # "Load from Memory" instructions:
@@ -439,6 +449,11 @@ class CPU( Elaboratable ):
             self.pc.eq( self.ipc )
           ]
           m.next = "CPU_PC_DECODE"
+      # "Jump" operation (or "Branch" if the branch is taken).
+      with m.State( "CPU_JUMP" ):
+        # ('m.next' is set in the 'jump_to' helper method; an
+        #  exception may be triggered if the address is invalid)
+        jump_to( self, m, ( self.ipc + self.imm ) )
       # "Load / Store operation" - wait for memory access to finish.
       with m.State( "CPU_LDST" ):
         m.d.comb += self.fsms.eq( CPU_LDST ) # TODO: Remove

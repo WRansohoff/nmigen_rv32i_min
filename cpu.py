@@ -87,8 +87,8 @@ class CPU( Elaboratable ):
     self.blu_on = Signal( 1, reset = 0b0 )
 
     # Debugging signal(s):
-    # Track FSM state. TODO: There must be a way to access this
-    # from the Module's FSM object, but I don't know how.
+    # Track FSM state. I was going to delete this, but when I did,
+    # it added over 100 gates to the final bitstream. Weird.
     self.fsms = Signal( range( CPU_STATES_MAX ),
                         reset = CPU_PC_ROM_FETCH )
 
@@ -158,7 +158,7 @@ class CPU( Elaboratable ):
     with m.FSM() as fsm:
       # "Reset state": Wait a few ticks after reset, to let ROM load.
       with m.State( "CPU_RESET" ):
-        m.d.comb += self.fsms.eq( CPU_RESET ) #TODO: Remove
+        m.d.comb += self.fsms.eq( CPU_RESET )
         with m.If( rsc > 0 ):
           m.d.sync += rsc.eq( rsc - 1 )
         with m.Else():
@@ -166,7 +166,7 @@ class CPU( Elaboratable ):
       # "ROM Fetch": Wait for the instruction to load from ROM, and
       #              populate register fields to prepare for decoding.
       with m.State( "CPU_PC_ROM_FETCH" ):
-        m.d.comb += self.fsms.eq( CPU_PC_ROM_FETCH ) #TODO: Remove
+        m.d.comb += self.fsms.eq( CPU_PC_ROM_FETCH )
         # If the PC address is in RAM, maintain combinatorial
         # logic to read the instruction from RAM.
         with m.If( ( ( self.pc ) & 0xE0000000 ) == 0x20000000 ):
@@ -192,7 +192,7 @@ class CPU( Elaboratable ):
       # "Decode PC": Figure out what sort of instruction to execute,
       #              and prepare associated registers.
       with m.State( "CPU_PC_DECODE" ):
-        m.d.comb += self.fsms.eq( CPU_PC_DECODE ) #TODO: Remove
+        m.d.comb += self.fsms.eq( CPU_PC_DECODE )
         # "Load Upper Immediate" instruction:
         with m.If( self.opcode == OP_LUI ):
           with m.If( ( self.rc.addr & 0x1F ) > 0 ):
@@ -441,8 +441,7 @@ class CPU( Elaboratable ):
         # should trigger an error.
         with m.Else():
           m.next = "CPU_PC_LOAD"
-        # Wait until register access wait-states elapse, except
-        # for traps.
+        # Wait until register access wait-states elapse.
         with m.If( rws_c < self.rws ):
           m.d.sync += [
             rws_c.eq( rws_c + 1 ),
@@ -451,13 +450,13 @@ class CPU( Elaboratable ):
           m.next = "CPU_PC_DECODE"
       # "Jump" operation (or "Branch" if the branch is taken).
       with m.State( "CPU_JUMP" ):
-        m.d.comb += self.fsms.eq( CPU_JUMP ) # TODO: Remove
+        m.d.comb += self.fsms.eq( CPU_JUMP )
         # ('m.next' is set in the 'jump_to' helper method; an
         #  exception may be triggered if the address is invalid)
         jump_to( self, m, ( self.ipc + self.imm ) )
       # "Load / Store operation" - wait for memory access to finish.
       with m.State( "CPU_LDST" ):
-        m.d.comb += self.fsms.eq( CPU_LDST ) # TODO: Remove
+        m.d.comb += self.fsms.eq( CPU_LDST )
         # Maintain the cominatorial logic holding the memory
         # address at the 'mp' (memory pointer) value.
         m.d.comb += self.mp.eq( self.ra.data + self.imm )
@@ -530,7 +529,7 @@ class CPU( Elaboratable ):
           m.next = "CPU_PC_LOAD"
       # "Trap Entry" - update PC and EPC CSR, and context switch.
       with m.State( "CPU_TRAP_ENTER" ):
-        m.d.comb += self.fsms.eq( CPU_TRAP_ENTER ) # TODO: Delete
+        m.d.comb += self.fsms.eq( CPU_TRAP_ENTER )
         if CSR_EN:
           m.d.sync += [
             self.csr.mepc.shadow.eq( self.ipc ),
@@ -539,7 +538,7 @@ class CPU( Elaboratable ):
         m.next = "CPU_PC_ROM_FETCH"
       # "Trap Exit" - update PC and context switch.
       with m.State( "CPU_TRAP_EXIT" ):
-        m.d.comb += self.fsms.eq( CPU_TRAP_EXIT ) # TODO: Delete
+        m.d.comb += self.fsms.eq( CPU_TRAP_EXIT )
         if CSR_EN:
           m.d.sync += [
             self.pc.eq( self.csr.mepc.shadow ),
@@ -548,7 +547,7 @@ class CPU( Elaboratable ):
         m.next = "CPU_PC_ROM_FETCH"
       # "PC Load Letter" - increment the PC.
       with m.State( "CPU_PC_LOAD" ):
-        m.d.comb += self.fsms.eq( CPU_PC_LOAD ) # TODO: Remove
+        m.d.comb += self.fsms.eq( CPU_PC_LOAD )
         # Apply CPU register results if necessary.
         with m.If( self.opcode == OP_REG ):
           alu_reg_op( self, m )
@@ -664,19 +663,19 @@ def cpu_run( cpu, expected ):
   global p, f
   # Record how many CPU instructions have executed.
   ni = -1
-  am_fetching = False
   # Watch for timeouts if the CPU gets into a bad state.
   timeout = 0
+  instret = 0
   # Let the CPU run for N ticks.
   while ni <= expected[ 'end' ]:
     # Let combinational logic settle before checking values.
     yield Settle()
     timeout = timeout + 1
     # Only check expected values once per instruction.
-    fsm_state = yield cpu.fsms
-    if fsm_state == CPU_PC_ROM_FETCH and not am_fetching:
-      am_fetching = True
+    ninstret = yield cpu.csr.minstret.shadow
+    if ninstret != instret:
       ni += 1
+      instret = ninstret
       timeout = 0
       # Check expected values, if any.
       yield from check_vals( expected, ni, cpu )
@@ -684,8 +683,6 @@ def cpu_run( cpu, expected ):
       f += 1
       print( "\033[31mFAIL: Timeout\033[0m" )
       break
-    elif fsm_state != CPU_PC_ROM_FETCH:
-      am_fetching = False
     # Step the simulation.
     yield Tick()
 

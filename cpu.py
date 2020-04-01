@@ -451,6 +451,7 @@ class CPU( Elaboratable ):
           m.next = "CPU_PC_DECODE"
       # "Jump" operation (or "Branch" if the branch is taken).
       with m.State( "CPU_JUMP" ):
+        m.d.comb += self.fsms.eq( CPU_JUMP ) # TODO: Remove
         # ('m.next' is set in the 'jump_to' helper method; an
         #  exception may be triggered if the address is invalid)
         jump_to( self, m, ( self.ipc + self.imm ) )

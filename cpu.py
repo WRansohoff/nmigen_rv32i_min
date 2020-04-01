@@ -43,7 +43,7 @@ class CPU( Elaboratable ):
     # levels, so for now, we only need one extra set of registers
     # to handle context-switching in hardware.
     self.r  = Memory( width = 32, depth = 64,
-                      init = ( 0x00000000 for i in range( 32 ) ) )
+                      init = ( 0x00000000 for i in range( 64 ) ) )
     # Read ports for rs1 (ra), rs2 (rb), and rd (rc).
     self.ra      = self.r.read_port()
     self.rb      = self.r.read_port()
@@ -195,42 +195,33 @@ class CPU( Elaboratable ):
         m.d.comb += self.fsms.eq( CPU_PC_DECODE )
         # "Load Upper Immediate" instruction:
         with m.If( self.opcode == OP_LUI ):
-          with m.If( ( self.rc.addr & 0x1F ) > 0 ):
-            m.d.sync += self.rc.data.eq( self.imm )
+          m.d.sync += self.rc.data.eq( self.imm )
+          with m.If( self.rc.addr[ :5 ] != 0 ):
             # Assert the CPU register 'write' signal.
-            with m.If( self.rc.addr[ :5 ] != 0 ):
-              m.d.comb += self.rc.en.eq( 1 )
+            m.d.comb += self.rc.en.eq( 1 )
           m.next = "CPU_PC_LOAD"
         # "Add Upper Immediate to PC" instruction:
         with m.Elif( self.opcode == OP_AUIPC ):
-          with m.If( ( self.rc.addr & 0x1F ) > 0 ):
-            m.d.sync += self.rc.data.eq( self.imm + self.ipc )
-            # Assert the CPU register 'write' signal.
-            with m.If( self.rc.addr[ :5 ] != 0 ):
-              m.d.comb += self.rc.en.eq( 1 )
+          m.d.sync += self.rc.data.eq( self.imm + self.ipc )
+          with m.If( self.rc.addr[ :5 ] != 0 ):
+            m.d.comb += self.rc.en.eq( 1 )
           m.next = "CPU_PC_LOAD"
         # "Jump And Link" instruction:
         with m.Elif( self.opcode == OP_JAL ):
           m.next = "CPU_JUMP"
-          with m.If( ( self.rc.addr & 0x1F ) > 0 ):
-            m.d.sync += self.rc.data.eq( self.ipc + 4 )
-            # Assert the CPU register 'write' signal on the
-            # last register access wait-state.
-            with m.If( rws_c >= self.rws ):
-              with m.If( self.rc.addr[ :5 ] != 0 ):
-                m.d.comb += self.rc.en.eq( 1 )
+          m.d.sync += self.rc.data.eq( self.ipc + 4 )
+          with m.If( self.rc.addr[ :5 ] != 0 ):
+            m.d.comb += self.rc.en.eq( 1 )
         # "Jump And Link from Register" instruction:
         # funct3 bits should be 0b000, but for now there's no
         # need to be a stickler about that.
         with m.Elif( self.opcode == OP_JALR ):
           jump_to( self, m, ( self.ra.data + self.imm ) )
-          with m.If( ( self.rc.addr & 0x1F ) > 0 ):
-            m.d.sync += self.rc.data.eq( self.ipc + 4 )
-            # Assert the CPU register 'write' signal on the
-            # last register access wait-state.
-            with m.If( rws_c >= self.rws ):
-              with m.If( self.rc.addr[ :5 ] != 0 ):
-                m.d.comb += self.rc.en.eq( 1 )
+          # Assert the CPU register 'write' signal on the
+          # last register access wait-state.
+          m.d.sync += self.rc.data.eq( self.ipc + 4 )
+          with m.If( self.rc.addr[ :5 ] != 0 ):
+            m.d.comb += self.rc.en.eq( 1 )
         # "Conditional Branch" instructions:
         with m.Elif( self.opcode == OP_BRANCH ):
           # "Branch if EQual" operation:
@@ -302,7 +293,6 @@ class CPU( Elaboratable ):
               self.ram.addr.eq( self.mp & 0x1FFFFFFF ),
               self.ram.din.eq( self.rb.data )
             ]
-            # Don't enable writes until the last wait-state tick.
             with m.If( rws_c >= self.rws ):
               m.d.comb += self.ram.wen.eq( 0b1 )
             # "Store Byte" operation:
@@ -318,19 +308,17 @@ class CPU( Elaboratable ):
         # "Register-Based" instructions:
         with m.Elif( self.opcode == OP_REG ):
           alu_reg_op( self, m )
-          with m.If( ( self.rc.addr & 0x1F ) > 0 ):
-            m.d.sync += self.rc.data.eq( self.alu.y )
+          m.d.sync += self.rc.data.eq( self.alu.y )
           m.next = "CPU_PC_LOAD"
         # "Immediate-Based" instructions:
         with m.Elif( self.opcode == OP_IMM ):
           alu_imm_op( self, m )
-          with m.If( ( self.rc.addr & 0x1F ) > 0 ):
-            m.d.sync += self.rc.data.eq( self.alu.y )
+          m.d.sync += self.rc.data.eq( self.alu.y )
           m.next = "CPU_PC_LOAD"
         with m.Elif( self.opcode == OP_SYSTEM ):
           # "EBREAK" instruction: enter the interrupt context
           # with 'breakpoint' as the cause of the exception.
-          with m.If( ( ( self.ra.addr & 0x1F )  == 0 )
+          with m.If( ( ( self.ra.addr & 0x1F ) == 0 )
                    & ( ( self.rc.addr & 0x1F ) == 0 )
                    & ( self.f   == 0 )
                    & ( self.imm == 0x001 ) ):
@@ -447,6 +435,7 @@ class CPU( Elaboratable ):
             rws_c.eq( rws_c + 1 ),
             self.pc.eq( self.ipc )
           ]
+          m.d.comb += self.rc.en.eq( 0 )
           m.next = "CPU_PC_DECODE"
       # "Jump" operation (or "Branch" if the branch is taken).
       with m.State( "CPU_JUMP" ):

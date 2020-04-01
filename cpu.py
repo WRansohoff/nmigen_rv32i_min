@@ -296,8 +296,8 @@ class CPU( Elaboratable ):
               self.ram.addr.eq( self.mp & 0x1FFFFFFF ),
               self.ram.din.eq( self.rb.data )
             ]
-            with m.If( rws_c >= self.rws ):
-              m.d.comb += self.ram.wen.eq( 0b1 )
+            with m.If( rws_c == self.rws ):
+              m.d.comb += self.ram.wen.eq( 1 )
             # "Store Byte" operation:
             with m.If( self.f == F_SB ):
               m.d.comb += self.ram.dw.eq( RAM_DW_8 )
@@ -312,21 +312,25 @@ class CPU( Elaboratable ):
         with m.Elif( self.opcode == OP_REG ):
           alu_reg_op( self, m )
           with m.If( ( self.rc.addr & 0x1F ) != 0 ):
-            m.d.comb += self.rc.data.eq( self.alu.y )
-            m.d.comb += self.rc.en.eq( 1 )
+            m.d.comb += [
+              self.rc.data.eq( self.alu.y ),
+              self.rc.en.eq( 1 )
+            ]
           m.next = "CPU_PC_LOAD"
         # "Immediate-Based" instructions:
         with m.Elif( self.opcode == OP_IMM ):
           alu_imm_op( self, m )
           with m.If( ( self.rc.addr & 0x1F ) != 0 ):
-            m.d.comb += self.rc.data.eq( self.alu.y )
-            m.d.comb += self.rc.en.eq( 1 )
+            m.d.comb += [
+              self.rc.data.eq( self.alu.y ),
+              self.rc.en.eq( 1 )
+            ]
           m.next = "CPU_PC_LOAD"
         with m.Elif( self.opcode == OP_SYSTEM ):
           # "EBREAK" instruction: enter the interrupt context
           # with 'breakpoint' as the cause of the exception.
-          with m.If( ( ( self.ra.addr & 0x1F ) == 0 )
-                   & ( ( self.rc.addr & 0x1F ) == 0 )
+          with m.If( ( self.ra.addr[ :5 ] == 0 )
+                   & ( self.rc.addr[ :5 ] == 0 )
                    & ( self.f   == 0 )
                    & ( self.imm == 0x001 ) ):
             trigger_trap( self, m, TRAP_BREAK )
@@ -334,8 +338,8 @@ class CPU( Elaboratable ):
           with m.Elif( self.f == F_TRAPS ):
             # An 'empty' ECALL instruction should raise an
             # 'environment-call-from-M-mode" exception.
-            with m.If( ( ( self.ra.addr & 0x1F ) == 0 ) &
-                       ( ( self.rc.addr & 0x1F ) == 0 ) &
+            with m.If( ( self.ra.addr[ :5 ] == 0 ) &
+                       ( self.rc.addr[ :5 ] == 0 ) &
                        ( self.imm == 0 ) ):
               trigger_trap( self, m, TRAP_ECALL )
             # 'MTRET' should return from an interrupt context.
@@ -556,6 +560,9 @@ class CPU( Elaboratable ):
 p = 0
 f = 0
 
+# Import test programs and expected runtime register values.
+from programs import *
+
 # Helper method to check expected CPU register / memory values
 # at a specific point during a test program.
 def check_vals( expected, ni, cpu ):
@@ -725,16 +732,12 @@ if __name__ == "__main__":
       # (Un-comment to suppress warning messages)
       warnings.filterwarnings( "ignore", category = DriverConflict )
       warnings.filterwarnings( "ignore", category = UnusedElaboratable )
-      from programs import led_rom
       # Disable CSRs so the design fits in an UP5K.
       cpu = CPU( led_rom )
       UpduinoV2Platform().build( ResetInserter( cpu.clk_rst )( cpu ),
                                  do_build = True,
                                  do_program = False )
   else:
-    # Import test programs and expected runtime register values.
-    from programs import *
-
     # Run testbench simulations.
     with warnings.catch_warnings():
       warnings.filterwarnings( "ignore", category = DriverConflict )

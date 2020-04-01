@@ -164,10 +164,12 @@ def rv32i_decode( self, cpu, instr ):
 def csr_rw( self, cpu, rws_c ):
   # Enable CSR writes, but wait for CPU access to read the response.
   cpu.d.sync += self.csr.rw.eq( 1 )
-  with cpu.If( rws_c >= self.rws ):
+  with cpu.If( rws_c == self.rws ):
     with cpu.If( self.rc.addr[ :5 ] != 0 ):
-      cpu.d.comb += self.rc.data.eq( self.csr.rout )
-      cpu.d.comb += self.rc.en.eq( 1 )
+      cpu.d.comb += [
+        self.rc.data.eq( self.csr.rout ),
+        self.rc.en.eq( 1 )
+      ]
   cpu.next = "CPU_PC_LOAD"
 
 # Helper method to enter the trap handler and jump to the

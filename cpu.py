@@ -195,21 +195,21 @@ class CPU( Elaboratable ):
         m.d.comb += self.fsms.eq( CPU_PC_DECODE )
         # "Load Upper Immediate" instruction:
         with m.If( self.opcode == OP_LUI ):
-          m.d.sync += self.rc.data.eq( self.imm )
+          m.d.comb += self.rc.data.eq( self.imm )
           with m.If( self.rc.addr[ :5 ] != 0 ):
             # Assert the CPU register 'write' signal.
             m.d.comb += self.rc.en.eq( 1 )
           m.next = "CPU_PC_LOAD"
         # "Add Upper Immediate to PC" instruction:
         with m.Elif( self.opcode == OP_AUIPC ):
-          m.d.sync += self.rc.data.eq( self.imm + self.ipc )
+          m.d.comb += self.rc.data.eq( self.imm + self.ipc )
           with m.If( self.rc.addr[ :5 ] != 0 ):
             m.d.comb += self.rc.en.eq( 1 )
           m.next = "CPU_PC_LOAD"
         # "Jump And Link" instruction:
         with m.Elif( self.opcode == OP_JAL ):
           m.next = "CPU_JUMP"
-          m.d.sync += self.rc.data.eq( self.ipc + 4 )
+          m.d.comb += self.rc.data.eq( self.ipc + 4 )
           with m.If( self.rc.addr[ :5 ] != 0 ):
             m.d.comb += self.rc.en.eq( 1 )
         # "Jump And Link from Register" instruction:
@@ -219,8 +219,9 @@ class CPU( Elaboratable ):
           jump_to( self, m, ( self.ra.data + self.imm ) )
           # Assert the CPU register 'write' signal on the
           # last register access wait-state.
-          m.d.sync += self.rc.data.eq( self.ipc + 4 )
-          with m.If( self.rc.addr[ :5 ] != 0 ):
+          m.d.comb += self.rc.data.eq( self.ipc + 4 )
+          with m.If( ( self.rc.addr[ :5 ] != 0 ) &
+                     ( rws_c == self.rws ) ):
             m.d.comb += self.rc.en.eq( 1 )
         # "Conditional Branch" instructions:
         with m.Elif( self.opcode == OP_BRANCH ):
@@ -270,7 +271,9 @@ class CPU( Elaboratable ):
         # "Load from Memory" instructions:
         # Addresses in 0x2xxxxxxx memory space are treated as RAM.
         # There are no alignment requirements (yet).
-        with m.Elif( self.opcode == OP_LOAD ):
+        # Loads to r0 are treated as nops.
+        with m.Elif( ( self.opcode == OP_LOAD ) &
+                     ( self.rc.addr[ :5 ] != 0 ) ):
           # Populate 'mp' with the memory address to load from.
           m.d.comb += self.mp.eq( self.ra.data + self.imm )
           with m.If( ( self.mp & 0xE0000000 ) == 0x20000000 ):
@@ -309,13 +312,15 @@ class CPU( Elaboratable ):
         with m.Elif( self.opcode == OP_REG ):
           alu_reg_op( self, m )
           with m.If( ( self.rc.addr & 0x1F ) != 0 ):
-            m.d.sync += self.rc.data.eq( self.alu.y )
+            m.d.comb += self.rc.data.eq( self.alu.y )
+            m.d.comb += self.rc.en.eq( 1 )
           m.next = "CPU_PC_LOAD"
         # "Immediate-Based" instructions:
         with m.Elif( self.opcode == OP_IMM ):
           alu_imm_op( self, m )
           with m.If( ( self.rc.addr & 0x1F ) != 0 ):
-            m.d.sync += self.rc.data.eq( self.alu.y )
+            m.d.comb += self.rc.data.eq( self.alu.y )
+            m.d.comb += self.rc.en.eq( 1 )
           m.next = "CPU_PC_LOAD"
         with m.Elif( self.opcode == OP_SYSTEM ):
           # "EBREAK" instruction: enter the interrupt context
@@ -431,13 +436,15 @@ class CPU( Elaboratable ):
         # should trigger an error.
         with m.Else():
           m.next = "CPU_PC_LOAD"
-        # Wait until register access wait-states elapse.
+        # Wait until register access wait-states elapse, and
+        # forbid register writes on the first tick.
+        with m.If( rws_c == 0 ):
+          m.d.comb += self.rc.en.eq( 0 )
         with m.If( rws_c < self.rws ):
           m.d.sync += [
             rws_c.eq( rws_c + 1 ),
             self.pc.eq( self.ipc )
           ]
-          m.d.comb += self.rc.en.eq( 0 )
           m.next = "CPU_PC_DECODE"
       # "Jump" operation (or "Branch" if the branch is taken).
       with m.State( "CPU_JUMP" ):
@@ -446,6 +453,7 @@ class CPU( Elaboratable ):
         #  exception may be triggered if the address is invalid)
         jump_to( self, m, ( self.ipc + self.imm ) )
       # "Load / Store operation" - wait for memory access to finish.
+      # Note: This state is skipped on loads to r0.
       with m.State( "CPU_LDST" ):
         m.d.comb += self.fsms.eq( CPU_LDST )
         # Maintain the cominatorial logic holding the memory
@@ -475,47 +483,41 @@ class CPU( Elaboratable ):
         with m.Elif( ( ( self.mp & 0xE0000000 ) != 0x20000000 ) & ( nvmws_c < self.nvmws ) ):
           m.d.sync += nvmws_c.eq( nvmws_c + 1 )
         with m.Elif( self.opcode == OP_LOAD ):
+          m.next = "CPU_PC_LOAD"
           # Assert the CPU register 'write' signal.
-          with m.If( self.rc.addr[ :5 ] != 0 ):
-            m.d.comb += self.rc.en.eq( 1 )
+          m.d.comb += self.rc.en.eq( 1 )
           # "Load Byte" operation:
           with m.If( self.f == F_LB ):
-            with m.If( ( self.rc.addr & 0x1F ) > 0 ):
-              with m.If( ( self.mp & 0xE0000000 ) == 0x20000000 ):
-                m.d.sync += self.rc.data.eq( Cat( self.ram.dout[ :8 ], Repl( self.ram.dout[ 7 ], 24 ) ) )
-              with m.Else():
-                m.d.sync += self.rc.data.eq( Cat( self.rom.out[ :8 ], Repl( self.ram.dout[ 7 ], 24 ) ) )
+            with m.If( ( self.mp & 0xE0000000 ) == 0x20000000 ):
+              m.d.comb += self.rc.data.eq( Cat( self.ram.dout[ :8 ], Repl( self.ram.dout[ 7 ], 24 ) ) )
+            with m.Else():
+              m.d.comb += self.rc.data.eq( Cat( self.rom.out[ :8 ], Repl( self.ram.dout[ 7 ], 24 ) ) )
           # "Load Halfword" operation:
           with m.Elif( self.f == F_LH ):
-            with m.If( ( self.rc.addr & 0x1F ) > 0 ):
-              with m.If( ( self.mp & 0xE0000000 ) == 0x20000000 ):
-                m.d.sync += self.rc.data.eq( Cat( self.ram.dout[ :16 ], Repl( self.ram.dout[ 15 ], 16 ) ) )
-              with m.Else():
-                m.d.sync += self.rc.data.eq( Cat( self.rom.out[ :16 ], Repl( self.ram.dout[ 15 ], 16 ) ) )
+            with m.If( ( self.mp & 0xE0000000 ) == 0x20000000 ):
+              m.d.comb += self.rc.data.eq( Cat( self.ram.dout[ :16 ], Repl( self.ram.dout[ 15 ], 16 ) ) )
+            with m.Else():
+              m.d.comb += self.rc.data.eq( Cat( self.rom.out[ :16 ], Repl( self.ram.dout[ 15 ], 16 ) ) )
           # "Load Word" operation:
           with m.Elif( self.f == F_LW ):
-            with m.If( ( self.rc.addr & 0x1F ) > 0 ):
-              with m.If( ( self.mp & 0xE0000000 ) == 0x20000000 ):
-                m.d.sync += self.rc.data.eq( self.ram.dout )
-              with m.Else():
-                m.d.sync += self.rc.data.eq( self.rom.out )
+            with m.If( ( self.mp & 0xE0000000 ) == 0x20000000 ):
+              m.d.comb += self.rc.data.eq( self.ram.dout )
+            with m.Else():
+              m.d.comb += self.rc.data.eq( self.rom.out )
           # "Load Byte" (without sign extension) operation:
           with m.Elif( self.f == F_LBU ):
-            with m.If( ( self.rc.addr & 0x1F ) > 0 ):
-              with m.If( ( self.mp & 0xE0000000 ) == 0x20000000 ):
-                m.d.sync += self.rc.data.eq( self.ram.dout & 0xFF )
-              with m.Else():
-                m.d.sync += self.rc.data.eq( self.rom.out & 0xFF )
+            with m.If( ( self.mp & 0xE0000000 ) == 0x20000000 ):
+              m.d.comb += self.rc.data.eq( self.ram.dout & 0xFF )
+            with m.Else():
+              m.d.comb += self.rc.data.eq( self.rom.out & 0xFF )
           # "Load Halfword" (without sign extension) operation:
           with m.Elif( self.f == F_LHU ):
-            with m.If( ( self.rc.addr & 0x1F ) > 0 ):
-              with m.If( ( self.mp & 0xE0000000 ) == 0x20000000 ):
-                m.d.sync += self.rc.data.eq(
-                  ( self.ram.dout & 0xFFFF ) )
-              with m.Else():
-                m.d.sync += self.rc.data.eq(
-                  ( self.rom.out & 0xFFFF ) )
-          m.next = "CPU_PC_LOAD"
+            with m.If( ( self.mp & 0xE0000000 ) == 0x20000000 ):
+              m.d.comb += self.rc.data.eq(
+                ( self.ram.dout & 0xFFFF ) )
+            with m.Else():
+              m.d.comb += self.rc.data.eq(
+                ( self.rom.out & 0xFFFF ) )
         with m.Else():
           m.next = "CPU_PC_LOAD"
       # "Trap Entry" - update PC and EPC CSR, and context switch.
@@ -539,41 +541,6 @@ class CPU( Elaboratable ):
       # "PC Load Letter" - increment the PC.
       with m.State( "CPU_PC_LOAD" ):
         m.d.comb += self.fsms.eq( CPU_PC_LOAD )
-        # Apply CPU register results if necessary.
-        with m.If( self.opcode == OP_REG ):
-          alu_reg_op( self, m )
-          # Assert the CPU register 'write' signal.
-          with m.If( self.rc.addr[ :5 ] != 0 ):
-            m.d.comb += self.rc.en.eq( 1 )
-        with m.Elif( self.opcode == OP_IMM ):
-          alu_imm_op( self, m )
-          # Assert the CPU register 'write' signal.
-          with m.If( self.rc.addr[ :5 ] != 0 ):
-            m.d.comb += self.rc.en.eq( 1 )
-        with m.Elif( ( self.opcode == OP_LUI ) |
-                     ( self.opcode == OP_AUIPC ) ):
-          # Assert the CPU register 'write' signal.
-          with m.If( self.rc.addr[ :5 ] != 0 ):
-            m.d.comb += self.rc.en.eq( 1 )
-        if CSR_EN:
-          with m.Elif( ( self.opcode == OP_SYSTEM ) & (
-                     ( self.f == F_CSRRW ) | ( self.f == F_CSRRWI ) |
-                     ( self.f == F_CSRRC ) | ( self.f == F_CSRRCI ) |
-                     ( self.f == F_CSRRS ) | ( self.f == F_CSRRSI ) ) ):
-            # Assert the CPU register 'write' signal.
-            with m.If( self.rc.addr[ :5 ] != 0 ):
-              m.d.comb += self.rc.en.eq( 1 )
-        with m.Elif( self.opcode == OP_LOAD ):
-          # Maintain the cominatorial logic holding the memory
-          # address at the 'mp' (memory pointer) value.
-          m.d.comb += self.mp.eq( self.ra.data + self.imm )
-          with m.If( ( self.mp & 0xE0000000 ) == 0x20000000 ):
-            m.d.comb += self.ram.addr.eq( self.mp & 0x1FFFFFFF )
-          with m.Else():
-            m.d.comb += self.rom.addr.eq( self.mp )
-          # Assert the CPU register 'write' signal.
-          with m.If( self.rc.addr[ :5 ] != 0 ):
-            m.d.comb += self.rc.en.eq( 1 )
         # Clear the CSR r/w signal, and increment the PC.
         if CSR_EN:
           m.d.sync += self.csr.rw.eq( 0 )
@@ -588,9 +555,6 @@ class CPU( Elaboratable ):
 # Keep track of test pass / fail rates.
 p = 0
 f = 0
-
-# Import test programs and expected runtime register values.
-from programs import *
 
 # Helper method to check expected CPU register / memory values
 # at a specific point during a test program.
@@ -761,12 +725,16 @@ if __name__ == "__main__":
       # (Un-comment to suppress warning messages)
       warnings.filterwarnings( "ignore", category = DriverConflict )
       warnings.filterwarnings( "ignore", category = UnusedElaboratable )
+      from programs import led_rom
       # Disable CSRs so the design fits in an UP5K.
       cpu = CPU( led_rom )
       UpduinoV2Platform().build( ResetInserter( cpu.clk_rst )( cpu ),
                                  do_build = True,
                                  do_program = False )
   else:
+    # Import test programs and expected runtime register values.
+    from programs import *
+
     # Run testbench simulations.
     with warnings.catch_warnings():
       warnings.filterwarnings( "ignore", category = DriverConflict )

@@ -166,7 +166,7 @@ def csr_rw( self, cpu, rws_c ):
   cpu.d.sync += self.csr.rw.eq( 1 )
   with cpu.If( rws_c >= self.rws ):
     with cpu.If( self.rc.addr[ :5 ] != 0 ):
-      cpu.d.sync += self.rc.data.eq( self.csr.rout )
+      cpu.d.comb += self.rc.data.eq( self.csr.rout )
       cpu.d.comb += self.rc.en.eq( 1 )
   cpu.next = "CPU_PC_LOAD"
 

@@ -104,7 +104,10 @@ ALU_STRS = {
 
 # ID numbers for different types of traps.
 TRAP_IMIS  = 1
+TRAP_ILLI  = 2
 TRAP_BREAK = 3
+TRAP_LMIS  = 4
+TRAP_SMIS  = 6
 TRAP_ECALL = 11
 # CSR definitions, for 'ECALL' system instructions.
 # Like with other "I-type" instructions, the 'funct3' bits select

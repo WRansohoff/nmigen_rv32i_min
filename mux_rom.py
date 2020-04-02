@@ -98,8 +98,8 @@ def muxrom_test( mrom ):
   yield from muxrom_read_ut( mrom, 2, 0x4,
     LITTLE_END( ( yield mrom.roms[ 2 ].data[ 1 ] ) ) )
   # Test byte-aligned and halfword-aligned reads.
-  yield from muxrom_read_ut( mrom, 0, 0x1, 0x89674523 )
-  yield from muxrom_read_ut( mrom, 1, 0x2, 0xAB896745 )
+  yield from muxrom_read_ut( mrom, 0, 0x1, 0x00674523 )
+  yield from muxrom_read_ut( mrom, 1, 0x2, 0x00006745 )
   # Test reading from an out-of-range ROM.
   yield from muxrom_read_ut( mrom, 3, 0x0, 0x00000000 )
 

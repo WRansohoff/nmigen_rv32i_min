@@ -270,44 +270,52 @@ class CPU( Elaboratable ):
             m.next = "CPU_PC_LOAD"
         # "Load from Memory" instructions:
         # Addresses in 0x2xxxxxxx memory space are treated as RAM.
-        # There are no alignment requirements (yet).
+        # Addresses must be aligned to their access width.
         # Loads to r0 are treated as nops.
         with m.Elif( ( self.opcode == OP_LOAD ) &
                      ( self.rc.addr[ :5 ] != 0 ) ):
           # Populate 'mp' with the memory address to load from.
           m.d.comb += self.mp.eq( self.ra.data + self.imm )
-          with m.If( ( self.mp & 0xE0000000 ) == 0x20000000 ):
-            m.d.comb += self.ram.addr.eq( self.mp & 0x1FFFFFFF )
+          # Trigger an exception if the load is mis-aligned.
+          with m.If( ( self.mp << ( 2 - self.f[ :2 ] ) )[ :2 ] != 0 ):
+            trigger_trap( self, m, TRAP_LMIS )
           with m.Else():
-            m.d.comb += self.rom.addr.eq( self.mp )
-          # Memory access is not instantaneous, so the next state is
-          # 'CPU_LDST' which allows time for the data to arrive.
-          m.next = "CPU_LDST"
+            with m.If( ( self.mp & 0xE0000000 ) == 0x20000000 ):
+              m.d.comb += self.ram.addr.eq( self.mp & 0x1FFFFFFF )
+            with m.Else():
+              m.d.comb += self.rom.addr.eq( self.mp )
+            # Memory access is not instantaneous, so the next state is
+            # 'CPU_LDST' which allows time for the data to arrive.
+            m.next = "CPU_LDST"
         # "Store to Memory" instructions:
         # Addresses in 0x2xxxxxxx memory space are treated as RAM.
         # Writes to other addresses are ignored because,
         # surprise surprise, ROM is read-only.
-        # There are no alignment requirements (yet).
+        # Addresses must be aligned to their access width.
         with m.Elif( self.opcode == OP_STORE ):
           # Populate 'mp' with the memory address to load from.
           m.d.comb += self.mp.eq( self.ra.data + self.imm )
-          with m.If( ( self.mp & 0xE0000000 ) == 0x20000000 ):
-            m.d.comb += [
-              self.ram.addr.eq( self.mp & 0x1FFFFFFF ),
-              self.ram.din.eq( self.rb.data )
-            ]
-            with m.If( rws_c == self.rws ):
-              m.d.comb += self.ram.wen.eq( 1 )
-            # "Store Byte" operation:
-            with m.If( self.f == F_SB ):
-              m.d.comb += self.ram.dw.eq( RAM_DW_8 )
-            # "Store Halfword" operation:
-            with m.Elif( self.f == F_SH ):
-              m.d.comb += self.ram.dw.eq( RAM_DW_16 )
-            # "Store Word" operation:
-            with m.Elif( self.f == F_SW ):
-              m.d.comb += self.ram.dw.eq( RAM_DW_32 )
-          m.next = "CPU_LDST"
+          # Trigger an exception if the store is mis-aligned.
+          with m.If( ( self.mp << ( 2 - self.f[ :2 ] ) )[ :2 ] != 0 ):
+            trigger_trap( self, m, TRAP_SMIS )
+          with m.Else():
+            with m.If( ( self.mp & 0xE0000000 ) == 0x20000000 ):
+              m.d.comb += [
+                self.ram.addr.eq( self.mp & 0x1FFFFFFF ),
+                self.ram.din.eq( self.rb.data )
+              ]
+              with m.If( rws_c == self.rws ):
+                m.d.comb += self.ram.wen.eq( 1 )
+              # "Store Byte" operation:
+              with m.If( self.f == F_SB ):
+                m.d.comb += self.ram.dw.eq( RAM_DW_8 )
+              # "Store Halfword" operation:
+              with m.Elif( self.f == F_SH ):
+                m.d.comb += self.ram.dw.eq( RAM_DW_16 )
+              # "Store Word" operation:
+              with m.Elif( self.f == F_SW ):
+                m.d.comb += self.ram.dw.eq( RAM_DW_32 )
+            m.next = "CPU_LDST"
         # "Register-Based" instructions:
         with m.Elif( self.opcode == OP_REG ):
           alu_reg_op( self, m )
@@ -495,13 +503,13 @@ class CPU( Elaboratable ):
             with m.If( ( self.mp & 0xE0000000 ) == 0x20000000 ):
               m.d.comb += self.rc.data.eq( Cat( self.ram.dout[ :8 ], Repl( self.ram.dout[ 7 ], 24 ) ) )
             with m.Else():
-              m.d.comb += self.rc.data.eq( Cat( self.rom.out[ :8 ], Repl( self.ram.dout[ 7 ], 24 ) ) )
+              m.d.comb += self.rc.data.eq( Cat( self.rom.out[ :8 ], Repl( self.rom.out[ 7 ], 24 ) ) )
           # "Load Halfword" operation:
           with m.Elif( self.f == F_LH ):
             with m.If( ( self.mp & 0xE0000000 ) == 0x20000000 ):
               m.d.comb += self.rc.data.eq( Cat( self.ram.dout[ :16 ], Repl( self.ram.dout[ 15 ], 16 ) ) )
             with m.Else():
-              m.d.comb += self.rc.data.eq( Cat( self.rom.out[ :16 ], Repl( self.ram.dout[ 15 ], 16 ) ) )
+              m.d.comb += self.rc.data.eq( Cat( self.rom.out[ :16 ], Repl( self.rom.out[ 15 ], 16 ) ) )
           # "Load Word" operation:
           with m.Elif( self.f == F_LW ):
             with m.If( ( self.mp & 0xE0000000 ) == 0x20000000 ):

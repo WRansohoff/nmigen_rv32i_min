@@ -10,27 +10,22 @@
 #undef RVTEST_PASS
 #define RVTEST_PASS              \
         fence;                   \
-        li TESTNUM, 1;           \
         li a7, 93;               \
         li a0, 0;                \
-        ecall
+        ecall;
 
 #undef RVTEST_FAIL
 #define RVTEST_FAIL              \
         fence;                   \
-1:      beqz TESTNUM, 1b;        \
-        sll TESTNUM, TESTNUM, 1; \
-        or TESTNUM, TESTNUM, 1;  \
         li a7, 93;               \
-        addi a0, TESTNUM, 0;     \
-        ecall
+        li a0, 0xBAD;            \
+        ecall;
 
 #define RV_COMPLIANCE_HALT       \
-  bne x0, TESTNUM, pass;         \
-  fail:                          \
-    RVTEST_FAIL;                 \
   pass:                          \
     RVTEST_PASS                  \
+  fail:                          \
+    RVTEST_FAIL;                 \
 
 #define RV_COMPLIANCE_RV32M      \
   RVTEST_RV32M                   \

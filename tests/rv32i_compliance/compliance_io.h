@@ -17,9 +17,8 @@
 
 // Assert that a general-purpose register has a specified value.
 // Use the 'TEST_CASE' logic from 'riscv-tests'.
-// 'Scratch' input register is not used.
 #define RVTEST_IO_ASSERT_GPR_EQ( _G, _R, _I ) \
-  li  x7, MASK_XLEN( _I );                    \
-  bne _R, x7, fail;
+  li  _G, MASK_XLEN( _I );                    \
+  bne _R, _G, fail;
 
 #endif

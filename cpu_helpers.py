@@ -175,17 +175,16 @@ def csr_rw( self, cpu, rws_c ):
 # Helper method to enter the trap handler and jump to the
 # appropriate address.
 def trigger_trap( self, cpu, trap_num ):
-  if CSR_EN:
-    # Set 'mcause'.
-    cpu.d.sync += self.csr.mcause.shadow.eq( trap_num )
-    # Set PC to the interrupt handler address.
-    with cpu.If( ( self.csr.mtvec.shadow & 0b11 ) == MTVEC_MODE_DIRECT ):
-      cpu.d.sync += self.pc.eq( self.csr.mtvec.shadow & 0xFFFFFFFC )
-    with cpu.Else():
-      cpu.d.sync += self.pc.eq(
-        ( self.csr.mtvec.shadow & 0xFFFFFFFC ) + ( trap_num << 2 )
-      )
-    # 'mepc' is currently populated in the 'CPU_TRAP_ENTER' FSM state.
+  # Set 'mcause'.
+  cpu.d.sync += self.csr.mcause.shadow.eq( trap_num )
+  # Set PC to the interrupt handler address.
+  with cpu.If( ( self.csr.mtvec.shadow & 0b11 ) == MTVEC_MODE_DIRECT ):
+    cpu.d.sync += self.pc.eq( self.csr.mtvec.shadow & 0xFFFFFFFC )
+  with cpu.Else():
+    cpu.d.sync += self.pc.eq(
+      ( self.csr.mtvec.shadow & 0xFFFFFFFC ) + ( trap_num << 2 )
+    )
+  # 'mepc' is currently populated in the 'CPU_TRAP_ENTER' FSM state.
   cpu.next = "CPU_TRAP_ENTER"
 
 # Helper method to generate logic which moves the CPU's
@@ -193,9 +192,8 @@ def trigger_trap( self, cpu, trap_num ):
 def jump_to( self, cpu, npc ):
   # Can only jump to a word-aligned address.
   with cpu.If( npc & 0b11 != 0 ):
-    if CSR_EN:
-      # Write the bad address into the 'mtval' CSR.
-      cpu.d.sync += self.csr.mtval.shadow.eq( npc )
+    # Write the bad address into the 'mtval' CSR.
+    cpu.d.sync += self.csr.mtval.shadow.eq( npc )
     # Trigger an 'instruction address misaligned' trap.
     trigger_trap( self, cpu, TRAP_IMIS )
   with cpu.Else():
@@ -208,11 +206,8 @@ def jump_to( self, cpu, npc ):
 
 # Helper method to increment the 'minstret' CSR.
 def minstret_incr( self, cpu ):
-  if CSR_EN:
-    # Increment 64-bit 'MINSTRET' counter unless it is inhibited.
-    with cpu.If( self.csr.mcountinhibit.shadow.bit_select( 2, 1 ) == 0 ):
-      cpu.d.sync += self.csr.minstret.shadow.eq( self.csr.minstret.shadow + 1 )
-      with cpu.If( self.csr.minstret.shadow == 0xFFFFFFFF ):
-        cpu.d.sync += self.csr.minstreth.shadow.eq( self.csr.minstreth.shadow + 1 )
-  else:
-    pass
+  # Increment 64-bit 'MINSTRET' counter unless it is inhibited.
+  with cpu.If( self.csr.mcountinhibit.shadow.bit_select( 2, 1 ) == 0 ):
+    cpu.d.sync += self.csr.minstret.shadow.eq( self.csr.minstret.shadow + 1 )
+    with cpu.If( self.csr.minstret.shadow == 0xFFFFFFFF ):
+      cpu.d.sync += self.csr.minstreth.shadow.eq( self.csr.minstreth.shadow + 1 )

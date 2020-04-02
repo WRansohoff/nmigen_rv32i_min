@@ -2,7 +2,7 @@
 
 This is a work-in-progress implementation of [the core `RV32I` `RISC-V` instruction set](https://riscv.org/specifications/isa-spec-pdf/), written with nMigen.
 
-Currently it only runs very small pre-programmed assembly ROM images, and it won't fit in an iCE40UP5K without disabling CSR instructions. But it seems to work! :grinning: I'm planning to add a module to read GCC-compiled program data from SPI Flash once the design is smaller.
+Currently it only runs very small pre-programmed assembly ROM images, and it barely fits in an `iCE40UP5K`, but it seems to work. I'm planning to add a debugging interface and a module to read GCC-compiled program data from SPI Flash once the design is smaller.
 
 Know that I'm still learning how to use nMigen, and I wasn't experienced with digital logic design to begin with. So on the off chance that anybody stumbles across this, suggestions are always welcome!
 
@@ -32,7 +32,9 @@ Each test simulation also creates a `.vcd` file containing the waveform results,
 
 Note that I've only implemented the most basic exceptions, interrupts don't work, and I'll need to implement some buses before I can add any peripherals. Fortunately, [the `nmigen-soc` repository](https://github.com/nmigen/nmigen-soc) contains a [Wishbone bus implementation](https://opencores.org/howto/wishbone), but I need to do some reading to figure out how that works.
 
-The CPU design is also very inefficient; it uses almost 7,250 cells when built for an iCE40, and it sounds like a minimal implementation shouldn't take many more than 1,000.
+Until I add a GPIO peripheral and/or debugging interface, the only means of testing the CPU in real hardware is through a non-standard "LED" opcode. It sets the output states of pins 39-41 to the 3 least-significant bits of a given CPU register; those pins are usually connected to LEDs on `iCE40UP` boards because they also have PWM capabilities.
+
+The CPU design is also fairly inefficient; it uses a little over 4,000 LUTs, and it sounds like a minimal implementation shouldn't take many more than 1,000.
 
 So even though this table of test coverage looks okay, there's plenty more work to do before it can run an arbitrary C program.
 
@@ -108,8 +110,6 @@ The `MIE` and `MIP` CSRs won't really function properly until I finish implement
 | `MCYCLE`        | :heavy_check_mark: |
 | `MINSTRET`      | :heavy_check_mark: |
 | `MCOUNTINHIBIT` | :heavy_check_mark: |
-
-There is a flag in `isa.py` to disable CSR functionality, which shrinks the design enough for it to fit in a cheap-and-cheerful iCE40UP5K.
 
 # Notes to Self
 

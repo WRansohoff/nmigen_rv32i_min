@@ -12,14 +12,14 @@
         fence;                   \
         li a7, 93;               \
         li a0, 0;                \
-        ecall;
+        j pass;
 
 #undef RVTEST_FAIL
 #define RVTEST_FAIL              \
         fence;                   \
         li a7, 93;               \
         li a0, 0xBAD;            \
-        ecall;
+        j fail;
 
 #define RV_COMPLIANCE_HALT       \
   pass:                          \

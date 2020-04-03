@@ -63,8 +63,6 @@ class CPU( Elaboratable ):
     self.ramws  = Signal( 3, reset = 0b001 )
     # CPU register access wait states.
     self.rws    = Signal( 2, reset = 0b10 )
-    # CSR access wait states.
-    self.cws    = Signal( 2, reset = 0b00 )
     # The ALU submodule which performs logical operations.
     self.alu    = ALU()
     # CSR 'system registers'.
@@ -82,12 +80,6 @@ class CPU( Elaboratable ):
     self.red_on = Signal( 1, reset = 0b0 )
     self.grn_on = Signal( 1, reset = 0b0 )
     self.blu_on = Signal( 1, reset = 0b0 )
-
-    # Debugging signal(s):
-    # Track FSM state. I was going to delete this, but when I did,
-    # it added over 100 gates to the final bitstream. Weird.
-    self.fsms = Signal( range( CPU_STATES_MAX ),
-                        reset = CPU_PC_ROM_FETCH )
 
   # CPU object's 'elaborate' method to generate the hardware logic.
   def elaborate( self, platform ):
@@ -153,7 +145,6 @@ class CPU( Elaboratable ):
     with m.FSM() as fsm:
       # "Reset state": Wait a few ticks after reset, to let ROM load.
       with m.State( "CPU_RESET" ):
-        m.d.comb += self.fsms.eq( CPU_RESET )
         with m.If( rsc > 0 ):
           m.d.sync += rsc.eq( rsc - 1 )
         with m.Else():
@@ -161,10 +152,9 @@ class CPU( Elaboratable ):
       # "ROM Fetch": Wait for the instruction to load from ROM, and
       #              populate register fields to prepare for decoding.
       with m.State( "CPU_PC_ROM_FETCH" ):
-        m.d.comb += self.fsms.eq( CPU_PC_ROM_FETCH )
         # If the PC address is in RAM, maintain combinatorial
         # logic to read the instruction from RAM.
-        with m.If( ( ( self.pc ) & 0xE0000000 ) == 0x20000000 ):
+        with m.If( ( self.pc & 0xE0000000 ) == 0x20000000 ):
           m.d.comb += self.ram.addr.eq( ( self.pc ) & 0x1FFFFFFF )
           with m.If( ramws_c < self.ramws ):
             m.d.sync += ramws_c.eq( ramws_c + 1 )
@@ -187,7 +177,6 @@ class CPU( Elaboratable ):
       # "Decode PC": Figure out what sort of instruction to execute,
       #              and prepare associated registers.
       with m.State( "CPU_PC_DECODE" ):
-        m.d.comb += self.fsms.eq( CPU_PC_DECODE )
         # "Load Upper Immediate" instruction:
         with m.If( self.opcode == OP_LUI ):
           m.d.comb += self.rc.data.eq( self.imm )
@@ -356,68 +345,25 @@ class CPU( Elaboratable ):
             with m.Else():
               m.next = "CPU_PC_LOAD"
           # Defer to the CSR module for valid 'CSRRx' operations.
-          # 'CSRRW': Write value from register to CSR.
-          with m.Elif( self.f == F_CSRRW ):
+          # 'CSRR[WSC]': Write/Set/Clear CSR value from a register.
+          with m.Elif( self.f[ 2 ] == 0 ):
             m.d.comb += [
               self.csr.rin.eq( self.ra.data ),
               self.csr.rsel.eq( self.imm ),
-              self.csr.f.eq( F_CSRRW )
-            ]
-            csr_rw( self, m, rws_c )
-          # 'CSRRS' set specified bits in a CSR from a register.
-          with m.Elif( self.f == F_CSRRS ):
-            m.d.comb += [
-              self.csr.rin.eq( self.ra.data ),
-              self.csr.rsel.eq( self.imm ),
-              self.csr.f.eq( F_CSRRS )
-            ]
-            csr_rw( self, m, rws_c )
-          # 'CSRRC' clear specified bits in a CSR from a register.
-          with m.Elif( self.f == F_CSRRC ):
-            m.d.comb += [
-              self.csr.rin.eq( self.ra.data ),
-              self.csr.rsel.eq( self.imm ),
-              self.csr.f.eq( F_CSRRC )
+              self.csr.f.eq( self.f )
             ]
             csr_rw( self, m, rws_c )
           # Note: 'CSRRxI' operations treat the 'rs1' / 'ra'
           # value as a 5-bit sign-extended immediate.
-          # 'CSRRWI': Write immediate value to CSR.
-          with m.Elif( self.f == F_CSRRWI ):
-            m.d.comb += [
-              self.csr.rsel.eq( self.imm ),
-              self.csr.f.eq( F_CSRRWI )
-            ]
-            with m.If( self.ra.addr.bit_select( 4, 1 ) != 0 ):
-              m.d.comb += self.csr.rin.eq( 0xFFFFFFE0 | ( self.ra.addr & 0x1F ) )
-            with m.Else():
-              m.d.comb += self.csr.rin.eq( ( self.ra.addr & 0x1F ) )
-            csr_rw( self, m, rws_c )
-          # 'CSRRSI' set immediate bits in a CSR.
-          with m.Elif( self.f == F_CSRRSI ):
-            m.d.comb += [
-              self.csr.rsel.eq( self.imm ),
-              self.csr.f.eq( F_CSRRSI )
-            ]
-            with m.If( self.ra.addr.bit_select( 4, 1 ) != 0 ):
-              m.d.comb += self.csr.rin.eq( 0xFFFFFFE0 | ( self.ra.addr & 0x1F ) )
-            with m.Else():
-              m.d.comb += self.csr.rin.eq( ( self.ra.addr & 0x1F ) )
-            csr_rw( self, m, rws_c )
-          # 'CSRRCI' clear immediate bits in a CSR.
-          with m.Elif( self.f == F_CSRRCI ):
-            m.d.comb += [
-              self.csr.rsel.eq( self.imm ),
-              self.csr.f.eq( F_CSRRCI )
-            ]
-            with m.If( self.ra.addr.bit_select( 4, 1 ) != 0 ):
-              m.d.comb += self.csr.rin.eq( 0xFFFFFFE0 | ( self.ra.addr & 0x1F ) )
-            with m.Else():
-              m.d.comb += self.csr.rin.eq( ( self.ra.addr & 0x1F ) )
-            csr_rw( self, m, rws_c )
-          # Halt execution at an unrecognized 'SYSTEM' instruction.
+          # 'CSRR[WSC]I': Write/Set/Clear immediate value to CSR.
           with m.Else():
-            m.next = "CPU_PC_ROM_FETCH"
+            m.d.comb += [
+              self.csr.rsel.eq( self.imm ),
+              self.csr.rin.eq( Cat( self.ra.addr[ :5 ],
+                               Repl( self.ra.addr[ 4 ], 27 ) ) ),
+              self.csr.f.eq( self.f )
+            ]
+            csr_rw( self, m, rws_c )
         # "Memory Fence" instruction:
         # For now, this doesn't actually need to do anything.
         # Memory operations are globally visible as soon as they
@@ -454,14 +400,12 @@ class CPU( Elaboratable ):
           m.next = "CPU_PC_DECODE"
       # "Jump" operation (or "Branch" if the branch is taken).
       with m.State( "CPU_JUMP" ):
-        m.d.comb += self.fsms.eq( CPU_JUMP )
         # ('m.next' is set in the 'jump_to' helper method; an
         #  exception may be triggered if the address is invalid)
         jump_to( self, m, ( self.ipc + self.imm ) )
       # "Load / Store operation" - wait for memory access to finish.
       # Note: This state is skipped on loads to r0.
       with m.State( "CPU_LDST" ):
-        m.d.comb += self.fsms.eq( CPU_LDST )
         # Maintain the cominatorial logic holding the memory
         # address at the 'mp' (memory pointer) value.
         m.d.comb += self.mp.eq( self.ra.data + self.imm )
@@ -528,7 +472,6 @@ class CPU( Elaboratable ):
           m.next = "CPU_PC_LOAD"
       # "Trap Entry" - update PC and EPC CSR, and context switch.
       with m.State( "CPU_TRAP_ENTER" ):
-        m.d.comb += self.fsms.eq( CPU_TRAP_ENTER )
         m.d.sync += [
           self.csr.mepc.shadow.eq( self.ipc ),
           self.irq.eq( 1 )
@@ -536,7 +479,6 @@ class CPU( Elaboratable ):
         m.next = "CPU_PC_ROM_FETCH"
       # "Trap Exit" - update PC and context switch.
       with m.State( "CPU_TRAP_EXIT" ):
-        m.d.comb += self.fsms.eq( CPU_TRAP_EXIT )
         m.d.sync += [
           self.pc.eq( self.csr.mepc.shadow ),
           self.irq.eq( 0 )
@@ -544,7 +486,6 @@ class CPU( Elaboratable ):
         m.next = "CPU_PC_ROM_FETCH"
       # "PC Load Letter" - increment the PC.
       with m.State( "CPU_PC_LOAD" ):
-        m.d.comb += self.fsms.eq( CPU_PC_LOAD )
         # Clear the CSR r/w signal, and increment the PC.
         m.d.sync += self.csr.rw.eq( 0 )
         jump_to( self, m, ( self.ipc + 4 ) )
@@ -742,7 +683,8 @@ if __name__ == "__main__":
       warnings.filterwarnings( "ignore", category = DriverConflict )
 
       print( '--- CPU Tests ---' )
-      cpu_sim( led_test )
+      # Simulate the 'infinite loop' ROM to screen for syntax errors.
+      cpu_sim( loop_test )
       # Run auto-generated RV32I compliance tests with a multiplexed
       # ROM module containing a different program for each one.
       # (The CPU gets reset between each program.)
@@ -756,8 +698,8 @@ if __name__ == "__main__":
       cpu_sim( ram_pc_test )
       # Simulate a basic 'quick test' ROM.
       cpu_sim( quick_test )
-      # Simulate the 'infinite loop test' ROM.
-      cpu_sim( loop_test )
+      # Simulate the LED test ROM.
+      cpu_sim( led_test )
 
       # Done; print results.
       print( "CPU Tests: %d Passed, %d Failed"%( p, f ) )

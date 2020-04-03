@@ -152,10 +152,10 @@ def rv32i_decode( self, cpu, instr ):
   # they're placed in consistent locations when they are used.
   cpu.d.sync += [
     self.opcode.eq( instr.bit_select( 0, 7 ) ),
-    self.rc.addr.eq( ( instr.bit_select( 7,  5 ) ) | ( self.irq << 5 ) ),
+    self.rc.addr.eq( instr.bit_select( 7,  5 ) | ( self.irq << 5 ) ),
     self.f.eq( instr.bit_select( 12, 3 ) ),
-    self.ra.addr.eq( ( instr.bit_select( 15, 5 ) ) | ( self.irq << 5 ) ),
-    self.rb.addr.eq( ( instr.bit_select( 20, 5 ) ) | ( self.irq << 5 ) ),
+    self.ra.addr.eq( instr.bit_select( 15, 5 ) | ( self.irq << 5 ) ),
+    self.rb.addr.eq( instr.bit_select( 20, 5 ) | ( self.irq << 5 ) ),
     self.ff.eq( instr.bit_select( 25, 7 ) ),
     self.ipc.eq( self.pc ),
   ]

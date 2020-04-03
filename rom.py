@@ -10,7 +10,7 @@ from isa import *
 class ROM( Elaboratable ):
   def __init__( self, data ):
     # Address bits to select up to `len( data )` words by byte.
-    self.addr = Signal( range( ( len( data ) * 4 ) + 1 ), reset = 0 )
+    self.addr = Signal( range( len( data ) * 4 ), reset = 0 )
     # Data word output.
     self.out  = Signal( 32, reset = LITTLE_END( data[ 0 ] ) )
     # Data storage.
@@ -25,19 +25,15 @@ class ROM( Elaboratable ):
     m = Module()
     m.submodules.r = self.r
 
-    # Set the 'output' value to 0 if it is out of bounds.
-    with m.If( self.addr >= self.size ):
-      m.d.sync += self.out.eq( 0 )
     # Set the 'output' value to the requested 'data' array index.
     # If a read would 'spill over' into an out-of-bounds data byte,
     # set that byte to 0x00.
     # Word-aligned reads
-    with m.Elif( ( self.addr & 0b11 ) == 0b00 ):
-      m.d.comb += self.r.addr.eq( self.addr >> 2 )
+    m.d.comb += self.r.addr.eq( self.addr >> 2 )
+    with m.If( ( self.addr & 0b11 ) == 0b00 ):
       m.d.sync += self.out.eq( LITTLE_END( self.r.data ) )
     # Un-aligned reads
     with m.Else():
-      m.d.comb += self.r.addr.eq( self.addr >> 2 ),
       m.d.sync += self.out.eq(
         LITTLE_END( self.r.data << ( ( self.addr & 0b11 ) << 3 ) ) )
 
@@ -97,8 +93,6 @@ def rom_test( rom ):
   yield from rom_read_ut( rom, rom.size - 3, LITTLE_END( 0xADBEEF00 ) )
   yield from rom_read_ut( rom, rom.size - 2, LITTLE_END( 0xBEEF0000 ) )
   yield from rom_read_ut( rom, rom.size - 1, LITTLE_END( 0xEF000000 ) )
-  # Test out-of-bounds read.
-  yield from rom_read_ut( rom, rom.size + 1, 0 )
 
   # Done.
   yield Tick()

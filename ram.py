@@ -18,7 +18,7 @@ class RAM( Elaboratable ):
     self.size = ( size_words * 4 )
     # Address bits to select up to `size_words * 4` bytes.
     # (+1 to detect edge-case out-of-range writes)
-    self.addr = Signal( range( self.size + 1 ), reset = 0 )
+    self.addr = Signal( range( self.size ), reset = 0 )
     # Data word output.
     self.dout = Signal( 32, reset = 0x00000000 )
     # Data word input.
@@ -47,38 +47,26 @@ class RAM( Elaboratable ):
     # disable writes by default.
     m.d.comb += [
       self.w.en.eq( 0 ),
-      self.w.data.eq( 0 ),
-      self.dout.eq( 0 )
+      self.w.data.eq( 0 )
     ]
     m.d.sync += [
       self.wws.eq( 0 ),
     ]
 
     # Set the 'dout' value based on address and RAM data.
-    # (Return 0 if the address is out of range.)
-    with m.If( self.addr >= self.size ):
-      m.d.comb += self.dout.eq( 0x00000000 )
+    m.d.comb += self.r.addr.eq( self.addr >> 2 )
     # Word-aligned reads.
-    with m.Elif( ( self.addr & 0b11 ) == 0b00 ):
-      m.d.comb += [
-        self.r.addr.eq( self.addr >> 2 ),
-        self.dout.eq( LITTLE_END( self.r.data ) )
-      ]
+    with m.If( ( self.addr & 0b11 ) == 0b00 ):
+      m.d.comb += self.dout.eq( LITTLE_END( self.r.data ) )
     # Partial reads.
     with m.Else():
-      m.d.comb += [
-        self.r.addr.eq( self.addr >> 2 ),
-        self.dout.eq( LITTLE_END(
-          self.r.data << ( ( self.addr & 0b11 ) << 3 ) ) )
-      ]
+      m.d.comb += self.dout.eq( LITTLE_END(
+        self.r.data << ( ( self.addr & 0b11 ) << 3 ) ) )
 
     # Write the 'din' value if 'wen' is set.
     with m.If( self.wen ):
-      # (nop if the write address is out of range.)
-      with m.If( self.addr >= self.size ):
-        pass
       # Word-aligned 32-bit writes.
-      with m.Elif( ( ( self.addr & 0b11 ) == 0b00 ) & ( self.dw == RAM_DW_32 ) ):
+      with m.If( ( ( self.addr & 0b11 ) == 0b00 ) & ( self.dw == RAM_DW_32 ) ):
         m.d.comb += [
           self.w.addr.eq( self.addr >> 2 ),
           self.w.en.eq( 1 ),
@@ -225,8 +213,6 @@ def ram_test( ram ):
   yield from ram_write_ut( ram, 0x40, 0xDEADBEEF, RAM_DW_16, 0 )
   yield from ram_read_ut( ram, 0x40, 0x0000BEEF )
   yield from ram_write_ut( ram, 0x50, 0x0000BEEF, RAM_DW_16, 1 )
-  # Test out-of-bounds write.
-  yield from ram_write_ut( ram, ram.size + 5, 0x01234567, RAM_DW_32, 0 )
   # Test reading from the last few bytes of RAM.
   yield from ram_write_ut( ram, ram.size - 4, 0x01234567, RAM_DW_32, 1 )
   yield from ram_read_ut( ram, ram.size - 4, 0x01234567 )

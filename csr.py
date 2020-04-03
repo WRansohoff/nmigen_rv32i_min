@@ -30,13 +30,13 @@ def gen_csrs( self ):
                            data_width = 32,
                            alignment  = 0 )
   for csr_name, reg in CSRS.items():
-    creg = CSReg( reg )
+    creg = CSReg( csr_name, reg )
     self.csrs.add( creg, addr = reg[ 'c_addr' ] )
     setattr( self, csr_name, creg )
 
 # CSR register for use in the multiplexer.
-class CSReg( Element, Elaboratable ):
-  def __init__( self, reg ):
+class CSReg( Elaboratable, Element ):
+  def __init__( self, reg_name, reg ):
     csr_r, csr_w = False, False
     self.mask_r, self.mask_ro = reg[ 'mask_r' ], reg[ 'mask_ro' ]
     self.mask_s, self.mask_c = reg[ 'mask_s' ], reg[ 'mask_c' ]
@@ -48,7 +48,7 @@ class CSReg( Element, Elaboratable ):
          ( 's' in field[ 2 ] ) | \
          ( 'c' in field[ 2 ] ):
         csr_w = True
-    self.shadow = Signal( 32, reset = self.rst )
+    self.shadow = Signal( 32, reset = self.rst, name = "%s_shadow"%reg_name )
     self.access = "%s%s"%( ( 'r' if csr_r else '' ),
                            ( 'w' if csr_w else '' ) )
     Element.__init__( self, 32, self.access )

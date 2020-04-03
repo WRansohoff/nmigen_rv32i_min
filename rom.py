@@ -1,5 +1,6 @@
 from nmigen import *
 from nmigen.back.pysim import *
+from nmigen_soc.csr import *
 
 from isa import *
 
@@ -7,18 +8,18 @@ from isa import *
 # ROM module: #
 ###############
 
-class ROM( Elaboratable ):
+class ROM( Elaboratable, Element ):
   def __init__( self, data ):
     # Address bits to select up to `len( data )` words by byte.
     self.addr = Signal( range( len( data ) * 4 ), reset = 0 )
-    # Data word output.
-    self.out  = Signal( 32, reset = LITTLE_END( data[ 0 ] ) )
     # Data storage.
     self.data = Memory( width = 32, depth = len( data ), init = data )
     # Memory read port.
     self.r = self.data.read_port()
     # Record size.
     self.size = len( data ) * 4
+    # Set Element access to read-only.
+    Element.__init__( self, 32, 'r' )
 
   def elaborate( self, platform ):
     # Core ROM module.
@@ -31,10 +32,10 @@ class ROM( Elaboratable ):
     # Word-aligned reads
     m.d.comb += self.r.addr.eq( self.addr >> 2 )
     with m.If( ( self.addr & 0b11 ) == 0b00 ):
-      m.d.sync += self.out.eq( LITTLE_END( self.r.data ) )
+      m.d.sync += self.r_data.eq( LITTLE_END( self.r.data ) )
     # Un-aligned reads
     with m.Else():
-      m.d.sync += self.out.eq(
+      m.d.sync += self.r_data.eq(
         LITTLE_END( self.r.data << ( ( self.addr & 0b11 ) << 3 ) ) )
 
     # End of ROM module definition.
@@ -56,7 +57,7 @@ def rom_read_ut( rom, address, expected ):
   yield Tick()
   # Done. Check the result after combinational logic settles.
   yield Settle()
-  actual = yield rom.out
+  actual = yield rom.r_data
   if expected != actual:
     f += 1
     print( "\033[31mFAIL:\033[0m ROM[ 0x%08X ] = 0x%08X (got: 0x%08X)"

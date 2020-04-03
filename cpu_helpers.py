@@ -200,8 +200,7 @@ def jump_to( self, cpu, npc ):
     # Set the new PC value at the next rising clock edge.
     cpu.d.sync += self.pc.eq( npc )
     # Read PC from RAM if the address is in that memory space.
-    with cpu.If( ( npc & 0xE0000000 ) == 0x20000000 ):
-      cpu.d.comb += self.ram.addr.eq( npc & 0x1FFFFFFF )
+    cpu.d.comb += self.mem.addr.eq( npc )
     cpu.next = "CPU_PC_ROM_FETCH"
 
 # Helper method to increment the 'minstret' CSR.

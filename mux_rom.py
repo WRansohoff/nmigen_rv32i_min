@@ -8,7 +8,7 @@ from isa import *
 # Multiplexed ROM module: #
 ###########################
 
-class MUXROM( Elaboratable ):
+class MUXROM( Elaboratable, Element ):
   def __init__( self, roms ):
     # Collect max / mins from available ROMs.
     max_addr_len = 1
@@ -19,12 +19,12 @@ class MUXROM( Elaboratable ):
     self.select = Signal( range( len( roms ) ), reset = 0 )
     # 'Address' signal to forward to the appropriate ROM.
     self.addr = Signal( range( max_addr_len ), reset = 0 )
-    # Data word output.
-    self.out = Signal( 32, reset = 0 )
     # Rom storage.
     self.roms = roms
     # Number of ROMs.
     self.rlen = len( roms )
+    # Set Element access to read-only.
+    Element.__init__( self, 32, 'r' )
 
   def elaborate( self, platform ):
     # Module object.
@@ -35,11 +35,11 @@ class MUXROM( Elaboratable ):
 
     # Return 0 for an out-of-range 'select' signal.
     with m.If( self.select >= self.rlen ):
-      m.d.sync += self.out.eq( 0x00000000 )
+      m.d.sync += self.r_data.eq( 0x00000000 )
     # Forward the 'address' and 'out' signals to the appropriate ROM.
     with m.Else():
       m.d.comb += self.roms[ self.select ].addr.eq( self.addr )
-      m.d.sync += self.out.eq( self.roms[ self.select ].out )
+      m.d.sync += self.r_data.eq( self.roms[ self.select ].r_data )
 
     # End of module definition.
     return m
@@ -62,7 +62,7 @@ def muxrom_read_ut( mrom, select, address, expected ):
   yield Tick()
   # Done. Check the result after the combinational logic settles.
   yield Settle()
-  actual = yield mrom.out
+  actual = yield mrom.r_data
   if expected != actual:
     f += 1
     print( "\033[31mFAIL:\033[0m ROM[ 0x%08X ] = 0x%08X (got: 0x%08X)"

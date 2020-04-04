@@ -71,7 +71,6 @@ class CSR( Elaboratable ):
     # CSR input/output signals.
     self.rsel = Signal( 12, reset = 0x000 )
     self.rin  = Signal( 32, reset = 0x00000000 )
-    self.rout = Signal( 32, reset = 0x00000000 )
     self.rw   = Signal( 1,  reset = 0b0 )
     self.f    = Signal( 3,  reset = 0b000 )
     gen_csrs( self )
@@ -85,9 +84,9 @@ class CSR( Elaboratable ):
 
     # Set read strobe and address to 0 by default.
     m.d.comb += [
-      self.csrs.bus.addr.eq( 0 ),
-      self.csrs.bus.r_stb.eq( 0 ),
+      self.csrs.bus.addr.eq( self.rsel ),
       self.csrs.bus.w_stb.eq( 0 ),
+      self.csrs.bus.r_stb.eq( 1 )
     ]
 
     # The 'MCYCLE' CSR increments every clock tick unless inhibited.
@@ -97,13 +96,7 @@ class CSR( Elaboratable ):
         m.d.sync += self.mcycleh.shadow.eq( self.mcycleh.shadow + 1 )
 
     # Handle 32-bit CSR read / write logic.
-    m.d.comb += [
-      self.csrs.bus.addr.eq( self.rsel ),
-      self.csrs.bus.r_stb.eq( 1 )
-    ]
-    m.d.sync += self.rout.eq( self.csrs.bus.r_data )
     with m.If( self.rw != 0 ):
-      m.d.comb += self.csrs.bus.r_stb.eq( 1 )
       with m.If( ( self.f & 0b11 ) == 0b01 ):
       # 'Write' - set the register to the input value.
         m.d.comb += [
@@ -140,12 +133,11 @@ def csr_ut( csr, reg, rin, cf, expected ):
   yield csr.rin.eq( rin )
   yield csr.f.eq( cf )
   yield csr.rw.eq( 0 )
-  # Wait two ticks.
-  yield Tick()
+  # Wait a tick.
   yield Tick()
   # Check the result after combinatorial logic.
   yield Settle()
-  actual = yield csr.rout
+  actual = yield csr.csrs.bus.r_data
   if hexs( expected ) != hexs( actual ):
     f += 1
     print( "\033[31mFAIL:\033[0m CSR 0x%03X = %s (got: %s)"
@@ -235,11 +227,6 @@ def csr_test( csr ):
   yield from csr_ut( csr, CSRA_MTVEC, 0x00000003, F_CSRRW,  0xFFFFFFFC )
   yield from csr_ut( csr, CSRA_MTVEC, 0x00000000, F_CSRRS,  0x00000001 )
 
-  # Test reading / writing the 'MHARTID' CSR. (Should be read-only)
-  yield from csr_ut( csr, CSRA_MHARTID, 0x00000000, F_CSRRW, 0 )
-  yield from csr_ut( csr, CSRA_MHARTID, 0xFFFFFFFF, F_CSRRS, 0 )
-  yield from csr_ut( csr, CSRA_MHARTID, 0xFFFFFFFF, F_CSRRC, 0 )
-
   # Test reading / writing the 'MIE' CSR.
   yield from csr_ut( csr, CSRA_MIE, 0xFFFFFFFF, F_CSRRWI, 0x00000000 )
   yield from csr_ut( csr, CSRA_MIE, 0xFFFFFFFF, F_CSRRCI, 0x00000888 )
@@ -273,15 +260,15 @@ def csr_test( csr ):
   # Verify that the it counts up every cycle unless it is written to.
   cyc_start = ( yield csr.mcycle.shadow ) & 0xFFFFFFFF
   yield from csr_ut( csr, CSRA_MCYCLE, 0x00000000, F_CSRRS,  cyc_start )
-  yield from csr_ut( csr, CSRA_MCYCLE, 0xFFFFFFFF, F_CSRRSI, cyc_start + 4 )
+  yield from csr_ut( csr, CSRA_MCYCLE, 0xFFFFFFFF, F_CSRRSI, cyc_start + 3 )
   yield from csr_ut( csr, CSRA_MCYCLE, 0x01234567, F_CSRRC,  0xFFFFFFFF )
   yield from csr_ut( csr, CSRA_MCYCLE, 0x0C0FFEE0, F_CSRRW,  0xFEDCBA98 )
   yield from csr_ut( csr, CSRA_MCYCLE, 0xFFFFFCBA, F_CSRRWI, 0x0C0FFEE0 )
   yield from csr_ut( csr, CSRA_MCYCLE, 0xFFFFFFFF, F_CSRRCI, 0xFFFFFCBA )
   yield from csr_ut( csr, CSRA_MCYCLE, 0x00000000, F_CSRRC,  0x00000000 )
-  yield from csr_ut( csr, CSRA_MCYCLE, 0x00000000, F_CSRRS,  0x00000003 )
-  yield from csr_ut( csr, CSRA_MCYCLE, 0x00000000, F_CSRRS,  0x00000007 )
-  yield from csr_ut( csr, CSRA_MCYCLE, 0x00000000, F_CSRRS,  0x0000000B )
+  yield from csr_ut( csr, CSRA_MCYCLE, 0x00000000, F_CSRRS,  0x00000002 )
+  yield from csr_ut( csr, CSRA_MCYCLE, 0x00000000, F_CSRRS,  0x00000005 )
+  yield from csr_ut( csr, CSRA_MCYCLE, 0x00000000, F_CSRRS,  0x00000008 )
   # Test reading / writing the 'MCYCLEH' CSR.
   # (It's a 64-bit hi/lo value, so it increments whenever
   #  MCYCLE == 0xFFFFFFFF. That happens twice above.)

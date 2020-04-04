@@ -162,12 +162,13 @@ def rv32i_decode( self, cpu, instr ):
 
 # Helper method to perform atomic r/w logic for CSR instructions.
 def csr_rw( self, cpu, rws_c ):
-  # Enable CSR writes, but wait for CPU access to read the response.
-  cpu.d.sync += self.csr.rw.eq( 1 )
-  with cpu.If( rws_c == self.rws ):
+  # Time CSR reads and writes for atomic access.
+  with cpu.If( rws_c == ( self.rws - 1 ) ):
+    cpu.d.sync += self.csr.rw.eq( 1 )
+  with cpu.Elif( rws_c == self.rws ):
     with cpu.If( self.rc.addr[ :5 ] != 0 ):
       cpu.d.comb += [
-        self.rc.data.eq( self.csr.rout ),
+        self.rc.data.eq( self.csr.csrs.bus.r_data ),
         self.rc.en.eq( 1 )
       ]
   cpu.next = "CPU_PC_LOAD"

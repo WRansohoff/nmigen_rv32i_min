@@ -13,7 +13,7 @@ import warnings
 #############################################
 # 'Control and Status Registers' file.      #
 # This contains logic for handling the      #
-# 'ECALL' instruction, which is used to     #
+# 'system' opcode, which is used to         #
 # read/write CSRs in the base ISA.          #
 # CSR named constants are in `isa.py`.      #
 # 'WARL' = Write Anything, Read Legal.      #
@@ -23,9 +23,7 @@ import warnings
 
 # Helper method to generate CSR memory map.
 def gen_csrs( self ):
-  # Even though it's a 32-bit CPU, the CSR bus is 64 bits wide
-  # to allow for the spec's performance counter registers, which
-  # are 64 bits in every implementation.
+  # Create the CSR multiplexer.
   self.csrs = Multiplexer( addr_width = 12,
                            data_width = 32,
                            alignment  = 0 )
@@ -48,7 +46,8 @@ class CSReg( Elaboratable, Element ):
          ( 's' in field[ 2 ] ) | \
          ( 'c' in field[ 2 ] ):
         csr_w = True
-    self.shadow = Signal( 32, reset = self.rst, name = "%s_shadow"%reg_name )
+    self.shadow = Signal( 32, reset = self.rst,
+                          name = "%s_shadow"%reg_name )
     self.access = "%s%s"%( ( 'r' if csr_r else '' ),
                            ( 'w' if csr_w else '' ) )
     Element.__init__( self, 32, self.access )
@@ -66,15 +65,10 @@ class CSReg( Elaboratable, Element ):
                                     ~( ~( self.w_data ) & self.mask_c ) )
     return m
 
-# Core "CSR" class, which contains an instance of each
-# supported CSR class. the 'ECALL' helper methods access it.
+# Core "CSR" class, which addresses Control and Status Registers.
 class CSR( Elaboratable ):
   def __init__( self ):
-    # CSR input/output registers.
-    # TODO: Use fewer bits to encode the supported CSRs.
-    # It shouldn't be complicated to do with a dictionary,
-    # but it looks like the 'nmigen-soc' library includes a CSR
-    # wishbone interface; maybe I can use that instead?
+    # CSR input/output signals.
     self.rsel = Signal( 12, reset = 0x000 )
     self.rin  = Signal( 32, reset = 0x00000000 )
     self.rout = Signal( 32, reset = 0x00000000 )
@@ -102,36 +96,32 @@ class CSR( Elaboratable ):
       with m.If( self.mcycle.shadow == 0xFFFFFFFF ):
         m.d.sync += self.mcycleh.shadow.eq( self.mcycleh.shadow + 1 )
 
-    # Handle CSR read / write logic.
-    with m.If( self.f == 0b000 ):
-      m.d.sync += self.rout.eq( 0x00000000 )
-    with m.Else():
-      # 32-bit CSR.
-      m.d.comb += [
-        self.csrs.bus.addr.eq( self.rsel ),
-        self.csrs.bus.r_stb.eq( 1 )
-      ]
-      m.d.sync += self.rout.eq( self.csrs.bus.r_data )
-      with m.If( self.rw != 0 ):
-        m.d.comb += self.csrs.bus.r_stb.eq( 1 )
-        with m.If( ( self.f & 0b11 ) == 0b01 ):
-          # 'Write' - set the register to the input value.
-          m.d.comb += [
-            self.csrs.bus.w_stb.eq( 1 ),
-            self.csrs.bus.w_data.eq( self.rin )
-          ]
-        with m.Elif( ( ( self.f & 0b11 ) == 0b10 ) & ( self.rin != 0 ) ):
-          # 'Set' - set bits which are set in the input value.
-          m.d.comb += [
-            self.csrs.bus.w_stb.eq( 1 ),
-            self.csrs.bus.w_data.eq( self.rin | self.csrs.bus.r_data )
-          ]
-        with m.Elif( ( ( self.f & 0b11 ) == 0b11 ) & ( self.rin != 0 ) ):
-          # 'Clear' - reset bits which are set in the input value.
-          m.d.comb += [
-            self.csrs.bus.w_stb.eq( 1 ),
-            self.csrs.bus.w_data.eq( ~( self.rin ) & self.csrs.bus.r_data )
-          ]
+    # Handle 32-bit CSR read / write logic.
+    m.d.comb += [
+      self.csrs.bus.addr.eq( self.rsel ),
+      self.csrs.bus.r_stb.eq( 1 )
+    ]
+    m.d.sync += self.rout.eq( self.csrs.bus.r_data )
+    with m.If( self.rw != 0 ):
+      m.d.comb += self.csrs.bus.r_stb.eq( 1 )
+      with m.If( ( self.f & 0b11 ) == 0b01 ):
+      # 'Write' - set the register to the input value.
+        m.d.comb += [
+          self.csrs.bus.w_stb.eq( 1 ),
+          self.csrs.bus.w_data.eq( self.rin )
+        ]
+      with m.Elif( ( ( self.f & 0b11 ) == 0b10 ) & ( self.rin != 0 ) ):
+        # 'Set' - set bits which are set in the input value.
+        m.d.comb += [
+          self.csrs.bus.w_stb.eq( 1 ),
+          self.csrs.bus.w_data.eq( self.rin | self.csrs.bus.r_data )
+        ]
+      with m.Elif( ( ( self.f & 0b11 ) == 0b11 ) & ( self.rin != 0 ) ):
+        # 'Clear' - reset bits which are set in the input value.
+        m.d.comb += [
+          self.csrs.bus.w_stb.eq( 1 ),
+          self.csrs.bus.w_data.eq( ~( self.rin ) & self.csrs.bus.r_data )
+        ]
 
     return m
 

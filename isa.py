@@ -115,20 +115,20 @@ F_CSRRCI = 0b111
 # use the whole 12-bit immediate to encode their functionality.
 IMM_MRET = 0x302
 IMM_WFI  = 0x105
-# CSR Addresses for the supported subste of 'Machine-Level ISA' CSRs.
+# CSR Addresses for the supported subset of 'Machine-Level ISA' CSRs.
 # (Supervisor and Hypervisor CSRs are not implemented.)
 # Machine information registers:
 CSRA_MVENDORID  = 0xF11
 CSRA_MARCHID    = 0xF12
 CSRA_MIMPID     = 0xF13
 CSRA_MHARTID    = 0xF14
-# Machine trap setup (Note - traps are not implemented yet):
+# Machine trap setup:
 CSRA_MSTATUS    = 0x300
 CSRA_MISA       = 0x301
 CSRA_MIE        = 0x304
 CSRA_MTVEC      = 0x305
 CSRA_MSTATUSH   = 0x310
-# Machine trap handling (Note - traps are not implemented yet):
+# Machine trap handling:
 CSRA_MSCRATCH   = 0x340
 CSRA_MEPC       = 0x341
 CSRA_MCAUSE     = 0x342
@@ -139,7 +139,6 @@ CSRA_MTVAL2     = 0x34B
 # Machine memory protection: not impemented
 # Machine counter / timers:
 CSRA_MCYCLE           = 0xB00
-# TODO: Have the tests check CSRA_MINSTRET and remove 'cpu.fsms'?
 CSRA_MINSTRET         = 0xB02
 # Machine counter setup:
 CSRA_MCOUNTINHIBIT    = 0x320
@@ -543,9 +542,7 @@ def rom_img( arr ):
       a.append( i )
   return a
 
-# Helper method to assemble a little-endian RAM image with byte
-# addressing. This assumes that all instructions are
-# 32 bits wide, which...should be true for the RV32I ISA. Right?
+# Helper method to assemble a RAM image for a test program.
 def ram_img( arr ):
   a = []
   for i in arr:

@@ -6,6 +6,7 @@ from alu import *
 from csr import *
 from isa import *
 from mux_rom import *
+from spi_rom import *
 from rom import *
 from rvmem import *
 from cpu_helpers import *
@@ -544,6 +545,29 @@ def cpu_run( cpu, expected ):
     # Step the simulation.
     yield Tick()
 
+# Helper method to simulate running a CPU from simulated SPI
+# Flash which contains a given ROM image. I hope I understood the
+# W25Q datasheet well enough for this to be valid...
+def cpu_spi_sim( test ):
+  print( "\033[33mSTART\033[0m running '%s' program (SPI):"%test[ 0 ] )
+  # Create the CPU device.
+  sim_spi_off = ( 2 * 1024 * 1024 )
+  dut = CPU( SPI_ROM( sim_spi_off, sim_spi_off + 1024, test[ 2 ] ) )
+  cpu = ResetInserter( dut.clk_rst )( dut )
+
+  # Run the simulation.
+  sim_name = "%s_spi.vcd"%test[ 1 ]
+  with Simulator( cpu, vcd_file = open( sim_name, 'w' ) ) as sim:
+    def proc():
+      for i in range( len( test[ 3 ] ) ):
+        yield cpu.mem.ram.data[ i ].eq( test[ 3 ][ i ] )
+      yield from cpu_run( cpu, test[ 4 ] )
+      print( "\033[35mDONE\033[0m running %s: executed %d instructions"
+             %( test[ 0 ], test[ 4 ][ 'end' ] ) )
+    sim.add_clock( 1e-6 )
+    sim.add_sync_process( proc )
+    sim.run()
+
 # Helper method to simulate running a CPU with the given ROM image
 # for the specified number of CPU cycles. The 'name' field is used
 # for printing and generating the waveform filename: "cpu_[name].vcd".
@@ -552,7 +576,7 @@ def cpu_run( cpu, expected ):
 def cpu_sim( test ):
   print( "\033[33mSTART\033[0m running '%s' program:"%test[ 0 ] )
   # Create the CPU device.
-  dut = CPU( test[ 2 ] )
+  dut = CPU( ROM( test[ 2 ] ) )
   cpu = ResetInserter( dut.clk_rst )( dut )
 
   # Run the simulation.
@@ -577,7 +601,7 @@ def cpu_sim( test ):
 def cpu_mux_sim( tests ):
   print( "\033[33mSTART\033[0m running '%s' test suite:"%tests[ 0 ] )
   # Create the CPU device.
-  dut = CPU( MUXROM( Array( tests[ 2 ][ i ][ 2 ]
+  dut = CPU( MUXROM( Array( ROM( tests[ 2 ][ i ][ 2 ] )
              for i in range( len( tests[ 2 ] ) ) ) ) )
   cpu = ResetInserter( dut.clk_rst )( dut )
   num_i = 0
@@ -628,7 +652,9 @@ if __name__ == "__main__":
       sopts = ''
       # Optional: increases design size but provides more info.
       #sopts += '-noflatten'
-      cpu = CPU( led_rom )
+      cpu = CPU( ROM( led_rom ) )
+      #prog_start = ( 2 * 1024 * 1024 )
+      #cpu = CPU( SPI_ROM( prog_start, prog_start + 1024, None ) )
       UpduinoV2Platform().build( ResetInserter( cpu.clk_rst )( cpu ),
                                  do_build = True,
                                  do_program = False,
@@ -641,6 +667,7 @@ if __name__ == "__main__":
       print( '--- CPU Tests ---' )
       # Simulate the 'infinite loop' ROM to screen for syntax errors.
       cpu_sim( loop_test )
+      cpu_spi_sim( loop_test )
       # Run auto-generated RV32I compliance tests with a multiplexed
       # ROM module containing a different program for each one.
       # (The CPU gets reset between each program.)

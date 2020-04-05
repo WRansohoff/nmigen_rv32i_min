@@ -5,6 +5,8 @@ from nmigen_soc.memory import *
 from nmigen_soc.wishbone import *
 from nmigen_boards.resources import *
 
+from isa import *
+
 ###########################
 # SPI Flash "ROM" module: #
 # TODO: error-checking :/ #
@@ -23,8 +25,8 @@ class DummySPI():
     self.miso = DummyPin()
 
 # Core SPI Flash "ROM" module.
-class SPIROM( Elaboratable, Interface ):
-  def __init__( self, dat_start, dat_end ):
+class SPI_ROM( Elaboratable, Interface ):
+  def __init__( self, dat_start, dat_end, data ):
     # Starting address in the Flash chip. This probably won't
     # be zero, because many FPGA boards use their external SPI
     # Flash to store the bitstream which configures the chip.
@@ -34,7 +36,7 @@ class SPIROM( Elaboratable, Interface ):
     # Length of accessible data.
     self.dlen = ( dat_end - dat_start ) + 1
     # SPI Flash address command.
-    self.spio = Signal( 32, reset = 0x00000003 )
+    self.spio = Signal( 32, reset = 0x03000000 )
     # Data counter.
     self.dc = Signal( 6, reset = 0b000000 )
 
@@ -42,20 +44,25 @@ class SPIROM( Elaboratable, Interface ):
     Interface.__init__( self, addr_width = ceil( log2( self.dlen + 1 ) ), data_width = 32 )
     self.memory_map = MemoryMap( addr_width = self.addr_width, data_width = self.data_width, alignment = 0 )
 
+    # Backing data store for a test ROM image. Not used when
+    # the module is built for real hardware.
+    if data is not None:
+      self.data = Memory( width = 32, depth = len( data ), init = data )
+    else:
+      self.data = None
+
   def elaborate( self, platform ):
     m = Module()
 
-    # Retrieve SPI Flash resources.
-    # TODO: take this as an arg? It can only be 'borrowed' once.
-    if platform is not None:
-      self.spi = platform.request( 'spi_flash' )
-    else:
+    if platform is None:
       self.spi = DummySPI()
+    else:
+      self.spi = platform.request( 'spi_flash_1x' )
 
     # Clock rests at 0.
     m.d.sync += self.spi.clk.o.eq( 0 )
     # SPI Flash can only address 24 bits.
-    m.d.comb += self.spio.eq( ( 0x03 | ( ( self.adr + self.dstart ) << 8 ) )[ :32 ] )
+    m.d.comb += self.spio.eq( ( 0x03000000 | ( ( self.adr + self.dstart ) & 0x00FFFFFF ) ) )
 
     # Use a state machine for Flash access.
     # "Mode 0" SPI is very simple:
@@ -70,10 +77,11 @@ class SPIROM( Elaboratable, Interface ):
           self.ack.eq( self.ack & self.stb ),
           self.spi.cs.o.eq( 1 )
         ]
+        m.next = "SPI_WAITING"
         with m.If( ( self.stb == 1 ) & ( self.ack == 0 ) ):
           m.d.sync += [
             self.spi.cs.o.eq( 0 ),
-            self.spi.mosi.o.eq( self.spio[ 0 ] ),
+            self.spi.mosi.o.eq( self.spio[ 31 ] ),
             self.ack.eq( 0 ),
             self.dc.eq( 0 )
           ]
@@ -81,18 +89,20 @@ class SPIROM( Elaboratable, Interface ):
       # 'Send address' state:
       with m.State( "SPI_TX" ):
         m.d.sync += self.dc.eq( self.dc + 1 )
+        # Clock is low; data sampled on next rising edge.
         with m.If( self.dc[ 0 ] == 0 ):
-          m.d.sync += self.spi.clk.o.eq( 1 )
+          m.d.sync += self.spi.clk.o.eq( 1 ),
           m.next = "SPI_TX"
+        # Clock is high; set data next tick.
         with m.Else():
           m.d.sync += [
             self.spi.clk.o.eq( 0 ),
-            self.spi.mosi.o.eq( self.spio >> ( self.dc[ 1: ] ) )
+            self.spi.mosi.o.eq( self.spio >> ( 30 - self.dc[ 1: ] ) )
           ]
           with m.If( self.dc == 0b111111 ):
             m.d.sync += [
               self.dc.eq( 0 ),
-              self.dat_r.eq( 0 )
+              self.dat_r.eq( 0 ),
             ]
             m.next = "SPI_RX"
           with m.Else():
@@ -100,14 +110,24 @@ class SPIROM( Elaboratable, Interface ):
       # 'Receive data' state:
       with m.State( "SPI_RX" ):
         m.d.sync += self.dc.eq( self.dc + 1 )
+        # Clock is low; device is preparing data.
         with m.If( self.dc[ 0 ] == 0 ):
           m.d.sync += self.spi.clk.o.eq( 1 )
+          if platform is None:
+            with m.If( self.dc[ 1: ] < 8 ):
+              m.d.sync += self.dat_r.eq( self.dat_r | ( ( ( self.data[ self.adr >> 2 ] >> ( 7 - self.dc[ 1: ] ) ) & 0b1 ) << ( 31 - self.dc[ 1: ] ) ) )
+            with m.Elif( self.dc[ 1: ] < 16 ):
+              m.d.sync += self.dat_r.eq( self.dat_r | ( ( ( self.data[ self.adr >> 2 ] >> ( 15 - ( self.dc[ 1: ] - 8 ) ) ) & 0b1 ) << ( 31 - self.dc[ 1: ] ) ) )
+            with m.Elif( self.dc[ 1: ] < 24 ):
+              m.d.sync += self.dat_r.eq( self.dat_r | ( ( ( self.data[ self.adr >> 2 ] >> ( 23 - ( self.dc[ 1: ] - 16 ) ) ) & 0b1 ) << ( 31 - self.dc[ 1: ] ) ) )
+            with m.Else():
+              m.d.sync += self.dat_r.eq( self.dat_r | ( ( ( self.data[ self.adr >> 2 ] >> ( 31 - ( self.dc[ 1: ] - 24 ) ) ) & 0b1 ) << ( 31 - self.dc[ 1: ] ) ) )
+          else:
+            m.d.sync += self.dat_r.eq( self.dat_r | ( self.spi.miso.i << ( 31 - self.dc[ 1: ] ) ) )
           m.next = "SPI_RX"
+        # Clock is high; data shifts on the next falling clock edge.
         with m.Else():
-          m.d.sync += [
-            self.spi.clk.o.eq( 0 ),
-            self.dat_r.eq( self.dat_r | ( self.spi.miso.i << ( self.dc[ 1: ] ) ) )
-          ]
+          m.d.sync += self.spi.clk.o.eq( 0 )
           with m.If( self.dc == 0b111111 ):
             m.d.sync += [
               self.ack.eq( 1 ),
@@ -151,24 +171,26 @@ def spi_read_word( srom, virt_addr, phys_addr, simword, end_wait ):
   csa = yield srom.spi.cs.o
   spcmd = yield srom.spio
   spi_rom_ut( "CS Low", csa, 0 )
-  spi_rom_ut( "SPI Read Cmd Value", spcmd, ( phys_addr << 8 ) | 0x03 )
+  spi_rom_ut( "SPI Read Cmd Value", spcmd, ( phys_addr & 0x00FFFFFF ) | 0x03000000 )
   yield Tick()
   # Then the 32-bit read command is sent; two ticks per bit.
   for i in range( 32 ):
-    yield Tick()
     yield Settle()
     dout = yield srom.spi.mosi.o
-    spi_rom_ut( "SPI Read Cmd  [%d]"%i, dout, ( spcmd >> i ) & 0b1 )
+    spi_rom_ut( "SPI Read Cmd  [%d]"%i, dout, ( spcmd >> ( 31 - i ) ) & 0b1 )
+    yield Tick()
     yield Tick()
   # The following 32 bits should return the word. Simulate
-  # the requested word arriving on the MISO pin, LSbit first.
+  # the requested word arriving on the MISO pin, MSbit first.
+  # (Data starts getting returned on the falling clock edge
+  #  immediately following the last rising-edge read.)
   for i in range( 32 ):
-    yield srom.spi.miso.i.eq( ( simword >> i ) & 0b1 )
-    yield Tick()
     yield Settle()
     progress = yield srom.dat_r
-    spi_rom_ut( "SPI Read Word [%d]"%i, progress, ( simword & ( 0xFFFFFFFF >> ( 31 - i ) ) ) )
+    spi_rom_ut( "SPI Read Word [%d]"%i, progress, ( simword & ~( 0xFFFFFFFF >> ( i + 1 ) ) ) )
     yield Tick()
+    yield Tick()
+  yield Tick()
   yield Settle()
   csa = yield srom.spi.cs.o
   spi_rom_ut( "CS High (Waiting)", csa, 1 )
@@ -192,15 +214,15 @@ def spi_rom_tests( srom ):
   print( "--- SPI Flash 'ROM' Tests ---" )
 
   # Test basic behavior by reading a few consecutive words.
-  yield from spi_read_word( srom, 0x0A, 0x1A, 0x89ABCDEF, 0 )
-  yield from spi_read_word( srom, 0x0B, 0x1B, 0x0C0FFEE0, 4 )
+  yield from spi_read_word( srom, 0x00, 0x200000, LITTLE_END( 0x89ABCDEF ), 0 )
+  yield from spi_read_word( srom, 0x04, 0x200004, LITTLE_END( 0x0C0FFEE0 ), 4 )
   for i in range( 4 ):
     yield Tick()
     yield Settle()
     csa = yield srom.spi.cs.o
     spi_rom_ut( "CS High (Waiting)", csa, 1 )
-  yield from spi_read_word( srom, 0x0F, 0x1F, 0xDEADFACE, 1 )
-  yield from spi_read_word( srom, 0x00, 0x10, 0xABACADAB, 1 )
+  yield from spi_read_word( srom, 0x10, 0x200010, LITTLE_END( 0xDEADFACE ), 1 )
+  yield from spi_read_word( srom, 0x0C, 0x20000C, LITTLE_END( 0xABACADAB ), 1 )
 
   # Done.
   yield Tick()
@@ -209,7 +231,8 @@ def spi_rom_tests( srom ):
 # 'main' method to run a basic testbench.
 if __name__ == "__main__":
   # Instantiate a test SPI ROM module.
-  dut = SPIROM( 0x10, 0x100 )
+  off = ( 2 * 1024 * 1024 )
+  dut = SPI_ROM( off, off + 1024, [ 0x89ABCDEF, 0x0C0FFEE0, 0xBABABABA, 0xABACADAB, 0xDEADFACE, 0x12345678, 0x87654321, 0xDEADBEEF, 0xDEADBEEF ] )
 
   # Run the SPI ROM tests.
   with Simulator( dut, vcd_file = open( 'spi_rom.vcd', 'w' ) ) as sim:

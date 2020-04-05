@@ -35,14 +35,18 @@ class MUXROM( Elaboratable, Interface ):
     for i in range( self.rlen ):
       m.submodules[ "rom_%d"%i ] = self.roms[ i ]
 
-    m.d.comb += self.ack.eq( self.roms[ self.select ].ack )
     # Return 0 for an out-of-range 'select' signal.
     with m.If( self.select >= self.rlen ):
       m.d.comb += self.dat_r.eq( 0x00000000 )
     # Forward the 'address' and 'out' signals to the appropriate ROM.
     with m.Else():
-      m.d.comb += self.roms[ self.select ].adr.eq( self.adr )
-      m.d.comb += self.dat_r.eq( self.roms[ self.select ].dat_r )
+      m.d.comb += [
+        self.roms[ self.select ].adr.eq( self.adr ),
+        self.ack.eq( self.roms[ self.select ].ack ),
+        self.roms[ self.select ].stb.eq( self.stb ),
+        self.roms[ self.select ].cyc.eq( self.cyc ),
+        self.dat_r.eq( self.roms[ self.select ].dat_r )
+      ]
 
     # End of module definition.
     return m

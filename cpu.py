@@ -120,7 +120,10 @@ class CPU( Elaboratable ):
     m.d.comb += self.mem.addr.eq( self.pc )
 
     # Disable RAM writes by default.
-    m.d.comb += self.mem.mux.bus.w_stb.eq( 0 )
+    m.d.comb += [
+      self.mem.mux.bus.we.eq( 0 ),
+      self.mem.mux.bus.stb.eq( 1 )
+    ]
 
     # Set CSR values to 0 by default.
     m.d.comb += [
@@ -148,7 +151,7 @@ class CPU( Elaboratable ):
           # Increment 'instructions retired' counter.
           minstret_incr( self, m )
           # Decode the fetched instruction and move on to run it.
-          rv32i_decode( self, m, self.mem.mux.bus.r_data )
+          rv32i_decode( self, m, self.mem.mux.bus.dat_r )
           m.next = "CPU_PC_DECODE"
       # "Decode PC": Figure out what sort of instruction to execute,
       #              and prepare associated registers.
@@ -259,7 +262,7 @@ class CPU( Elaboratable ):
           with m.Else():
             m.d.comb += [
               self.mem.addr.eq( self.mp ),
-              self.mem.mux.bus.w_data.eq( self.rb.data )
+              self.mem.mux.bus.dat_w.eq( self.rb.data )
             ]
             # "Store Byte" operation:
             with m.If( self.f == F_SB ):
@@ -371,6 +374,7 @@ class CPU( Elaboratable ):
           m.next = "CPU_PC_DECODE"
       # "Jump" operation (or "Branch" if the branch is taken).
       with m.State( "CPU_JUMP" ):
+        m.d.comb += self.mem.mux.bus.stb.eq( 0 )
         # ('m.next' is set in the 'jump_to' helper method; an
         #  exception may be triggered if the address is invalid)
         jump_to( self, m, ( self.ipc + self.imm ) )
@@ -385,8 +389,8 @@ class CPU( Elaboratable ):
         ]
         with m.If( self.opcode == OP_STORE ):
           m.d.comb += [
-            self.mem.mux.bus.w_stb.eq( memws_c != self.memws ),
-            self.mem.mux.bus.w_data.eq( self.rb.data )
+            self.mem.mux.bus.we.eq( memws_c != self.memws ),
+            self.mem.mux.bus.dat_w.eq( self.rb.data )
           ]
           # "Store Byte" operation:
           with m.If( self.f == F_SB ):
@@ -407,20 +411,20 @@ class CPU( Elaboratable ):
           m.d.comb += self.rc.en.eq( 1 )
           # "Load Byte" operation:
           with m.If( self.f == F_LB ):
-            m.d.comb += self.rc.data.eq( Cat( self.mem.mux.bus.r_data[ :8 ], Repl( self.mem.mux.bus.r_data[ 7 ], 24 ) ) )
+            m.d.comb += self.rc.data.eq( Cat( self.mem.mux.bus.dat_r[ :8 ], Repl( self.mem.mux.bus.dat_r[ 7 ], 24 ) ) )
           # "Load Halfword" operation:
           with m.Elif( self.f == F_LH ):
-            m.d.comb += self.rc.data.eq( Cat( self.mem.mux.bus.r_data[ :16 ], Repl( self.mem.mux.bus.r_data[ 15 ], 16 ) ) )
+            m.d.comb += self.rc.data.eq( Cat( self.mem.mux.bus.dat_r[ :16 ], Repl( self.mem.mux.bus.dat_r[ 15 ], 16 ) ) )
           # "Load Word" operation:
           with m.Elif( self.f == F_LW ):
-            m.d.comb += self.rc.data.eq( self.mem.mux.bus.r_data )
+            m.d.comb += self.rc.data.eq( self.mem.mux.bus.dat_r )
           # "Load Byte" (without sign extension) operation:
           with m.Elif( self.f == F_LBU ):
-            m.d.comb += self.rc.data.eq( self.mem.mux.bus.r_data & 0xFF )
+            m.d.comb += self.rc.data.eq( self.mem.mux.bus.dat_r & 0xFF )
           # "Load Halfword" (without sign extension) operation:
           with m.Elif( self.f == F_LHU ):
             m.d.comb += self.rc.data.eq(
-              ( self.mem.mux.bus.r_data & 0xFFFF ) )
+              ( self.mem.mux.bus.dat_r & 0xFFFF ) )
         with m.Else():
           m.next = "CPU_PC_LOAD"
       # "Trap Entry" - update PC and EPC CSR, and context switch.
@@ -429,6 +433,7 @@ class CPU( Elaboratable ):
           self.csr.mepc.shadow.eq( self.ipc ),
           self.irq.eq( 1 )
         ]
+        m.d.comb += self.mem.mux.bus.stb.eq( 0 )
         m.next = "CPU_PC_ROM_FETCH"
       # "Trap Exit" - update PC and context switch.
       with m.State( "CPU_TRAP_EXIT" ):
@@ -436,9 +441,11 @@ class CPU( Elaboratable ):
           self.pc.eq( self.csr.mepc.shadow ),
           self.irq.eq( 0 )
         ]
+        m.d.comb += self.mem.mux.bus.stb.eq( 0 )
         m.next = "CPU_PC_ROM_FETCH"
       # "PC Load Letter" - increment the PC.
       with m.State( "CPU_PC_LOAD" ):
+        m.d.comb += self.mem.mux.bus.stb.eq( 0 )
         # Clear the CSR r/w signal, and increment the PC.
         m.d.sync += self.csr.rw.eq( 0 )
         jump_to( self, m, ( self.ipc + 4 ) )
@@ -625,11 +632,14 @@ if __name__ == "__main__":
       # (Un-comment to suppress warning messages)
       warnings.filterwarnings( "ignore", category = DriverConflict )
       warnings.filterwarnings( "ignore", category = UnusedElaboratable )
-      # Disable CSRs so the design fits in an UP5K.
+      sopts = ''
+      # Optional: increases design size but provides more info.
+      #sopts += '-noflatten'
       cpu = CPU( led_rom )
       UpduinoV2Platform().build( ResetInserter( cpu.clk_rst )( cpu ),
                                  do_build = True,
-                                 do_program = False )
+                                 do_program = False,
+                                 synth_opts = sopts )
   else:
     # Run testbench simulations.
     with warnings.catch_warnings():

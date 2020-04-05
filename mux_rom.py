@@ -1,5 +1,8 @@
 from nmigen import *
+from math import ceil, log2
 from nmigen.back.pysim import *
+from nmigen_soc.memory import *
+from nmigen_soc.wishbone import *
 
 from rom import *
 from isa import *
@@ -8,7 +11,7 @@ from isa import *
 # Multiplexed ROM module: #
 ###########################
 
-class MUXROM( Elaboratable, Element ):
+class MUXROM( Elaboratable, Interface ):
   def __init__( self, roms ):
     # Collect max / mins from available ROMs.
     max_addr_len = 1
@@ -17,14 +20,13 @@ class MUXROM( Elaboratable, Element ):
         max_addr_len = rom.size * 4
     # 'Select' signal to choose which ROM module to address.
     self.select = Signal( range( len( roms ) ), reset = 0 )
-    # 'Address' signal to forward to the appropriate ROM.
-    self.addr = Signal( range( max_addr_len ), reset = 0 )
     # Rom storage.
     self.roms = roms
     # Number of ROMs.
     self.rlen = len( roms )
-    # Set Element access to read-only.
-    Element.__init__( self, 32, 'r' )
+    # Initialize wishbone bus interface.
+    Interface.__init__( self, addr_width = ceil( log2( max_addr_len + 1 ) ), data_width = 32 )
+    self.memory_map = MemoryMap( addr_width = self.addr_width, data_width = self.data_width, alignment = 0 )
 
   def elaborate( self, platform ):
     # Module object.
@@ -35,11 +37,11 @@ class MUXROM( Elaboratable, Element ):
 
     # Return 0 for an out-of-range 'select' signal.
     with m.If( self.select >= self.rlen ):
-      m.d.sync += self.r_data.eq( 0x00000000 )
+      m.d.sync += self.dat_r.eq( 0x00000000 )
     # Forward the 'address' and 'out' signals to the appropriate ROM.
     with m.Else():
-      m.d.comb += self.roms[ self.select ].addr.eq( self.addr )
-      m.d.sync += self.r_data.eq( self.roms[ self.select ].r_data )
+      m.d.comb += self.roms[ self.select ].adr.eq( self.adr )
+      m.d.sync += self.dat_r.eq( self.roms[ self.select ].dat_r )
 
     # End of module definition.
     return m
@@ -56,13 +58,13 @@ def muxrom_read_ut( mrom, select, address, expected ):
   global p, f
   # Set select and address, then wait three ticks.
   yield mrom.select.eq( select )
-  yield mrom.addr.eq( address )
+  yield mrom.adr.eq( address )
   yield Tick()
   yield Tick()
   yield Tick()
   # Done. Check the result after the combinational logic settles.
   yield Settle()
-  actual = yield mrom.r_data
+  actual = yield mrom.dat_r
   if expected != actual:
     f += 1
     print( "\033[31mFAIL:\033[0m ROM[ 0x%08X ] = 0x%08X (got: 0x%08X)"

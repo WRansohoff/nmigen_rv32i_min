@@ -25,14 +25,14 @@ class RV_Memory( Elaboratable ):
     # Input memory address.
     self.addr = Signal( 32, reset = 0x00000000 )
     # Memory multiplexer.
-    self.mux = Multiplexer( addr_width = 3,
-                            data_width = 32,
-                            alignment = 0 )
+    self.mux = Decoder( addr_width = 32,
+                        data_width = 32,
+                        alignment = 0 )
     # Add ROM and RAM submodules to the multiplexer.
     self.rom = rom_module
     self.ram = RAM( ram_words )
     self.mux.add( self.rom, addr = 0 )
-    self.mux.add( self.ram, addr = 1 )
+    self.mux.add( self.ram, addr = 0x20000000 )
 
   def elaborate( self, platform ):
     m = Module()
@@ -41,13 +41,9 @@ class RV_Memory( Elaboratable ):
     m.submodules.rom = self.rom
     m.submodules.ram = self.ram
 
-    # The multiplexer address is the 3 most significant bits of
-    # the memory space address.
     m.d.comb += [
-      self.mux.bus.addr.eq( self.addr[ 29: 32 ] ),
-      self.mux.bus.r_stb.eq( 1 ),
-      self.ram.addr.eq( self.addr & 0x1FFFFFFF ),
-      self.rom.addr.eq( self.addr )
+      self.mux.bus.cyc.eq( self.mux.bus.stb ),
+      self.mux.bus.adr.eq( self.addr ),
     ]
 
     return m

@@ -56,10 +56,12 @@ class RAM( Elaboratable, Interface ):
     # Word-aligned reads.
     with m.If( ( self.adr & 0b11 ) == 0b00 ):
       m.d.comb += self.dat_r.eq( LITTLE_END( self.r.data ) )
+      m.d.sync += self.ack.eq( self.stb & ( self.we == 0 ) )
     # Partial reads.
     with m.Else():
       m.d.comb += self.dat_r.eq( LITTLE_END(
         self.r.data << ( ( self.adr & 0b11 ) << 3 ) ) )
+      m.d.sync += self.ack.eq( self.stb & ( self.we == 0 ) )
 
     # Write the 'din' value if 'wen' is set.
     with m.If( self.we ):
@@ -116,7 +118,6 @@ def ram_write_ut( ram, address, data, dw, success ):
   yield ram.we.eq( 1 )
   yield ram.dw.eq( dw )
   # Wait two ticks, and un-set the 'wen' bit.
-  yield Tick()
   yield Tick()
   yield Tick()
   yield ram.we.eq( 0 )

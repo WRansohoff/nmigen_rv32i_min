@@ -57,10 +57,6 @@ class CPU( Elaboratable ):
     self.imm    = Signal( shape = Shape( width = 32, signed = True ),
                           reset = 0x00000000 )
     self.ipc    = Signal( 32, reset = 0x00000000 )
-    # TODO: Redesign the FSM to require fewer and less scattered wait-states.
-    # Memory wait states for RAM and ROM.
-    # TODO: Use handshaking instead of a common wait-state countdown.
-    self.memws  = Signal( 3, reset = 0b010 )
     # CPU register access wait states.
     self.rws    = Signal( 2, reset = 0b10 )
     # The ALU submodule which performs logical operations.
@@ -102,17 +98,12 @@ class CPU( Elaboratable ):
 
     # Reset countdown.
     rsc = Signal( 2, reset = 0b11 )
-    # Memory wait state countdowns.
-    memws_c = Signal( 3, reset = 0b000 )
+    # Register access wait state countdown.
     rws_c   = Signal( 2, reset = 0b00 )
 
     # Disable CPU register writes by default.
     m.d.comb += self.rc.en.eq( 0 )
     # Reset memory access wait-state counters if they are not used.
-    m.d.sync += [
-      memws_c.eq( 0 ),
-      rws_c.eq( 0 )
-    ]
     m.d.sync += rws_c.eq( 0 )
 
     # Set the program counter to the simulated memory addresses
@@ -144,8 +135,7 @@ class CPU( Elaboratable ):
       #              populate register fields to prepare for decoding.
       with m.State( "CPU_PC_ROM_FETCH" ):
         # Memory wait states.
-        with m.If( memws_c < self.memws ):
-          m.d.sync += memws_c.eq( memws_c + 1 )
+        with m.If( self.mem.mux.bus.ack == 0 ):
           m.next = "CPU_PC_ROM_FETCH"
         with m.Else():
           # Increment 'instructions retired' counter.
@@ -389,7 +379,7 @@ class CPU( Elaboratable ):
         ]
         with m.If( self.opcode == OP_STORE ):
           m.d.comb += [
-            self.mem.mux.bus.we.eq( memws_c != self.memws ),
+            self.mem.mux.bus.we.eq( self.mem.mux.bus.ack ),
             self.mem.mux.bus.dat_w.eq( self.rb.data )
           ]
           # "Store Byte" operation:
@@ -401,9 +391,15 @@ class CPU( Elaboratable ):
           # "Store Word" operation:
           with m.Elif( self.f == F_SW ):
             m.d.comb += self.mem.ram.dw.eq( RAM_DW_32 )
-        # Memory access wait-states.
-        with m.If( memws_c < self.memws ):
-          m.d.sync += memws_c.eq( memws_c + 1 )
+          # Only move on after writing.
+          with m.If( ( self.mem.mux.bus.ack ) & ( self.mem.mux.bus.we ) ):
+            m.next = "CPU_PC_LOAD"
+          with m.Else():
+            m.next = "CPU_LDST"
+        # Wait for memory reads.
+        with m.Elif( self.mem.mux.bus.ack == 0 ):
+          m.next = "CPU_LDST"
+        # Store operations.
         # Load operations.
         with m.Elif( self.opcode == OP_LOAD ):
           m.next = "CPU_PC_LOAD"
@@ -594,9 +590,6 @@ def cpu_mux_sim( tests ):
   #with Simulator( cpu, vcd_file = open( sim_name, 'w' ) ) as sim:
   with Simulator( cpu, vcd_file = None ) as sim:
     def proc():
-      # Set three wait states for ROM access, to allow the ROM
-      # address and data to propagate through the multiplexer.
-      yield cpu.memws.eq( 0b011 )
       # Run the programs and print pass/fail for individual tests.
       for i in range( len( tests[ 2 ] ) ):
         print( "  \033[93mSTART\033[0m running '%s' ROM image:"

@@ -27,6 +27,8 @@ class ROM( Elaboratable, Interface ):
     m = Module()
     m.submodules.r = self.r
 
+    m.d.sync += self.ack.eq( self.stb )
+
     # Set the 'output' value to the requested 'data' array index.
     # If a read would 'spill over' into an out-of-bounds data byte,
     # set that byte to 0x00.

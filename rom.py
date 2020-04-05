@@ -18,7 +18,7 @@ class ROM( Elaboratable, Interface ):
     self.r = self.data.read_port()
     # Record size.
     self.size = len( data ) * 4
-    # initialize bus interface.
+    # Initialize Wishbone bus interface.
     Interface.__init__( self, addr_width = ceil( log2( self.size + 1 ) ), data_width = 32 )
     self.memory_map = MemoryMap( addr_width = self.addr_width, data_width = self.data_width, alignment = 0 )
 

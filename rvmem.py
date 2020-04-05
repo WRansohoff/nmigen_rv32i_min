@@ -1,8 +1,5 @@
 from nmigen import *
 from nmigen.back.pysim import *
-from nmigen_soc.csr import *
-from nmigen_soc.csr.bus import *
-from nmigen_soc.csr.wishbone import *
 from nmigen_soc.wishbone import *
 from nmigen_soc.memory import *
 

@@ -2,7 +2,7 @@
 
 This is a work-in-progress implementation of [the core `RV32I` `RISC-V` instruction set](https://riscv.org/specifications/isa-spec-pdf/), written with nMigen.
 
-Currently it only runs very small pre-programmed assembly ROM images, and it uses about 2/3 of the gates in an `iCE40UP5K`, but it seems to work. I'm planning to add a debugging interface and a module to read GCC-compiled program data from SPI Flash once the design is smaller.
+Currently it takes up about 70% of an `iCE40UP5K`, but it seems to work. I'm hoping to make it smaller so that it can also fit a debugging interface and some peripherals.
 
 Know that I'm still learning how to use nMigen, and I wasn't experienced with digital logic design to begin with. So on the off chance that anybody stumbles across this, suggestions are always welcome!
 
@@ -34,7 +34,7 @@ Note that I've only implemented the most basic exceptions, interrupts don't work
 
 Until I add a GPIO peripheral and/or debugging interface, the only means of testing the CPU in real hardware is through a non-standard "LED" opcode. It sets the output states of pins 39-41 to the 3 least-significant bits of a given CPU register; those pins are usually connected to LEDs on `iCE40UP` boards because they also have PWM capabilities.
 
-The CPU design is also fairly inefficient; it uses a little less than 3,500 LUTs, and it sounds like a minimal implementation shouldn't take many more than 1,000. It also doesn't include a debugging interface.
+The CPU design is also fairly inefficient; it uses over 3,500 LUTs, and it sounds like a minimal implementation shouldn't take many more than 1,000. It also doesn't include a debugging interface.
 
 So even though this table of test coverage looks okay, there's plenty more work to do before it can run an arbitrary C program.
 
@@ -110,6 +110,12 @@ The `MIE` and `MIP` CSRs won't really function properly until I finish implement
 | `MCYCLE`        | :heavy_check_mark: |
 | `MINSTRET`      | :heavy_check_mark: |
 | `MCOUNTINHIBIT` | :heavy_check_mark: |
+
+# Programming
+
+This should work with C programs compiled by GCC for the `RV32I` architecture; just flash the binary image to a 2MByte offset in the board's SPI Flash. See `tests/hw_tests` for a minimal example.
+
+I haven't looked at the timing analysis yet, and I've only tried running the core at a sluggish 6MHz. There's also no instruction cache, so programs run from NVM will spend most of their time waiting for the SPI Flash to return data.
 
 # Notes to Self
 

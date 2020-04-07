@@ -1,0 +1,63 @@
+# GCC toolchain programs.
+CC = riscv32-unknown-elf-gcc
+OC = riscv32-unknown-elf-objcopy
+OS = riscv32-unknown-elf-size
+
+# C compilation directives
+CFLAGS += -c
+CFLAGS += -Wall
+CFLAGS += -O0
+CFLAGS += -g
+CFLAGS += -fmessage-length=0
+CFLAGS += --specs=nosys.specs
+CFLAGS += -march=rv32i
+CFLAGS += -mabi=ilp32
+CFLAGS += -mcmodel=medlow
+
+# Linker directives.
+LFLAGS += -Wall
+LFLAGS += -Wl,--no-relax
+LFLAGS += -Wl,--gc-sections
+LFLAGS += -nostdlib
+LFLAGS += -nostartfiles
+LFLAGS += -lc
+LFLAGS += -lgcc
+LFLAGS += --specs=nosys.specs
+LFLAGS += -march=rv32i
+LFLAGS += -mabi=ilp32
+LFLAGS += -mcmodel=medlow
+LFLAGS += -T./tubul.ld
+
+# Source files.
+C_SRC   = ./main.c
+# Object files to build.
+OBJS    = $(C_SRC:.c=.o)
+
+# Default rule to build the whole project.
+.PHONY: all
+all: main.bin
+
+# Rule to compile C files.
+%.o: %.c
+	$(CC) $(CFLAGS) $(INCLUDE) $< -o $@
+
+# Rule to create an ELF file from the compiled object files.
+main.elf: $(OBJS)
+	$(CC) $^ $(LFLAGS) -o $@
+
+# Rule to create a raw binary file from an ELF file.
+main.bin: main.elf
+	$(OC) -S -O binary $< $@
+	$(OS) $<
+
+# Rule to flash the program 2MB into the SPI Flash on an iCE40 board.
+.PHONY: flash
+flash: all
+	iceprog -o 2M main.bin
+
+# Rule to clear out generated build files.
+.PHONY: clean
+clean:
+	rm -f $(OBJS)
+	rm -f main.elf
+	rm -f main.bin

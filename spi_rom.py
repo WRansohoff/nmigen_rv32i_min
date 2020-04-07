@@ -14,15 +14,15 @@ from isa import *
 
 # (Dummy SPI resources for simulated tests)
 class DummyPin():
-  def __init__( self ):
-    self.o = Signal()
-    self.i = Signal()
+  def __init__( self, name ):
+    self.o = Signal( name = '%s_o'%name )
+    self.i = Signal( name = '%s_i'%name )
 class DummySPI():
   def __init__( self ):
-    self.cs   = DummyPin()
-    self.clk  = DummyPin()
-    self.mosi = DummyPin()
-    self.miso = DummyPin()
+    self.cs   = DummyPin( 'cs' )
+    self.clk  = DummyPin( 'clk' )
+    self.mosi = DummyPin( 'mosi' )
+    self.miso = DummyPin( 'miso' )
 
 # Core SPI Flash "ROM" module.
 class SPI_ROM( Elaboratable, Interface ):
@@ -71,34 +71,65 @@ class SPI_ROM( Elaboratable, Interface ):
     # - Clock goes high, both sides read their bit if necessary.
     # - Repeat ad nauseum.
     with m.FSM() as fsm:
-      # 'Waiting' state:
+      # 'Reset' and 'power-up' states:
+      # pull CS low, then release power-down mode by sending 0xAB.
+      # Normally this is not necessary, but iCE40 chips shut down
+      # their connected SPI Flash after configuring themselves
+      # in order to save power and prevent unintended writes.
+      with m.State( "SPI_RESET" ):
+        m.d.sync += self.spi.cs.o.eq( 1 )
+        m.next = "SPI_POWERUP"
+      with m.State( "SPI_POWERUP" ):
+        m.d.sync += self.dc.eq( self.dc + 1 )
+        m.d.comb += self.spi.mosi.o.eq( 0xAB >> ( 7 - self.dc[ 1: ] ) )
+        # Wait a few extra cycles after ending the transaction to
+        # allow the chip to wake up from sleep mode.
+        # TODO: Time this based on clock frequency?
+        with m.If( self.dc == 30 ):
+          m.d.sync += self.spi.cs.o.eq( 0 )
+          m.next = "SPI_WAITING"
+        # De-assert CS after sending 8 bits of data = 16 clock edges.
+        with m.Elif( self.dc >= 16 ):
+          m.d.sync += self.spi.cs.o.eq( 0 )
+          m.next = "SPI_POWERUP"
+        # Toggle the 'clk' pin every cycle.
+        with m.Elif( self.dc[ 0 ] == 0 ):
+          m.d.sync += self.spi.clk.o.eq( 1 )
+          m.next = "SPI_POWERUP"
+        with m.Else():
+          m.d.sync += self.spi.clk.o.eq( 0 )
+          m.next = "SPI_POWERUP"
+      # 'Waiting' state: Keep the 'cs' pin high until a new read is
+      # requested, then move to 'SPI_TX' to send the read command.
+      # Also keep 'ack' asserted until 'stb' is released.
       with m.State( "SPI_WAITING" ):
         m.d.sync += [
           self.ack.eq( self.ack & self.stb ),
-          self.spi.cs.o.eq( 1 )
+          self.spi.cs.o.eq( 0 )
         ]
         m.next = "SPI_WAITING"
         with m.If( ( self.stb == 1 ) & ( self.ack == 0 ) ):
           m.d.sync += [
-            self.spi.cs.o.eq( 0 ),
-            self.spi.mosi.o.eq( self.spio[ 31 ] ),
+            self.spi.cs.o.eq( 1 ),
             self.ack.eq( 0 ),
             self.dc.eq( 0 )
           ]
           m.next = "SPI_TX"
-      # 'Send address' state:
+      # 'Send read command' state: transmits the 0x03 'read' command
+      # followed by the desired 24-bit address. (Encoded in 'spio')
       with m.State( "SPI_TX" ):
+        # Set the 'mosi' pin to the next value and increment 'dc'.
+        m.d.comb += self.spi.mosi.o.eq( self.spio >> ( 31 - self.dc[ 1: ] ) )
         m.d.sync += self.dc.eq( self.dc + 1 )
         # Clock is low; data sampled on next rising edge.
         with m.If( self.dc[ 0 ] == 0 ):
-          m.d.sync += self.spi.clk.o.eq( 1 ),
+          m.d.sync += self.spi.clk.o.eq( 1 )
           m.next = "SPI_TX"
-        # Clock is high; set data next tick.
+        # Clock is high; data should be stable.
         with m.Else():
-          m.d.sync += [
-            self.spi.clk.o.eq( 0 ),
-            self.spi.mosi.o.eq( self.spio >> ( 30 - self.dc[ 1: ] ) )
-          ]
+          m.d.sync += self.spi.clk.o.eq( 0 )
+          # Move to 'receive data' state once 32 bits have elapsed.
+          # Also clear 'dat_r' and 'dc' before doing so.
           with m.If( self.dc == 0b111111 ):
             m.d.sync += [
               self.dc.eq( 0 ),
@@ -107,36 +138,48 @@ class SPI_ROM( Elaboratable, Interface ):
             m.next = "SPI_RX"
           with m.Else():
             m.next = "SPI_TX"
-      # 'Receive data' state:
+      # 'Receive data' state: continue the clock signal and read
+      # the 'miso' pin on rising edges.
+      # You can keep the clock signal going to receive as many bytes
+      # as you want, but this implementation only fetches one word.
       with m.State( "SPI_RX" ):
         m.d.sync += self.dc.eq( self.dc + 1 )
+        # Simulate the 'miso' pin value for tests.
+        if platform is None:
+          m.d.comb += self.spi.miso.i.eq( self.dat_r | ( ( ( self.data[ self.adr >> 2 ] >> ( 31 - self.dc[ 1: ] ) ) & 0b1 ) ) )
         # Clock is low; device is preparing data.
         with m.If( self.dc[ 0 ] == 0 ):
           m.d.sync += self.spi.clk.o.eq( 1 )
-          if platform is None:
-            with m.If( self.dc[ 1: ] < 8 ):
-              m.d.sync += self.dat_r.eq( self.dat_r | ( ( ( self.data[ self.adr >> 2 ] >> ( 7 - self.dc[ 1: ] ) ) & 0b1 ) << ( 31 - self.dc[ 1: ] ) ) )
-            with m.Elif( self.dc[ 1: ] < 16 ):
-              m.d.sync += self.dat_r.eq( self.dat_r | ( ( ( self.data[ self.adr >> 2 ] >> ( 15 - ( self.dc[ 1: ] - 8 ) ) ) & 0b1 ) << ( 31 - self.dc[ 1: ] ) ) )
-            with m.Elif( self.dc[ 1: ] < 24 ):
-              m.d.sync += self.dat_r.eq( self.dat_r | ( ( ( self.data[ self.adr >> 2 ] >> ( 23 - ( self.dc[ 1: ] - 16 ) ) ) & 0b1 ) << ( 31 - self.dc[ 1: ] ) ) )
-            with m.Else():
-              m.d.sync += self.dat_r.eq( self.dat_r | ( ( ( self.data[ self.adr >> 2 ] >> ( 31 - ( self.dc[ 1: ] - 24 ) ) ) & 0b1 ) << ( 31 - self.dc[ 1: ] ) ) )
-          else:
-            m.d.sync += self.dat_r.eq( self.dat_r | ( self.spi.miso.i << ( 31 - self.dc[ 1: ] ) ) )
+          m.d.sync += self.dat_r.eq( self.dat_r | ( self.spi.miso.i << ( 31 - self.dc[ 1: ] ) ) )
           m.next = "SPI_RX"
-        # Clock is high; data shifts on the next falling clock edge.
+        # Clock is high; data should be stable.
         with m.Else():
           m.d.sync += self.spi.clk.o.eq( 0 )
+          # Assert 'ack' signal and move back to 'waiting' state
+          # once a whole word of data has been received.
           with m.If( self.dc == 0b111111 ):
+            '''
             m.d.sync += [
               self.ack.eq( 1 ),
-              self.spi.cs.o.eq( 1 )
+              self.spi.cs.o.eq( 0 )
             ]
             m.next = "SPI_WAITING"
+            '''
+            m.d.sync += self.spi.cs.o.eq( 0 )
+            m.next = "SPI_LE"
           with m.Else():
             m.next = "SPI_RX"
+      # Perform little-endian conversion.
+      # TODO: this shouldn't be necessary.
+      with m.State( "SPI_LE" ):
+        m.d.sync += [
+          self.ack.eq( 1 ),
+          self.dat_r.eq( LITTLE_END( self.dat_r ) )
+          #self.dat_r.eq( self.dat_r )
+        ]
+        m.next = "SPI_WAITING"
 
+    # (End of SPI Flash "ROM" module logic)
     return m
 
 ##############################
@@ -146,7 +189,7 @@ class SPI_ROM( Elaboratable, Interface ):
 p = 0
 f = 0
 
-# Helper method to record test pass/fails.
+# Helper method to record unit test pass/fails.
 def spi_rom_ut( name, actual, expected ):
   global p, f
   if expected != actual:
@@ -165,36 +208,38 @@ def spi_read_word( srom, virt_addr, phys_addr, simword, end_wait ):
   # Set 'strobe' and 'cycle' to request a new read.
   yield srom.stb.eq( 1 )
   yield srom.cyc.eq( 1 )
-  # Wait two ticks; CS pin should then be low.
+  # Wait a tick; the (inverted) CS pin should then be low, and
+  # the 'read command' value should be set correctly.
   yield Tick()
   yield Settle()
   csa = yield srom.spi.cs.o
   spcmd = yield srom.spio
-  spi_rom_ut( "CS Low", csa, 0 )
+  spi_rom_ut( "CS Low", csa, 1 )
   spi_rom_ut( "SPI Read Cmd Value", spcmd, ( phys_addr & 0x00FFFFFF ) | 0x03000000 )
-  yield Tick()
   # Then the 32-bit read command is sent; two ticks per bit.
   for i in range( 32 ):
+    yield Tick()
     yield Settle()
     dout = yield srom.spi.mosi.o
     spi_rom_ut( "SPI Read Cmd  [%d]"%i, dout, ( spcmd >> ( 31 - i ) ) & 0b1 )
-    yield Tick()
     yield Tick()
   # The following 32 bits should return the word. Simulate
   # the requested word arriving on the MISO pin, MSbit first.
   # (Data starts getting returned on the falling clock edge
   #  immediately following the last rising-edge read.)
   for i in range( 32 ):
+    yield Tick()
     yield Settle()
     progress = yield srom.dat_r
     spi_rom_ut( "SPI Read Word [%d]"%i, progress, ( simword & ~( 0xFFFFFFFF >> ( i + 1 ) ) ) )
     yield Tick()
-    yield Tick()
+  # Wait one more tick, then the CS signal should be de-asserted.
   yield Tick()
   yield Settle()
   csa = yield srom.spi.cs.o
-  spi_rom_ut( "CS High (Waiting)", csa, 1 )
-  # Done; reset 'strobe' and 'cycle' after N ticks.
+  spi_rom_ut( "CS High (Waiting)", csa, 0 )
+  # Done; reset 'strobe' and 'cycle' after N ticks to test
+  # delayed reads from the bus.
   for i in range( end_wait ):
     yield Tick()
   yield srom.stb.eq( 0 )
@@ -220,11 +265,11 @@ def spi_rom_tests( srom ):
     yield Tick()
     yield Settle()
     csa = yield srom.spi.cs.o
-    spi_rom_ut( "CS High (Waiting)", csa, 1 )
+    spi_rom_ut( "CS High (Waiting)", csa, 0 )
   yield from spi_read_word( srom, 0x10, 0x200010, LITTLE_END( 0xDEADFACE ), 1 )
   yield from spi_read_word( srom, 0x0C, 0x20000C, LITTLE_END( 0xABACADAB ), 1 )
 
-  # Done.
+  # Done. Print the number of passed and failed unit tests.
   yield Tick()
   print( "SPI 'ROM' Tests: %d Passed, %d Failed"%( p, f ) )
 
@@ -237,6 +282,10 @@ if __name__ == "__main__":
   # Run the SPI ROM tests.
   with Simulator( dut, vcd_file = open( 'spi_rom.vcd', 'w' ) ) as sim:
     def proc():
+      # Wait until the 'release power-down' command is sent.
+      # TODO: test that startup condition.
+      for i in range( 30 ):
+        yield Tick()
       yield from spi_rom_tests( dut )
     sim.add_clock( 1e-6 )
     sim.add_sync_process( proc )

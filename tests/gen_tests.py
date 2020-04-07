@@ -66,8 +66,6 @@ def write_py_tests( op, hext, hexd, out_dir ):
     py.write( '\r\n] )\r\n' )
     # Write the inirialized RAM values.
     py.write( '\r\n# Simulated initialized RAM image:\r\n'
-              '# TODO: RAM should eventually be initialized '
-              'by the application\r\n'
               '%s_ram = ram_img( ['%op )
     for x in range( len( hexd ) ):
       if ( x % 4 ) == 0:

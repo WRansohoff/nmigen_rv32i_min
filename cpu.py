@@ -581,9 +581,7 @@ def cpu_sim( test ):
   sim_name = "%s.vcd"%test[ 1 ]
   with Simulator( cpu, vcd_file = open( sim_name, 'w' ) ) as sim:
     def proc():
-      # Initialize RAM values. TODO: The application should do this,
-      # but I've removed a bunch of startup code from the tests to
-      # skip over CSR calls which I haven't implemented yet.
+      # Initialize RAM values.
       for i in range( len( test[ 3 ] ) ):
         yield cpu.mem.ram.data[ i ].eq( test[ 3 ][ i ] )
       # Run the program and print pass/fail for individual tests.
@@ -595,7 +593,6 @@ def cpu_sim( test ):
     sim.run()
 
 # Helper method to simulate running multiple ROM modules in sequence.
-# TODO: Does not currently support initialized RAM values.
 def cpu_mux_sim( tests ):
   print( "\033[33mSTART\033[0m running '%s' test suite:"%tests[ 0 ] )
   # Create the CPU device.
@@ -622,9 +619,7 @@ def cpu_mux_sim( tests ):
         yield Tick()
         yield cpu.mem.rom.select.eq( i )
         yield Settle()
-        # Initialize RAM values. TODO: The application should do this,
-        # but I've removed a bunch of startup code from the tests to
-        # skip over CSR calls which I haven't implemented yet.
+        # Initialize RAM values.
         for j in range( len( tests[ 2 ][ i ][ 3 ] ) ):
           yield cpu.mem.ram.data[ j ].eq( tests[ 2 ][ i ][ 3 ][ j ] )
         yield from cpu_run( cpu, tests[ 2 ][ i ][ 4 ] )
@@ -665,6 +660,11 @@ if __name__ == "__main__":
       print( '--- CPU Tests ---' )
       # Simulate the 'infinite loop' ROM to screen for syntax errors.
       cpu_sim( loop_test )
+      cpu_sim( sh_test )
+      cpu_sim( sw_test )
+      cpu_sim( io_test )
+      cpu_sim( misalign_jmp_test )
+      cpu_sim( misalign_ldst_test )
       cpu_spi_sim( loop_test )
       # Run auto-generated RV32I compliance tests with a multiplexed
       # ROM module containing a different program for each one.

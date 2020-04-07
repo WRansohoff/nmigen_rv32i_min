@@ -239,20 +239,3 @@ rv32i_compliance = [ 'RV32I compliance tests', 'rv32i_compliance',
 # Non-standard compiled test programs.
 from tests.test_roms.rv32i_mcycle import *
 from tests.test_roms.rv32i_minstret import *
-
-# Helper method to split a word into little-endian bytes.
-def le_bytes( img ):
-  lb = []
-  for i in img:
-    lb.append( ( i >> 24 ) & 0xFF )
-    lb.append( ( i >> 16 ) & 0xFF )
-    lb.append( ( i >> 8 ) & 0xFF )
-    lb.append( i & 0xFF )
-  return lb
-
-# 'main' method to write binary files with a given ROM image.
-if __name__ == "__main__":
-  if len( sys.argv ) == 2:
-    if sys.argv[ 1 ] == 'led':
-      with open( 'led.bin', 'wb' ) as f:
-        f.write( bytes( le_bytes( led_rom ) ) )

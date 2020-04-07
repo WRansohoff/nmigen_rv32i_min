@@ -51,55 +51,53 @@ class RAM( Elaboratable, Interface ):
       self.ack.eq( 0 )
     ]
 
-    # Don't do anything if the bus' 'cyc' signal is de-asserted.
-    with m.If( self.cyc ):
-      # Set the 'dout' value based on address and RAM data.
-      m.d.comb += self.r.addr.eq( self.adr >> 2 )
-      # Word-aligned reads.
-      with m.If( ( self.adr & 0b11 ) == 0b00 ):
-        m.d.comb += self.dat_r.eq( LITTLE_END( self.r.data ) )
-        m.d.sync += self.ack.eq( self.stb & ( self.we == 0 ) )
-      # Partial reads.
-      with m.Else():
-        m.d.comb += self.dat_r.eq( LITTLE_END(
-          self.r.data << ( ( self.adr & 0b11 ) << 3 ) ) )
-        m.d.sync += self.ack.eq( self.stb & ( self.we == 0 ) )
+    # Set the 'dout' value based on address and RAM data.
+    m.d.comb += self.r.addr.eq( self.adr >> 2 )
+    # Only set ack if 'cyc' is asserted.
+    m.d.sync += self.ack.eq( self.cyc & ( self.stb & ( self.we == 0 ) ) )
+    # Word-aligned reads.
+    with m.If( ( self.adr & 0b11 ) == 0b00 ):
+      m.d.comb += self.dat_r.eq( LITTLE_END( self.r.data ) )
+    # Partial reads.
+    with m.Else():
+      m.d.comb += self.dat_r.eq( LITTLE_END(
+        self.r.data << ( ( self.adr & 0b11 ) << 3 ) ) )
 
-      # Write the 'din' value if 'wen' is set.
-      with m.If( self.we ):
-        # Word-aligned 32-bit writes.
-        with m.If( ( ( self.adr & 0b11 ) == 0b00 ) & ( self.dw == RAM_DW_32 ) ):
+    # Write the 'din' value if 'wen' is set.
+    with m.If( self.we ):
+      # Word-aligned 32-bit writes.
+      with m.If( ( ( self.adr & 0b11 ) == 0b00 ) & ( self.dw == RAM_DW_32 ) ):
+        m.d.comb += [
+          self.w.addr.eq( self.adr >> 2 ),
+          self.w.en.eq( self.cyc ),
+          self.w.data.eq( LITTLE_END( self.dat_w ) )
+        ]
+        m.d.sync += self.ack.eq( 1 )
+      # Writes requiring wait-states:
+      with m.Elif( ( self.wws == 0 ) & ( self.ack == 0 ) ):
+        m.d.sync += self.wws.eq( self.wws + 1 )
+      with m.Else():
+        m.d.sync += [
+          self.wws.eq( 0 ),
+          self.ack.eq( self.cyc )
+        ]
+        # Word-aligned partial writes.
+        with m.If( ( self.adr & 0b11 ) == 0b00 ):
           m.d.comb += [
             self.w.addr.eq( self.adr >> 2 ),
-            self.w.en.eq( 1 ),
-            self.w.data.eq( LITTLE_END( self.dat_w ) )
+            self.w.en.eq( self.cyc ),
+            self.w.data.eq( self.r.data | LITTLE_END( ( self.dat_w & ( 0xFFFFFFFF >> ( self.dw << 3 ) ) ) ) )
           ]
-          m.d.sync += self.ack.eq( 1 )
-        # Writes requiring wait-states:
-        with m.Elif( ( self.wws == 0 ) & ( self.ack == 0 ) ):
-          m.d.sync += self.wws.eq( self.wws + 1 )
+        # Un-aligned partial writes.
         with m.Else():
-          m.d.sync += [
-            self.wws.eq( 0 ),
-            self.ack.eq( 1 )
+          # Assume that read ports hold data from the same addresses.
+          m.d.comb += [
+            self.w.addr.eq( self.adr >> 2 ),
+            self.w.en.eq( self.cyc ),
+            self.w.data.eq( ( self.r.data &
+              ~( ( ( 0xFFFFFFFF << ( self.dw << 3 ) ) & 0xFFFFFFFF ) >> ( ( self.adr & 0b11 ) << 3 ) ) ) |
+              ( LITTLE_END( ( self.dat_w & 0xFFFFFFFF >> ( self.dw << 3 ) ) << ( ( ( self.adr & 0b11 ) << 3 ) ) ) ) ),
           ]
-          # Word-aligned partial writes.
-          with m.If( ( self.adr & 0b11 ) == 0b00 ):
-            m.d.comb += [
-              self.w.addr.eq( self.adr >> 2 ),
-              self.w.en.eq( 1 ),
-              self.w.data.eq( self.r.data | LITTLE_END( ( self.dat_w & ( 0xFFFFFFFF >> ( self.dw << 3 ) ) ) ) )
-            ]
-          # Un-aligned partial writes.
-          with m.Else():
-            # Assume that read ports hold data from the same addresses.
-            m.d.comb += [
-              self.w.addr.eq( self.adr >> 2 ),
-              self.w.en.eq( 1 ),
-              self.w.data.eq( ( self.r.data &
-                ~( ( ( 0xFFFFFFFF << ( self.dw << 3 ) ) & 0xFFFFFFFF ) >> ( ( self.adr & 0b11 ) << 3 ) ) ) |
-                ( LITTLE_END( ( self.dat_w & 0xFFFFFFFF >> ( self.dw << 3 ) ) << ( ( ( self.adr & 0b11 ) << 3 ) ) ) ) ),
-            ]
 
     # End of RAM module definition.
     return m

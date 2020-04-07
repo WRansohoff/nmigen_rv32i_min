@@ -34,6 +34,7 @@ SECTIONS
   _sidata = .;
   .data : AT( _sidata )
   {
+    . = . + 4;
     _sdata = .;
     *(.rdata)
     *(.data .data.*)

@@ -1,6 +1,8 @@
 from nmigen import *
+from math import ceil, log2
 from nmigen.back.pysim import *
-from nmigen_soc.csr import *
+from nmigen_soc.memory import *
+from nmigen_soc.wishbone import *
 
 from isa import *
 
@@ -8,35 +10,36 @@ from isa import *
 # ROM module: #
 ###############
 
-class ROM( Elaboratable, Element ):
+class ROM( Elaboratable, Interface ):
   def __init__( self, data ):
-    # Address bits to select up to `len( data )` words by byte.
-    self.addr = Signal( range( len( data ) * 4 ), reset = 0 )
     # Data storage.
     self.data = Memory( width = 32, depth = len( data ), init = data )
     # Memory read port.
     self.r = self.data.read_port()
     # Record size.
     self.size = len( data ) * 4
-    # Set Element access to read-only.
-    Element.__init__( self, 32, 'r' )
+    # Initialize Wishbone bus interface.
+    Interface.__init__( self, addr_width = ceil( log2( self.size + 1 ) ), data_width = 32 )
+    self.memory_map = MemoryMap( addr_width = self.addr_width, data_width = self.data_width, alignment = 0 )
 
   def elaborate( self, platform ):
     # Core ROM module.
     m = Module()
     m.submodules.r = self.r
 
+    m.d.sync += self.ack.eq( self.stb )
+
     # Set the 'output' value to the requested 'data' array index.
     # If a read would 'spill over' into an out-of-bounds data byte,
     # set that byte to 0x00.
     # Word-aligned reads
-    m.d.comb += self.r.addr.eq( self.addr >> 2 )
-    with m.If( ( self.addr & 0b11 ) == 0b00 ):
-      m.d.sync += self.r_data.eq( LITTLE_END( self.r.data ) )
+    m.d.comb += self.r.addr.eq( self.adr >> 2 )
+    with m.If( ( self.adr & 0b11 ) == 0b00 ):
+      m.d.sync += self.dat_r.eq( LITTLE_END( self.r.data ) )
     # Un-aligned reads
     with m.Else():
-      m.d.sync += self.r_data.eq(
-        LITTLE_END( self.r.data << ( ( self.addr & 0b11 ) << 3 ) ) )
+      m.d.sync += self.dat_r.eq(
+        LITTLE_END( self.r.data << ( ( self.adr & 0b11 ) << 3 ) ) )
 
     # End of ROM module definition.
     return m
@@ -52,12 +55,12 @@ f = 0
 def rom_read_ut( rom, address, expected ):
   global p, f
   # Set address, and wait two ticks.
-  yield rom.addr.eq( address )
+  yield rom.adr.eq( address )
   yield Tick()
   yield Tick()
   # Done. Check the result after combinational logic settles.
   yield Settle()
-  actual = yield rom.r_data
+  actual = yield rom.dat_r
   if expected != actual:
     f += 1
     print( "\033[31mFAIL:\033[0m ROM[ 0x%08X ] = 0x%08X (got: 0x%08X)"

@@ -56,14 +56,14 @@ def write_py_tests( op, hext, hexd, out_dir ):
               '\r\n'%( op.upper(), opp ) )
     # Write the ROM image.
     py.write( '# Simulated ROM image:\r\n'
-              '%s_rom = ROM( rom_img( ['%op )
+              '%s_rom = rom_img( ['%op )
     for x in range( len( hext ) ):
       if ( x % 4 ) == 0:
         py.write( '\r\n  ' )
       py.write( '%s'%hext[ x ] )
       if x < ( len( hext ) - 1 ):
         py.write( ', ' )
-    py.write( '\r\n] ) )\r\n' )
+    py.write( '\r\n] )\r\n' )
     # Write the inirialized RAM values.
     py.write( '\r\n# Simulated initialized RAM image:\r\n'
               '# TODO: RAM should eventually be initialized '

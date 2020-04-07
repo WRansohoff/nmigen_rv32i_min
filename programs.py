@@ -10,11 +10,11 @@ from cpu import *
 
 # "Infinite Loop" program: I think this is the simplest error-free
 # application that you could write, equivalent to "while(1){};".
-loop_rom = ROM( rom_img( [ JAL( 1, 0x00000 ) ] ) )
+loop_rom = rom_img( [ JAL( 1, 0x00000 ) ] )
 
 # "Run from RAM" program: Make sure that the CPU can jump between
 # RAM and ROM memory spaces.
-ram_rom = ROM( rom_img ( [
+ram_rom = rom_img ( [
   # Load the starting address of the 'RAM program' into r1.
   LI( 1, 0x20000004 ),
   # Initialize the 'RAM program'.
@@ -29,13 +29,13 @@ ram_rom = ROM( rom_img ( [
   ADDI( 9, 0, 0x123 ),
   # Done; infinite loop.
   JAL( 1, 0x00000 )
-] ) )
+] )
 
 # "Quick Test" program: this application contains at least one of
 # each supported machine code instruction, but it does not perform
 # exhaustive tests for any particular instruction.
 # (TODO: It doesn't contain at least one of each instruction yet)
-quick_rom = ROM( rom_img( [
+quick_rom = rom_img( [
   # ADDI, ADD (expect r1 = 0x0000123, r2 = 0x0000246)
   ADDI( 1, 0, 0x123 ), ADD( 2, 1, 1 ),
   # BNE (PC should skip over the following dummy data)
@@ -53,20 +53,20 @@ quick_rom = ROM( rom_img( [
   ADDI( 5, 0, 0xFFE ), SUB( 6, 1, 5 ),
   # Done; infinite loop.
   JAL( 1, 0x00000 )
-] ) )
+] )
 
 # "LED Test" program: cycle through RGB LED colors.
-led_rom = ROM( rom_img( [
+led_rom = rom_img( [
   # r15 will hold the LED colors, r14 the loopback address.
   ADDI( 15, 0, 1 ), ADDI( 13, 0, 8 ), AUIPC( 14, 0 ),
   # Increment r15, reset to 0 if > 7.
   ADDI( 15, 15, 1 ), BLT( 15, 13, 0x004 ), ADDI( 15, 0, 1 ),
   # Delay for 100000 instructions.
-  ADDI( 4, 0, 0 ), LI( 5, 100000 ),
-  ADDI( 4, 0, 1 ), BLT( 4, 5, -4 ),
+  #ADDI( 4, 0, 0 ), LI( 5, 100000 ),
+  #ADDI( 4, 0, 1 ), BLT( 4, 5, -4 ),
   # Set LED color, loop back.
   LED( 15 ), JALR( 16, 14, 0 )
-] ) )
+] )
 
 ########################################
 # Expected runtime register values for #

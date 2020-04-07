@@ -6,6 +6,7 @@ from alu import *
 from csr import *
 from isa import *
 from mux_rom import *
+from spi_rom import *
 from rom import *
 from rvmem import *
 from cpu_helpers import *
@@ -57,10 +58,6 @@ class CPU( Elaboratable ):
     self.imm    = Signal( shape = Shape( width = 32, signed = True ),
                           reset = 0x00000000 )
     self.ipc    = Signal( 32, reset = 0x00000000 )
-    # TODO: Redesign the FSM to require fewer and less scattered wait-states.
-    # Memory wait states for RAM and ROM.
-    # TODO: Use handshaking instead of a common wait-state countdown.
-    self.memws  = Signal( 3, reset = 0b010 )
     # CPU register access wait states.
     self.rws    = Signal( 2, reset = 0b10 )
     # The ALU submodule which performs logical operations.
@@ -102,17 +99,12 @@ class CPU( Elaboratable ):
 
     # Reset countdown.
     rsc = Signal( 2, reset = 0b11 )
-    # Memory wait state countdowns.
-    memws_c = Signal( 3, reset = 0b000 )
+    # Register access wait state countdown.
     rws_c   = Signal( 2, reset = 0b00 )
 
     # Disable CPU register writes by default.
     m.d.comb += self.rc.en.eq( 0 )
     # Reset memory access wait-state counters if they are not used.
-    m.d.sync += [
-      memws_c.eq( 0 ),
-      rws_c.eq( 0 )
-    ]
     m.d.sync += rws_c.eq( 0 )
 
     # Set the program counter to the simulated memory addresses
@@ -120,7 +112,10 @@ class CPU( Elaboratable ):
     m.d.comb += self.mem.addr.eq( self.pc )
 
     # Disable RAM writes by default.
-    m.d.comb += self.mem.mux.bus.w_stb.eq( 0 )
+    m.d.comb += [
+      self.mem.mux.we.eq( 0 ),
+      self.mem.mux.stb.eq( 0 )
+    ]
 
     # Set CSR values to 0 by default.
     m.d.comb += [
@@ -140,15 +135,15 @@ class CPU( Elaboratable ):
       # "ROM Fetch": Wait for the instruction to load from ROM, and
       #              populate register fields to prepare for decoding.
       with m.State( "CPU_PC_ROM_FETCH" ):
+        m.d.comb += self.mem.mux.stb.eq( 1 )
         # Memory wait states.
-        with m.If( memws_c < self.memws ):
-          m.d.sync += memws_c.eq( memws_c + 1 )
+        with m.If( ( self.mem.mux.ack == 0 ) | ( self.mem.mux.stb == 0 ) ):
           m.next = "CPU_PC_ROM_FETCH"
         with m.Else():
           # Increment 'instructions retired' counter.
           minstret_incr( self, m )
           # Decode the fetched instruction and move on to run it.
-          rv32i_decode( self, m, self.mem.mux.bus.r_data )
+          rv32i_decode( self, m, self.mem.mux.dat_r )
           m.next = "CPU_PC_DECODE"
       # "Decode PC": Figure out what sort of instruction to execute,
       #              and prepare associated registers.
@@ -259,7 +254,7 @@ class CPU( Elaboratable ):
           with m.Else():
             m.d.comb += [
               self.mem.addr.eq( self.mp ),
-              self.mem.mux.bus.w_data.eq( self.rb.data )
+              self.mem.mux.dat_w.eq( self.rb.data )
             ]
             # "Store Byte" operation:
             with m.If( self.f == F_SB ):
@@ -377,6 +372,7 @@ class CPU( Elaboratable ):
       # "Load / Store operation" - wait for memory access to finish.
       # Note: This state is skipped on loads to r0.
       with m.State( "CPU_LDST" ):
+        m.d.comb += self.mem.mux.stb.eq( 1 )
         # Maintain the cominatorial logic holding the memory
         # address at the 'mp' (memory pointer) value.
         m.d.comb += [
@@ -385,8 +381,8 @@ class CPU( Elaboratable ):
         ]
         with m.If( self.opcode == OP_STORE ):
           m.d.comb += [
-            self.mem.mux.bus.w_stb.eq( memws_c != self.memws ),
-            self.mem.mux.bus.w_data.eq( self.rb.data )
+            self.mem.mux.we.eq( self.mem.mux.ack ),
+            self.mem.mux.dat_w.eq( self.rb.data )
           ]
           # "Store Byte" operation:
           with m.If( self.f == F_SB ):
@@ -397,9 +393,15 @@ class CPU( Elaboratable ):
           # "Store Word" operation:
           with m.Elif( self.f == F_SW ):
             m.d.comb += self.mem.ram.dw.eq( RAM_DW_32 )
-        # Memory access wait-states.
-        with m.If( memws_c < self.memws ):
-          m.d.sync += memws_c.eq( memws_c + 1 )
+          # Only move on after writing.
+          with m.If( ( self.mem.mux.ack ) & ( self.mem.mux.we ) ):
+            m.next = "CPU_PC_LOAD"
+          with m.Else():
+            m.next = "CPU_LDST"
+        # Wait for memory reads.
+        with m.Elif( self.mem.mux.ack == 0 ):
+          m.next = "CPU_LDST"
+        # Store operations.
         # Load operations.
         with m.Elif( self.opcode == OP_LOAD ):
           m.next = "CPU_PC_LOAD"
@@ -407,20 +409,20 @@ class CPU( Elaboratable ):
           m.d.comb += self.rc.en.eq( 1 )
           # "Load Byte" operation:
           with m.If( self.f == F_LB ):
-            m.d.comb += self.rc.data.eq( Cat( self.mem.mux.bus.r_data[ :8 ], Repl( self.mem.mux.bus.r_data[ 7 ], 24 ) ) )
+            m.d.comb += self.rc.data.eq( Cat( self.mem.mux.dat_r[ :8 ], Repl( self.mem.mux.dat_r[ 7 ], 24 ) ) )
           # "Load Halfword" operation:
           with m.Elif( self.f == F_LH ):
-            m.d.comb += self.rc.data.eq( Cat( self.mem.mux.bus.r_data[ :16 ], Repl( self.mem.mux.bus.r_data[ 15 ], 16 ) ) )
+            m.d.comb += self.rc.data.eq( Cat( self.mem.mux.dat_r[ :16 ], Repl( self.mem.mux.dat_r[ 15 ], 16 ) ) )
           # "Load Word" operation:
           with m.Elif( self.f == F_LW ):
-            m.d.comb += self.rc.data.eq( self.mem.mux.bus.r_data )
+            m.d.comb += self.rc.data.eq( self.mem.mux.dat_r )
           # "Load Byte" (without sign extension) operation:
           with m.Elif( self.f == F_LBU ):
-            m.d.comb += self.rc.data.eq( self.mem.mux.bus.r_data & 0xFF )
+            m.d.comb += self.rc.data.eq( self.mem.mux.dat_r & 0xFF )
           # "Load Halfword" (without sign extension) operation:
           with m.Elif( self.f == F_LHU ):
             m.d.comb += self.rc.data.eq(
-              ( self.mem.mux.bus.r_data & 0xFFFF ) )
+              ( self.mem.mux.dat_r & 0xFFFF ) )
         with m.Else():
           m.next = "CPU_PC_LOAD"
       # "Trap Entry" - update PC and EPC CSR, and context switch.
@@ -541,6 +543,29 @@ def cpu_run( cpu, expected ):
     # Step the simulation.
     yield Tick()
 
+# Helper method to simulate running a CPU from simulated SPI
+# Flash which contains a given ROM image. I hope I understood the
+# W25Q datasheet well enough for this to be valid...
+def cpu_spi_sim( test ):
+  print( "\033[33mSTART\033[0m running '%s' program (SPI):"%test[ 0 ] )
+  # Create the CPU device.
+  sim_spi_off = ( 2 * 1024 * 1024 )
+  dut = CPU( SPI_ROM( sim_spi_off, sim_spi_off + 1024, test[ 2 ] ) )
+  cpu = ResetInserter( dut.clk_rst )( dut )
+
+  # Run the simulation.
+  sim_name = "%s_spi.vcd"%test[ 1 ]
+  with Simulator( cpu, vcd_file = open( sim_name, 'w' ) ) as sim:
+    def proc():
+      for i in range( len( test[ 3 ] ) ):
+        yield cpu.mem.ram.data[ i ].eq( test[ 3 ][ i ] )
+      yield from cpu_run( cpu, test[ 4 ] )
+      print( "\033[35mDONE\033[0m running %s: executed %d instructions"
+             %( test[ 0 ], test[ 4 ][ 'end' ] ) )
+    sim.add_clock( 1e-6 )
+    sim.add_sync_process( proc )
+    sim.run()
+
 # Helper method to simulate running a CPU with the given ROM image
 # for the specified number of CPU cycles. The 'name' field is used
 # for printing and generating the waveform filename: "cpu_[name].vcd".
@@ -549,7 +574,7 @@ def cpu_run( cpu, expected ):
 def cpu_sim( test ):
   print( "\033[33mSTART\033[0m running '%s' program:"%test[ 0 ] )
   # Create the CPU device.
-  dut = CPU( test[ 2 ] )
+  dut = CPU( ROM( test[ 2 ] ) )
   cpu = ResetInserter( dut.clk_rst )( dut )
 
   # Run the simulation.
@@ -574,7 +599,7 @@ def cpu_sim( test ):
 def cpu_mux_sim( tests ):
   print( "\033[33mSTART\033[0m running '%s' test suite:"%tests[ 0 ] )
   # Create the CPU device.
-  dut = CPU( MUXROM( Array( tests[ 2 ][ i ][ 2 ]
+  dut = CPU( MUXROM( Array( ROM( tests[ 2 ][ i ][ 2 ] )
              for i in range( len( tests[ 2 ] ) ) ) ) )
   cpu = ResetInserter( dut.clk_rst )( dut )
   num_i = 0
@@ -587,9 +612,6 @@ def cpu_mux_sim( tests ):
   #with Simulator( cpu, vcd_file = open( sim_name, 'w' ) ) as sim:
   with Simulator( cpu, vcd_file = None ) as sim:
     def proc():
-      # Set three wait states for ROM access, to allow the ROM
-      # address and data to propagate through the multiplexer.
-      yield cpu.memws.eq( 0b011 )
       # Run the programs and print pass/fail for individual tests.
       for i in range( len( tests[ 2 ] ) ):
         print( "  \033[93mSTART\033[0m running '%s' ROM image:"
@@ -625,11 +647,16 @@ if __name__ == "__main__":
       # (Un-comment to suppress warning messages)
       warnings.filterwarnings( "ignore", category = DriverConflict )
       warnings.filterwarnings( "ignore", category = UnusedElaboratable )
-      # Disable CSRs so the design fits in an UP5K.
-      cpu = CPU( led_rom )
+      sopts = ''
+      # Optional: increases design size but provides more info.
+      #sopts += '-noflatten'
+      #cpu = CPU( ROM( led_rom ) )
+      prog_start = ( 2 * 1024 * 1024 )
+      cpu = CPU( SPI_ROM( prog_start, prog_start + 1024, None ) )
       UpduinoV2Platform().build( ResetInserter( cpu.clk_rst )( cpu ),
                                  do_build = True,
-                                 do_program = False )
+                                 do_program = False,
+                                 synth_opts = sopts )
   else:
     # Run testbench simulations.
     with warnings.catch_warnings():
@@ -638,6 +665,7 @@ if __name__ == "__main__":
       print( '--- CPU Tests ---' )
       # Simulate the 'infinite loop' ROM to screen for syntax errors.
       cpu_sim( loop_test )
+      cpu_spi_sim( loop_test )
       # Run auto-generated RV32I compliance tests with a multiplexed
       # ROM module containing a different program for each one.
       # (The CPU gets reset between each program.)

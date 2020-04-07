@@ -1,6 +1,8 @@
 from nmigen import *
+from math import ceil, log2
 from nmigen.back.pysim import *
-from nmigen_soc.csr import *
+from nmigen_soc.memory import *
+from nmigen_soc.wishbone import *
 
 from isa import *
 
@@ -13,26 +15,24 @@ RAM_DW_8  = 3
 RAM_DW_16 = 2
 RAM_DW_32 = 0
 
-class RAM( Elaboratable, Element ):
+class RAM( Elaboratable, Interface ):
   def __init__( self, size_words ):
     # Record size.
     self.size = ( size_words * 4 )
-    # Address bits to select up to `size_words * 4` bytes.
-    # (+1 to detect edge-case out-of-range writes)
-    self.addr = Signal( range( self.size ), reset = 0 )
     # Width of data input.
     self.dw   = Signal( 2, reset = 0b00 )
     # 'Write wait-state' bit.
     # Mis-aligned data must be read before re-writing.
     self.wws  = Signal( 1, reset = 0b0 )
     # Data storage.
-    self.data = Memory( width = 32, depth = ( self.size // 4 ),
-      init = ( 0x000000 for i in range( self.size // 4 ) ) )
+    self.data = Memory( width = 32, depth = size_words,
+      init = ( 0x000000 for i in range( size_words ) ) )
     # Read and write ports.
     self.r = self.data.read_port()
     self.w = self.data.write_port()
-    # Set Element access to read/write.
-    Element.__init__( self, 32, 'rw' )
+    # Initialize wishbone bus interface.
+    Interface.__init__( self, addr_width = ceil( log2( self.size + 1 ) ), data_width = 32 )
+    self.memory_map = MemoryMap( addr_width = self.addr_width, data_width = self.data_width, alignment = 0 )
 
   def elaborate( self, platform ):
     # Core RAM module.
@@ -48,48 +48,55 @@ class RAM( Elaboratable, Element ):
     ]
     m.d.sync += [
       self.wws.eq( 0 ),
+      self.ack.eq( 0 )
     ]
 
     # Set the 'dout' value based on address and RAM data.
-    m.d.comb += self.r.addr.eq( self.addr >> 2 )
+    m.d.comb += self.r.addr.eq( self.adr >> 2 )
     # Word-aligned reads.
-    with m.If( ( self.addr & 0b11 ) == 0b00 ):
-      m.d.comb += self.r_data.eq( LITTLE_END( self.r.data ) )
+    with m.If( ( self.adr & 0b11 ) == 0b00 ):
+      m.d.comb += self.dat_r.eq( LITTLE_END( self.r.data ) )
+      m.d.sync += self.ack.eq( self.stb & ( self.we == 0 ) )
     # Partial reads.
     with m.Else():
-      m.d.comb += self.r_data.eq( LITTLE_END(
-        self.r.data << ( ( self.addr & 0b11 ) << 3 ) ) )
+      m.d.comb += self.dat_r.eq( LITTLE_END(
+        self.r.data << ( ( self.adr & 0b11 ) << 3 ) ) )
+      m.d.sync += self.ack.eq( self.stb & ( self.we == 0 ) )
 
     # Write the 'din' value if 'wen' is set.
-    with m.If( self.w_stb ):
+    with m.If( self.we ):
       # Word-aligned 32-bit writes.
-      with m.If( ( ( self.addr & 0b11 ) == 0b00 ) & ( self.dw == RAM_DW_32 ) ):
+      with m.If( ( ( self.adr & 0b11 ) == 0b00 ) & ( self.dw == RAM_DW_32 ) ):
         m.d.comb += [
-          self.w.addr.eq( self.addr >> 2 ),
+          self.w.addr.eq( self.adr >> 2 ),
           self.w.en.eq( 1 ),
-          self.w.data.eq( LITTLE_END( self.w_data ) )
+          self.w.data.eq( LITTLE_END( self.dat_w ) )
         ]
+        m.d.sync += self.ack.eq( 1 )
       # Writes requiring wait-states:
-      with m.Elif( self.wws == 0 ):
+      with m.Elif( ( self.wws == 0 ) & ( self.ack == 0 ) ):
         m.d.sync += self.wws.eq( self.wws + 1 )
       with m.Else():
-        m.d.sync += self.wws.eq( 0 )
+        m.d.sync += [
+          self.wws.eq( 0 ),
+          self.ack.eq( 1 )
+        ]
         # Word-aligned partial writes.
-        with m.If( ( self.addr & 0b11 ) == 0b00 ):
+        with m.If( ( self.adr & 0b11 ) == 0b00 ):
           m.d.comb += [
-            self.w.addr.eq( self.addr >> 2 ),
+            self.w.addr.eq( self.adr >> 2 ),
             self.w.en.eq( 1 ),
-            self.w.data.eq( self.r.data | LITTLE_END( ( self.w_data & ( 0xFFFFFFFF >> ( self.dw << 3 ) ) ) ) )
+            self.w.data.eq( self.r.data | LITTLE_END( ( self.dat_w & ( 0xFFFFFFFF >> ( self.dw << 3 ) ) ) ) )
           ]
         # Un-aligned partial writes.
         with m.Else():
           # Assume that read ports hold data from the same addresses.
           m.d.comb += [
-            self.w.addr.eq( self.addr >> 2 ),
+            self.w.addr.eq( self.adr >> 2 ),
             self.w.en.eq( 1 ),
             self.w.data.eq( ( self.r.data &
-              ~( ( ( 0xFFFFFFFF << ( self.dw << 3 ) ) & 0xFFFFFFFF ) >> ( ( self.addr & 0b11 ) << 3 ) ) ) |
-              ( LITTLE_END( ( self.w_data & 0xFFFFFFFF >> ( self.dw << 3 ) ) << ( ( ( self.addr & 0b11 ) << 3 ) ) ) ) ),
+              ~( ( ( 0xFFFFFFFF << ( self.dw << 3 ) ) & 0xFFFFFFFF ) >> ( ( self.adr & 0b11 ) << 3 ) ) ) |
+              ( LITTLE_END( ( self.dat_w & 0xFFFFFFFF >> ( self.dw << 3 ) ) << ( ( ( self.adr & 0b11 ) << 3 ) ) ) ) ),
           ]
 
     # End of RAM module definition.
@@ -106,18 +113,17 @@ f = 0
 def ram_write_ut( ram, address, data, dw, success ):
   global p, f
   # Set addres, 'din', and 'wen' signals.
-  yield ram.addr.eq( address )
-  yield ram.w_data.eq( data )
-  yield ram.w_stb.eq( 1 )
+  yield ram.adr.eq( address )
+  yield ram.dat_w.eq( data )
+  yield ram.we.eq( 1 )
   yield ram.dw.eq( dw )
   # Wait two ticks, and un-set the 'wen' bit.
   yield Tick()
   yield Tick()
-  yield Tick()
-  yield ram.w_stb.eq( 0 )
+  yield ram.we.eq( 0 )
   # Done. Check that the 'din' word was successfully set in RAM.
   yield Settle()
-  actual = yield ram.r_data
+  actual = yield ram.dat_r
   if success:
     if data != actual:
       f += 1
@@ -144,13 +150,13 @@ def ram_write_ut( ram, address, data, dw, success ):
 def ram_read_ut( ram, address, expected ):
   global p, f
   # Set address and 'ren' bit.
-  yield ram.addr.eq( address )
+  yield ram.adr.eq( address )
   # Wait two ticks, and un-set the 'ren' bit.
   yield Tick()
   yield Tick()
   # Done. Check the 'dout' result after combinational logic settles.
   yield Settle()
-  actual = yield ram.r_data
+  actual = yield ram.dat_r
   if expected != actual:
     f += 1
     print( "\033[31mFAIL:\033[0m RAM[ 0x%08X ] == "

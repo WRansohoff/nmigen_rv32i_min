@@ -113,8 +113,8 @@ class CPU( Elaboratable ):
 
     # Disable RAM writes by default.
     m.d.comb += [
-      self.mem.mux.we.eq( 0 ),
-      self.mem.mux.stb.eq( 0 )
+      self.mem.mux.bus.we.eq( 0 ),
+      self.mem.mux.bus.cyc.eq( 0 )
     ]
 
     # Set CSR values to 0 by default.
@@ -135,15 +135,15 @@ class CPU( Elaboratable ):
       # "ROM Fetch": Wait for the instruction to load from ROM, and
       #              populate register fields to prepare for decoding.
       with m.State( "CPU_PC_ROM_FETCH" ):
-        m.d.comb += self.mem.mux.stb.eq( 1 )
+        m.d.comb += self.mem.mux.bus.cyc.eq( 1 )
         # Memory wait states.
-        with m.If( ( self.mem.mux.ack == 0 ) | ( self.mem.mux.stb == 0 ) ):
+        with m.If( ( self.mem.mux.bus.ack == 0 ) | ( self.mem.mux.bus.cyc == 0 ) ):
           m.next = "CPU_PC_ROM_FETCH"
         with m.Else():
           # Increment 'instructions retired' counter.
           minstret_incr( self, m )
           # Decode the fetched instruction and move on to run it.
-          rv32i_decode( self, m, self.mem.mux.dat_r )
+          rv32i_decode( self, m, self.mem.mux.bus.dat_r )
           m.next = "CPU_PC_DECODE"
       # "Decode PC": Figure out what sort of instruction to execute,
       #              and prepare associated registers.
@@ -254,7 +254,7 @@ class CPU( Elaboratable ):
           with m.Else():
             m.d.comb += [
               self.mem.addr.eq( self.mp ),
-              self.mem.mux.dat_w.eq( self.rb.data )
+              self.mem.mux.bus.dat_w.eq( self.rb.data )
             ]
             # "Store Byte" operation:
             with m.If( self.f == F_SB ):
@@ -372,7 +372,7 @@ class CPU( Elaboratable ):
       # "Load / Store operation" - wait for memory access to finish.
       # Note: This state is skipped on loads to r0.
       with m.State( "CPU_LDST" ):
-        m.d.comb += self.mem.mux.stb.eq( 1 )
+        m.d.comb += self.mem.mux.bus.cyc.eq( 1 )
         # Maintain the cominatorial logic holding the memory
         # address at the 'mp' (memory pointer) value.
         m.d.comb += [
@@ -381,8 +381,8 @@ class CPU( Elaboratable ):
         ]
         with m.If( self.opcode == OP_STORE ):
           m.d.comb += [
-            self.mem.mux.we.eq( self.mem.mux.ack ),
-            self.mem.mux.dat_w.eq( self.rb.data )
+            self.mem.mux.bus.we.eq( self.mem.mux.bus.ack ),
+            self.mem.mux.bus.dat_w.eq( self.rb.data )
           ]
           # "Store Byte" operation:
           with m.If( self.f == F_SB ):
@@ -394,12 +394,12 @@ class CPU( Elaboratable ):
           with m.Elif( self.f == F_SW ):
             m.d.comb += self.mem.ram.dw.eq( RAM_DW_32 )
           # Only move on after writing.
-          with m.If( ( self.mem.mux.ack ) & ( self.mem.mux.we ) ):
+          with m.If( ( self.mem.mux.bus.ack ) & ( self.mem.mux.bus.we ) ):
             m.next = "CPU_PC_LOAD"
           with m.Else():
             m.next = "CPU_LDST"
         # Wait for memory reads.
-        with m.Elif( self.mem.mux.ack == 0 ):
+        with m.Elif( self.mem.mux.bus.ack == 0 ):
           m.next = "CPU_LDST"
         # Store operations.
         # Load operations.
@@ -409,20 +409,20 @@ class CPU( Elaboratable ):
           m.d.comb += self.rc.en.eq( 1 )
           # "Load Byte" operation:
           with m.If( self.f == F_LB ):
-            m.d.comb += self.rc.data.eq( Cat( self.mem.mux.dat_r[ :8 ], Repl( self.mem.mux.dat_r[ 7 ], 24 ) ) )
+            m.d.comb += self.rc.data.eq( Cat( self.mem.mux.bus.dat_r[ :8 ], Repl( self.mem.mux.bus.dat_r[ 7 ], 24 ) ) )
           # "Load Halfword" operation:
           with m.Elif( self.f == F_LH ):
-            m.d.comb += self.rc.data.eq( Cat( self.mem.mux.dat_r[ :16 ], Repl( self.mem.mux.dat_r[ 15 ], 16 ) ) )
+            m.d.comb += self.rc.data.eq( Cat( self.mem.mux.bus.dat_r[ :16 ], Repl( self.mem.mux.bus.dat_r[ 15 ], 16 ) ) )
           # "Load Word" operation:
           with m.Elif( self.f == F_LW ):
-            m.d.comb += self.rc.data.eq( self.mem.mux.dat_r )
+            m.d.comb += self.rc.data.eq( self.mem.mux.bus.dat_r )
           # "Load Byte" (without sign extension) operation:
           with m.Elif( self.f == F_LBU ):
-            m.d.comb += self.rc.data.eq( self.mem.mux.dat_r & 0xFF )
+            m.d.comb += self.rc.data.eq( self.mem.mux.bus.dat_r & 0xFF )
           # "Load Halfword" (without sign extension) operation:
           with m.Elif( self.f == F_LHU ):
             m.d.comb += self.rc.data.eq(
-              ( self.mem.mux.dat_r & 0xFFFF ) )
+              ( self.mem.mux.bus.dat_r & 0xFFFF ) )
         with m.Else():
           m.next = "CPU_PC_LOAD"
       # "Trap Entry" - update PC and EPC CSR, and context switch.

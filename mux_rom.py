@@ -38,7 +38,7 @@ class MUXROM( Elaboratable, Interface ):
     # Return 0 for an out-of-range 'select' signal.
     with m.If( self.select >= self.rlen ):
       m.d.comb += self.dat_r.eq( 0x00000000 )
-    # Forward the 'address' and 'out' signals to the appropriate ROM.
+    # Forward the bus signals to the appropriate ROM.
     with m.Else():
       m.d.comb += [
         self.roms[ self.select ].adr.eq( self.adr ),
@@ -89,6 +89,8 @@ def muxrom_test( mrom ):
   # Print a test header.
   print( "--- Multiplexed ROM Tests ---" )
 
+  # Assert 'cyc' to activate the bus.
+  yield mrom.cyc.eq( 1 )
   # Test reading from the first ROM.
   yield from muxrom_read_ut( mrom, 0, 0x0,
     LITTLE_END( ( yield mrom.roms[ 0 ].data[ 0 ] ) ) )

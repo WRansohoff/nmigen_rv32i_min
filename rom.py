@@ -27,7 +27,13 @@ class ROM( Elaboratable, Interface ):
     m = Module()
     m.submodules.r = self.r
 
-    m.d.sync += self.ack.eq( self.stb )
+    # 'ack' signal should rest at 0.
+    m.d.sync += self.ack.eq( 0 )
+
+    # Only acknowledge reads when 'cyc' and 'stb' are asserted.
+    with m.If( self.cyc ):
+      # (Ack one cycle after 'stb' is asserted.)
+      m.d.sync += self.ack.eq( self.stb )
 
     # Set the 'output' value to the requested 'data' array index.
     # If a read would 'spill over' into an out-of-bounds data byte,
@@ -80,6 +86,8 @@ def rom_test( rom ):
   # Print a test header.
   print( "--- ROM Tests ---" )
 
+  # Assert 'cyc' to activate the bus.
+  yield rom.cyc.eq( 1 )
   # Test the ROM's "happy path" (reading valid data).
   yield from rom_read_ut( rom, 0x0, LITTLE_END( 0x01234567 ) )
   yield from rom_read_ut( rom, 0x4, LITTLE_END( 0x89ABCDEF ) )

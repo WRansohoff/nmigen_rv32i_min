@@ -104,11 +104,11 @@ class SPI_ROM( Elaboratable, Interface ):
       # Also keep 'ack' asserted until 'stb' is released.
       with m.State( "SPI_WAITING" ):
         m.d.sync += [
-          self.ack.eq( self.ack & self.stb ),
+          self.ack.eq( self.cyc & ( self.ack & self.stb ) ),
           self.spi.cs.o.eq( 0 )
         ]
         m.next = "SPI_WAITING"
-        with m.If( ( self.stb == 1 ) & ( self.ack == 0 ) ):
+        with m.If( ( self.cyc == 1 ) & ( self.stb == 1 ) & ( self.ack == 0 ) ):
           m.d.sync += [
             self.spi.cs.o.eq( 1 ),
             self.ack.eq( 0 ),
@@ -173,7 +173,7 @@ class SPI_ROM( Elaboratable, Interface ):
       # TODO: this shouldn't be necessary.
       with m.State( "SPI_LE" ):
         m.d.sync += [
-          self.ack.eq( 1 ),
+          self.ack.eq( self.cyc ),
           self.dat_r.eq( LITTLE_END( self.dat_r ) )
           #self.dat_r.eq( self.dat_r )
         ]
@@ -259,15 +259,15 @@ def spi_rom_tests( srom ):
   print( "--- SPI Flash 'ROM' Tests ---" )
 
   # Test basic behavior by reading a few consecutive words.
-  yield from spi_read_word( srom, 0x00, 0x200000, LITTLE_END( 0x89ABCDEF ), 0 )
-  yield from spi_read_word( srom, 0x04, 0x200004, LITTLE_END( 0x0C0FFEE0 ), 4 )
+  yield from spi_read_word( srom, 0x00, 0x200000, 0x89ABCDEF, 0 )
+  yield from spi_read_word( srom, 0x04, 0x200004, 0x0C0FFEE0, 4 )
   for i in range( 4 ):
     yield Tick()
     yield Settle()
     csa = yield srom.spi.cs.o
     spi_rom_ut( "CS High (Waiting)", csa, 0 )
-  yield from spi_read_word( srom, 0x10, 0x200010, LITTLE_END( 0xDEADFACE ), 1 )
-  yield from spi_read_word( srom, 0x0C, 0x20000C, LITTLE_END( 0xABACADAB ), 1 )
+  yield from spi_read_word( srom, 0x10, 0x200010, 0xDEADFACE, 1 )
+  yield from spi_read_word( srom, 0x0C, 0x20000C, 0xABACADAB, 1 )
 
   # Done. Print the number of passed and failed unit tests.
   yield Tick()

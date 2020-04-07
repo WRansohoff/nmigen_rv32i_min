@@ -170,11 +170,11 @@ class SPI_ROM( Elaboratable, Interface ):
           with m.Else():
             m.next = "SPI_RX"
       # Perform little-endian conversion.
-      # TODO: this shouldn't be necessary.
+      # TODO: this shouldn't be necessary?
       with m.State( "SPI_LE" ):
         m.d.sync += [
           self.ack.eq( self.cyc ),
-          self.dat_r.eq( LITTLE_END( self.dat_r ) )
+          self.dat_r.eq( LITTLE_END_L( self.dat_r ) )
           #self.dat_r.eq( self.dat_r )
         ]
         m.next = "SPI_WAITING"

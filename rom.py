@@ -41,11 +41,11 @@ class ROM( Elaboratable, Interface ):
     # Word-aligned reads
     m.d.comb += self.r.addr.eq( self.adr >> 2 )
     with m.If( ( self.adr & 0b11 ) == 0b00 ):
-      m.d.sync += self.dat_r.eq( LITTLE_END( self.r.data ) )
+      m.d.sync += self.dat_r.eq( LITTLE_END_L( self.r.data ) )
     # Un-aligned reads
     with m.Else():
       m.d.sync += self.dat_r.eq(
-        LITTLE_END( self.r.data << ( ( self.adr & 0b11 ) << 3 ) ) )
+        LITTLE_END_L( self.r.data << ( ( self.adr & 0b11 ) << 3 ) ) )
 
     # End of ROM module definition.
     return m

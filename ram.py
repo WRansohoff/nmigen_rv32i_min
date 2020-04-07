@@ -57,10 +57,10 @@ class RAM( Elaboratable, Interface ):
     m.d.sync += self.ack.eq( self.cyc & ( self.stb & ( self.we == 0 ) ) )
     # Word-aligned reads.
     with m.If( ( self.adr & 0b11 ) == 0b00 ):
-      m.d.comb += self.dat_r.eq( LITTLE_END( self.r.data ) )
+      m.d.comb += self.dat_r.eq( LITTLE_END_L( self.r.data ) )
     # Partial reads.
     with m.Else():
-      m.d.comb += self.dat_r.eq( LITTLE_END(
+      m.d.comb += self.dat_r.eq( LITTLE_END_L(
         self.r.data << ( ( self.adr & 0b11 ) << 3 ) ) )
 
     # Write the 'din' value if 'wen' is set.
@@ -70,7 +70,7 @@ class RAM( Elaboratable, Interface ):
         m.d.comb += [
           self.w.addr.eq( self.adr >> 2 ),
           self.w.en.eq( self.cyc ),
-          self.w.data.eq( LITTLE_END( self.dat_w ) )
+          self.w.data.eq( LITTLE_END_L( self.dat_w ) )
         ]
         m.d.sync += self.ack.eq( 1 )
       # Writes requiring wait-states:
@@ -86,7 +86,7 @@ class RAM( Elaboratable, Interface ):
           m.d.comb += [
             self.w.addr.eq( self.adr >> 2 ),
             self.w.en.eq( self.cyc ),
-            self.w.data.eq( self.r.data | LITTLE_END( ( self.dat_w & ( 0xFFFFFFFF >> ( self.dw << 3 ) ) ) ) )
+            self.w.data.eq( self.r.data | LITTLE_END_L( ( self.dat_w & ( 0xFFFFFFFF >> ( self.dw << 3 ) ) ) ) )
           ]
         # Un-aligned partial writes.
         with m.Else():
@@ -96,7 +96,7 @@ class RAM( Elaboratable, Interface ):
             self.w.en.eq( self.cyc ),
             self.w.data.eq( ( self.r.data &
               ~( ( ( 0xFFFFFFFF << ( self.dw << 3 ) ) & 0xFFFFFFFF ) >> ( ( self.adr & 0b11 ) << 3 ) ) ) |
-              ( LITTLE_END( ( self.dat_w & 0xFFFFFFFF >> ( self.dw << 3 ) ) << ( ( ( self.adr & 0b11 ) << 3 ) ) ) ) ),
+              ( LITTLE_END_L( ( self.dat_w & 0xFFFFFFFF >> ( self.dw << 3 ) ) << ( ( ( self.adr & 0b11 ) << 3 ) ) ) ) ),
           ]
 
     # End of RAM module definition.

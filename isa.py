@@ -356,6 +356,12 @@ def LITTLE_END( v ):
            ( ( v & 0x0000FF00 ) << 8  ) |
            ( ( v & 0x00FF0000 ) >> 8  ) |
            ( ( v & 0xFF000000 ) >> 24 ) )
+# Little-end conversion for use withing an nMigen design.
+def LITTLE_END_L( v ):
+  # Seems faster, but more LUTs.
+  return Cat( v[ 24 : 32 ], v[ 16 : 24 ], v[ 8 : 16 ], v[ 0 : 8 ] )
+  # Seems slower, but fewer LUTs.
+  #return LITTLE_END( v )
 
 # R-type operation: Rc = Ra ? Rb
 # The '?' operation depends on the opcode, funct3, and funct7 bits.

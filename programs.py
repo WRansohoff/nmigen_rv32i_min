@@ -2,7 +2,6 @@ from nmigen import *
 
 from isa import *
 from rom import *
-from cpu import *
 
 #####################################
 # ROM images for CPU test programs: #

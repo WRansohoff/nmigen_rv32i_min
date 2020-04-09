@@ -4,20 +4,18 @@
 
 from nmigen import *
 
-from alu import *
-
 # ALU operation definitions. These implement the logic behind math
 # instructions, e.g. 'ADD' covers 'ADD', 'ADDI', etc.
-ALU_ADD   = 0b0001
-ALU_SUB   = 0b0010
-ALU_SLT   = 0b0011
-ALU_SLTU  = 0b0100
-ALU_XOR   = 0b0101
+ALU_ADD   = 0b0000
+ALU_SUB   = 0b1000
+ALU_SLT   = 0b0010
+ALU_SLTU  = 0b0011
+ALU_XOR   = 0b0100
 ALU_OR    = 0b0110
 ALU_AND   = 0b0111
-ALU_SLL   = 0b1000
-ALU_SRL   = 0b1001
-ALU_SRA   = 0b1010
+ALU_SLL   = 0b0001
+ALU_SRL   = 0b0101
+ALU_SRA   = 0b1101
 # Instruction field definitions.
 # RV32I opcode definitions:
 OP_LUI    = 0b0110111

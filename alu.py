@@ -1,6 +1,7 @@
 from nmigen import *
 from nmigen.back.pysim import *
 from nmigen_boards.upduino_v2 import *
+
 from isa import *
 
 import sys
@@ -21,13 +22,16 @@ class ALU( Elaboratable ):
     # 'Y' data output.
     self.y = Signal( shape = Shape( width = 32, signed = True ),
                      reset = 0x00000000 )
-    # 'Start' signal to latch inputs.
-    self.start = Signal( reset = 0b0 )
     # (RISC-V does not have ALU condition flags)
 
   def elaborate( self, platform ):
     # Core ALU module.
     m = Module()
+
+    # Dummy synchronous logic only for simulation.
+    if platform is None:
+      ta = Signal()
+      m.d.sync += ta.eq( ~ta )
 
     # Latched input values for signed and unsigned operations.
     xa   = Signal( shape = Shape( width = 32, signed = True ) )
@@ -36,15 +40,13 @@ class ALU( Elaboratable ):
     ub   = Signal( shape = Shape( width = 32, signed = False ) )
     fn   = Signal( 4 )
 
-    # Latch input values at rising clock edges if 'start' is set.
-    with m.If( self.start ):
-      m.d.sync += [
-        xa.eq( self.a ),
-        xb.eq( self.b ),
-        ua.eq( self.a ),
-        ub.eq( self.b ),
-        fn.eq( self.f ),
-      ]
+    m.d.comb += [
+      xa.eq( self.a ),
+      xb.eq( self.b ),
+      ua.eq( self.a ),
+      ub.eq( self.b ),
+      fn.eq( self.f ),
+    ]
 
     # Perform ALU computations based on the 'function' bits.
     # Y = A AND B
@@ -99,10 +101,8 @@ def alu_ut( alu, a, b, fn, expected ):
   yield alu.a.eq( a )
   yield alu.b.eq( b )
   yield alu.f.eq( fn )
-  # Pulse 'start' with one intervening clock tick.
-  yield alu.start.eq( 1 )
+  # Wait a clock tick.
   yield Tick()
-  yield alu.start.eq( 0 )
   # Done. Check the result after combinatorial logic settles.
   yield Settle()
   actual = yield alu.y

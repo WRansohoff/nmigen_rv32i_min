@@ -14,22 +14,6 @@ from cpu_helpers import *
 import sys
 import warnings
 
-###############
-# CPU module: #
-###############
-
-# FSM state definitions. TODO: Remove after figuring out how to
-# access the internal FSM from tests. Also, consolidate these steps...
-CPU_RESET        = 0
-CPU_PC_LOAD      = 1
-CPU_PC_ROM_FETCH = 2
-CPU_PC_DECODE    = 3
-CPU_JUMP         = 4
-CPU_LDST         = 5
-CPU_TRAP_ENTER   = 6
-CPU_TRAP_EXIT    = 7
-CPU_STATES_MAX   = 7
-
 # CPU module.
 class CPU( Elaboratable ):
   def __init__( self, rom_module ):
@@ -37,37 +21,31 @@ class CPU( Elaboratable ):
     self.clk_rst = Signal( reset = 0b0, reset_less = True )
     # Program Counter register.
     self.pc = Signal( 32, reset = 0x00000000 )
-    # Intermediate load/store memory pointer.
-    self.mp = Signal( 32, reset = 0x00000000 )
+    # Intermediary program counter storage.
+    self.ipc = Signal( 32, reset = 0x00000000 )
     # The main 32 CPU registers for 'normal' and 'interrupt' contexts.
     # I don't think that the base specification includes priority
     # levels, so for now, we only need one extra set of registers
     # to handle context-switching in hardware.
-    self.r  = Memory( width = 32, depth = 64,
-                      init = ( 0x00000000 for i in range( 64 ) ) )
+    self.r      = Memory( width = 32, depth = 64,
+                          init = ( 0x00000000 for i in range( 64 ) ) )
     # Read ports for rs1 (ra), rs2 (rb), and rd (rc).
-    self.ra      = self.r.read_port()
-    self.rb      = self.r.read_port()
-    self.rc      = self.r.write_port()
+    self.ra     = self.r.read_port()
+    self.rb     = self.r.read_port()
+    self.rc     = self.r.write_port()
+    # 'Function select' and 'opcode' bits
+    # (load/stores need to remember these across memory accesses)
+    self.op     = Signal( 7, reset = 0b0000000 )
+    self.f      = Signal( 3, reset = 0b000 )
     # CPU context flag; toggles 'normal' and 'interrupt' registers.
     self.irq    = Signal( 1, reset = 0b0 )
-    # Intermediate instruction and PC storage.
-    self.opcode = Signal( 7, reset = 0b0000000 )
-    self.f      = Signal( 3, reset = 0b000 )
-    self.ff     = Signal( 7, reset = 0b0000000 )
-    self.imm    = Signal( shape = Shape( width = 32, signed = True ),
-                          reset = 0x00000000 )
-    self.ipc    = Signal( 32, reset = 0x00000000 )
-    # CPU register access wait states.
-    self.rws    = Signal( 2, reset = 0b10 )
     # The ALU submodule which performs logical operations.
     self.alu    = ALU()
     # CSR 'system registers'.
     self.csr    = CSR()
     # Memory module to hold the ROM and RAM module(s)
     # (1KB of RAM = 256 words)
-    self.mem = RV_Memory( rom_module, 256 )
-
+    self.mem    = RV_Memory( rom_module, 256 )
     # RGB LED signals for debugging.
     self.red_on = Signal( 1, reset = 0b0 )
     self.grn_on = Signal( 1, reset = 0b0 )
@@ -91,359 +69,321 @@ class CPU( Elaboratable ):
       rled = platform.request( 'led_r', 0 )
       gled = platform.request( 'led_g', 0 )
       bled = platform.request( 'led_b', 0 )
-      m.d.sync += [
+      m.d.comb += [
         rled.o.eq( self.red_on ),
         gled.o.eq( self.grn_on ),
         bled.o.eq( self.blu_on )
       ]
 
-    # Reset countdown.
-    rsc = Signal( 2, reset = 0b11 )
-    # Register access wait state countdown.
-    rws_c   = Signal( 2, reset = 0b00 )
-
-    # Disable CPU register writes by default.
-    m.d.comb += self.rc.en.eq( 0 )
-    # Reset memory access wait-state counters if they are not used.
-    m.d.sync += rws_c.eq( 0 )
-
-    # Set the program counter to the simulated memory addresses
-    # by default. Load operations temporarily override this.
-    m.d.comb += self.mem.addr.eq( self.pc )
-
-    # Disable RAM writes by default.
-    m.d.comb += [
-      self.mem.mux.bus.we.eq( 0 ),
-      self.mem.mux.bus.cyc.eq( 0 )
-    ]
-
-    # Set CSR values to 0 by default.
-    m.d.comb += [
-      self.csr.rin.eq( 0 ),
-      self.csr.rsel.eq( 0 ),
-      self.csr.f.eq( 0 )
-    ]
+    # Generic wait-state counter for multi-cycle instructions.
+    iws = Signal( 2, reset = 0 )
 
     # Main CPU FSM.
     with m.FSM() as fsm:
-      # "Reset state": Wait a few ticks after reset, to let ROM load.
-      with m.State( "CPU_RESET" ):
-        with m.If( rsc > 0 ):
-          m.d.sync += rsc.eq( rsc - 1 )
-        with m.Else():
-          m.next = "CPU_PC_ROM_FETCH"
       # "ROM Fetch": Wait for the instruction to load from ROM, and
       #              populate register fields to prepare for decoding.
-      with m.State( "CPU_PC_ROM_FETCH" ):
-        m.d.comb += self.mem.mux.bus.cyc.eq( 1 )
-        # Memory wait states.
-        with m.If( ( self.mem.mux.bus.ack == 0 ) | ( self.mem.mux.bus.cyc == 0 ) ):
-          m.next = "CPU_PC_ROM_FETCH"
+      with m.State( "CPU_IFETCH" ):
+        # Instruction addresses must be word-aligned.
+        with m.If( self.pc[ :2 ] == 0 ):
+          m.d.sync += [
+            self.mem.addr.eq( self.pc ),
+            self.mem.mux.bus.cyc.eq( 1 )
+          ]
+          # Wait for memory access.
+          with m.If( ( self.mem.mux.bus.ack == 0 ) |
+                     ( self.mem.mux.bus.cyc == 0 ) ):
+            m.next = "CPU_IFETCH"
+          with m.Else():
+            # Increment 'instructions retired' counter. TODO: obo
+            minstret_incr( self, m )
+            # Move on to the 'decode instruction' state.
+            m.d.sync += iws.eq( 0 )
+            m.d.sync += self.mem.mux.bus.cyc.eq( 0 )
+            m.next = "CPU_DECODE"
+        # If the instruction address is misaligned, trigger a trap.
         with m.Else():
-          # Increment 'instructions retired' counter.
-          minstret_incr( self, m )
-          # Decode the fetched instruction and move on to run it.
-          rv32i_decode( self, m, self.mem.mux.bus.dat_r )
-          m.next = "CPU_PC_DECODE"
-      # "Decode PC": Figure out what sort of instruction to execute,
-      #              and prepare associated registers.
-      with m.State( "CPU_PC_DECODE" ):
-        # "Load Upper Immediate" instruction:
-        with m.If( self.opcode == OP_LUI ):
-          m.d.comb += self.rc.data.eq( self.imm )
-          with m.If( self.rc.addr[ :5 ] != 0 ):
-            # Assert the CPU register 'write' signal.
-            m.d.comb += self.rc.en.eq( 1 )
-          m.next = "CPU_PC_LOAD"
-        # "Add Upper Immediate to PC" instruction:
-        with m.Elif( self.opcode == OP_AUIPC ):
-          m.d.comb += self.rc.data.eq( self.imm + self.ipc )
-          with m.If( self.rc.addr[ :5 ] != 0 ):
-            m.d.comb += self.rc.en.eq( 1 )
-          m.next = "CPU_PC_LOAD"
-        # "Jump And Link" instruction:
-        with m.Elif( self.opcode == OP_JAL ):
-          m.next = "CPU_JUMP"
-          m.d.comb += self.rc.data.eq( self.ipc + 4 )
-          with m.If( self.rc.addr[ :5 ] != 0 ):
-            m.d.comb += self.rc.en.eq( 1 )
-        # "Jump And Link from Register" instruction:
-        # funct3 bits should be 0b000, but for now there's no
-        # need to be a stickler about that.
-        with m.Elif( self.opcode == OP_JALR ):
-          jump_to( self, m, ( self.ra.data + self.imm ) )
-          # Assert the CPU register 'write' signal on the
-          # last register access wait-state.
-          m.d.comb += self.rc.data.eq( self.ipc + 4 )
-          with m.If( ( self.rc.addr[ :5 ] != 0 ) &
-                     ( rws_c == self.rws ) ):
-            m.d.comb += self.rc.en.eq( 1 )
-        # "Conditional Branch" instructions:
-        with m.Elif( self.opcode == OP_BRANCH ):
-          # "Branch if EQual" operation:
-          with m.If( ( self.f == F_BEQ ) &
-                     ( self.ra.data == self.rb.data ) ):
-            m.next = "CPU_JUMP"
-          with m.Elif( ( self.f == F_BNE ) &
-                       ( self.ra.data != self.rb.data ) ):
-            m.next = "CPU_JUMP"
-          # "Branch if Less Than" operation:
-          # It would be nice to use '.as_signed()', but that adds
-          # about 100 gates compared to this mess.
-          with m.Elif( self.f == F_BLT ):
-            with m.If( ( ( self.rb.data[ 31 ] ==
-                         self.ra.data[ 31 ] ) &
-                       ( self.ra.data < self.rb.data ) ) |
-                       ( self.ra.data[ 31 ] >
-                         self.rb.data[ 31 ] ) ):
-              m.next = "CPU_JUMP"
-            with m.Else():
-              m.next = "CPU_PC_LOAD"
-          # "Branch if Greater or Equal" operation:
-          with m.Elif( self.f == F_BGE ):
-            with m.If( ( ( ( self.rb.data[ 31 ] ==
-                         self.ra.data[ 31 ] ) &
-                       ( self.ra.data >= self.rb.data ) ) |
-                       ( self.rb.data[ 31 ] >
-                         self.ra.data[ 31 ] ) ) ):
-              m.next = "CPU_JUMP"
-            with m.Else():
-              m.next = "CPU_PC_LOAD"
-          # Unsigned BLT operation:
-          with m.Elif( self.f == F_BLTU ):
-            with m.If( self.ra.data < self.rb.data ):
-              m.next = "CPU_JUMP"
-            with m.Else():
-              m.next = "CPU_PC_LOAD"
-          # Unsigned BGE operation:
-          with m.Elif( self.f == F_BGEU ):
-            with m.If( self.ra.data >= self.rb.data ):
-              m.next = "CPU_JUMP"
-            with m.Else():
-              m.next = "CPU_PC_LOAD"
-          with m.Else():
-            m.next = "CPU_PC_LOAD"
-        # "Load from Memory" instructions:
-        # Addresses in 0x2xxxxxxx memory space are treated as RAM.
-        # Addresses must be aligned to their access width.
-        # Loads to r0 are treated as nops.
-        with m.Elif( ( self.opcode == OP_LOAD ) &
-                     ( self.rc.addr[ :5 ] != 0 ) ):
-          # Populate 'mp' with the memory address to load from.
-          m.d.comb += self.mp.eq( self.ra.data + self.imm )
-          # Trigger an exception if the load is mis-aligned.
-          with m.If( ( self.mp << ( 2 - self.f[ :2 ] ) )[ :2 ] != 0 ):
-            trigger_trap( self, m, TRAP_LMIS )
-          with m.Else():
-            m.d.comb += self.mem.addr.eq( self.mp )
-            # Memory access is not instantaneous, so the next state is
-            # 'CPU_LDST' which allows time for the data to arrive.
-            m.next = "CPU_LDST"
-        # "Store to Memory" instructions:
-        # Addresses in 0x2xxxxxxx memory space are treated as RAM.
-        # Writes to other addresses are ignored because,
-        # surprise surprise, ROM is read-only.
-        # Addresses must be aligned to their access width.
-        with m.Elif( self.opcode == OP_STORE ):
-          # Populate 'mp' with the memory address to load from.
-          m.d.comb += self.mp.eq( self.ra.data + self.imm )
-          # Trigger an exception if the store is mis-aligned.
-          with m.If( ( self.mp << ( 2 - self.f[ :2 ] ) )[ :2 ] != 0 ):
-            trigger_trap( self, m, TRAP_SMIS )
-          # Writes to invalid addresses will fail silently.
-          with m.Else():
+          m.d.sync += self.csr.mtval.shadow.eq( self.pc )
+          trigger_trap( self, m, TRAP_IMIS )
+
+      # "Decode instruction": Set CPU register addresses etc.
+      with m.State( "CPU_DECODE" ):
+        # Set CPU register access addresses.
+        m.d.sync += [
+          self.ra.addr.eq( Cat(
+            self.mem.mux.bus.dat_r[ 15 : 20 ], self.irq ) ),
+          self.rb.addr.eq( Cat(
+            self.mem.mux.bus.dat_r[ 20 : 25 ], self.irq ) ),
+          self.rc.addr.eq( Cat(
+            self.mem.mux.bus.dat_r[ 7  : 12 ], self.irq ) ),
+          self.f.eq( self.mem.mux.bus.dat_r[ 12 : 15 ] ),
+          self.op.eq( self.mem.mux.bus.dat_r[ 0 : 7 ] ),
+          self.ipc.eq( self.pc )
+        ]
+        # Wait a tick to let the register data load.
+        with m.If( iws == 0 ):
+          m.d.sync += iws.eq( 1 )
+          m.next = "CPU_DECODE"
+        with m.Else():
+          m.d.sync += iws.eq( 0 )
+          m.next = "CPU_EXECUTE"
+
+      # "Execute instruction": Run the currently-loaded instruction.
+      with m.State( "CPU_EXECUTE" ):
+        # Unless otherwise required, increment the PC and move on.
+        m.d.sync += [
+          self.pc.eq( self.pc + 4 ),
+          self.mem.mux.bus.cyc.eq( 0 )
+        ]
+        m.next = "CPU_IFETCH"
+
+        # Switch case for opcodes.
+        with m.Switch( self.op ):
+          # LUI instruction: set destination register to 20 upper bits.
+          with m.Case( OP_LUI ):
             m.d.comb += [
-              self.mem.addr.eq( self.mp ),
-              self.mem.mux.bus.dat_w.eq( self.rb.data )
+              self.rc.data.eq( self.mem.mux.bus.dat_r & 0xFFFFF000 ),
+              self.rc.en.eq( self.rc.addr[ :5 ] != 0 )
             ]
-            # "Store Byte" operation:
-            with m.If( self.f == F_SB ):
-              m.d.comb += self.mem.ram.dw.eq( RAM_DW_8 )
-            # "Store Halfword" operation:
-            with m.Elif( self.f == F_SH ):
-              m.d.comb += self.mem.ram.dw.eq( RAM_DW_16 )
-            # "Store Word" operation:
-            with m.Elif( self.f == F_SW ):
-              m.d.comb += self.mem.ram.dw.eq( RAM_DW_32 )
-            m.next = "CPU_LDST"
-        # "Register-Based" instructions:
-        with m.Elif( self.opcode == OP_REG ):
-          alu_reg_op( self, m )
-          with m.If( ( self.rc.addr & 0x1F ) != 0 ):
+
+          # AUIPC instruction: set destination register to 20
+          # upper bits plus the current PC.
+          with m.Case( OP_AUIPC ):
             m.d.comb += [
-              self.rc.data.eq( self.alu.y ),
-              self.rc.en.eq( 1 )
+              self.rc.data.eq( self.ipc +
+                ( self.mem.mux.bus.dat_r & 0xFFFFF000 ) ),
+              self.rc.en.eq( self.rc.addr[ :5 ] != 0 )
             ]
-          m.next = "CPU_PC_LOAD"
-        # "Immediate-Based" instructions:
-        with m.Elif( self.opcode == OP_IMM ):
-          alu_imm_op( self, m )
-          with m.If( ( self.rc.addr & 0x1F ) != 0 ):
+
+          # JAL instruction: jump to an offset address (or trap if
+          # the address is invalid), and put the next PC in rc.
+          with m.Case( OP_JAL ):
+            m.d.sync += self.pc.eq( self.ipc + Cat(
+              Repl( 0, 1 ),
+              self.mem.mux.bus.dat_r[ 21: 31 ],
+              self.mem.mux.bus.dat_r[ 20 ],
+              self.mem.mux.bus.dat_r[ 12 : 20 ],
+              Repl( self.mem.mux.bus.dat_r[ 31 ], 12 ) ) ),
             m.d.comb += [
-              self.rc.data.eq( self.alu.y ),
-              self.rc.en.eq( 1 )
+              self.rc.data.eq( self.ipc + 4 ),
+              self.rc.en.eq( self.rc.addr[ :5 ] != 0 )
             ]
-          m.next = "CPU_PC_LOAD"
-        with m.Elif( self.opcode == OP_SYSTEM ):
-          # "EBREAK" instruction: enter the interrupt context
-          # with 'breakpoint' as the cause of the exception.
-          with m.If( ( self.ra.addr[ :5 ] == 0 )
-                   & ( self.rc.addr[ :5 ] == 0 )
-                   & ( self.f   == 0 )
-                   & ( self.imm == 0x001 ) ):
-            trigger_trap( self, m, TRAP_BREAK )
-          # "Environment Call" instructions:
-          with m.Elif( self.f == F_TRAPS ):
-            # An 'empty' ECALL instruction should raise an
-            # 'environment-call-from-M-mode" exception.
-            with m.If( ( self.ra.addr[ :5 ] == 0 ) &
-                       ( self.rc.addr[ :5 ] == 0 ) &
-                       ( self.imm == 0 ) ):
-              trigger_trap( self, m, TRAP_ECALL )
-            # 'MTRET' should return from an interrupt context.
-            # For now, just skip to the next instruction if it
-            # occurs outside of an interrupt.
-            with m.Elif( self.imm == IMM_MRET ):
-              with m.If( self.irq == 1 ):
-                m.next = "CPU_TRAP_EXIT"
+
+          # JALR instruction: jump to a new address from a register
+          # (or trap if the address is invalid), and put the
+          # next PC in the destination register.
+          with m.Case( OP_JALR ):
+            m.d.sync += self.pc.eq( self.ra.data + Cat(
+              self.mem.mux.bus.dat_r[ 20 : 32 ],
+              Repl( self.mem.mux.bus.dat_r[ 31 ], 20 ) ) ),
+            m.d.comb += [
+              self.rc.data.eq( self.ipc + 4 ),
+              self.rc.en.eq( self.rc.addr[ :5 ] != 0 )
+            ]
+
+          # BEQ / BNE / BLT / BGE / BLTU / BGEU instructions:
+          # same as JAL, but only if conditions are met.
+          with m.Case( OP_BRANCH ):
+            # BEQ / BNE.
+            with m.If( self.f[ 2 ] == 0 ):
+              with m.If( ( self.ra.data != self.rb.data ) == self.f[ 0 ] ):
+                m.d.sync += self.pc.eq( self.ipc + Cat(
+                  Repl( 0, 1 ),
+                  self.mem.mux.bus.dat_r[ 8 : 12 ],
+                  self.mem.mux.bus.dat_r[ 25 : 31 ],
+                  self.mem.mux.bus.dat_r[ 7 ],
+                  Repl( self.mem.mux.bus.dat_r[ 31 ], 20 ) ) )
+            # BLT / BGE / BLTU / BGEU. (Use SLT/SLTU ALU ops)
+            with m.Else():
+              m.d.comb += [
+                self.alu.a.eq( self.ra.data ),
+                self.alu.b.eq( self.rb.data ),
+                self.alu.f.eq( self.f[ 1: ] )
+              ]
+              with m.If( self.alu.y != self.f[ 0 ] ):
+                m.d.sync += self.pc.eq( self.ipc + Cat(
+                  Repl( 0, 1 ),
+                  self.mem.mux.bus.dat_r[ 8 : 12 ],
+                  self.mem.mux.bus.dat_r[ 25 : 31 ],
+                  self.mem.mux.bus.dat_r[ 7 ],
+                  Repl( self.mem.mux.bus.dat_r[ 31 ], 20 ) ) )
+
+          # LB / LBU / LH / LHU / LW instructions: load a value
+          # from memory into a register.
+          with m.Case( OP_LOAD ):
+            # Set the memory address to load from.
+            with m.If( self.mem.mux.bus.cyc == 0 ):
+              m.d.sync += self.mem.addr.eq( self.ra.data + Cat(
+                self.mem.mux.bus.dat_r[ 20 : 32 ],
+                Repl( self.mem.mux.bus.dat_r[ 31 ], 20 ) ) )
+            # Trigger a trap if the load address is mis-aligned.
+            with m.If( ( self.mem.addr <<
+                       ( 2 - self.f[ :2 ] ) )[ :2 ] != 0 ):
+              trigger_trap( self, m, TRAP_LMIS )
+            # Wait for the memory operation to complete.
+            with m.Elif( ( self.mem.mux.bus.ack == 0 ) |
+                         ( self.mem.mux.bus.cyc == 0 ) ):
+              m.d.sync += [
+                self.pc.eq( self.pc ),
+                self.mem.mux.bus.cyc.eq( 1 )
+              ]
+              m.next = "CPU_EXECUTE"
+            # Then store the value in the destination register.
+            with m.Else():
+              m.d.comb += self.rc.en.eq( self.rc.addr[ :5 ] != 0 )
+              with m.Switch( self.f ):
+                with m.Case( F_LW ):
+                  m.d.comb += self.rc.data.eq(
+                    self.mem.mux.bus.dat_r )
+                with m.Case( F_LHU ):
+                  m.d.comb += self.rc.data.eq(
+                    self.mem.mux.bus.dat_r[ :16 ] )
+                with m.Case( F_LBU ):
+                  m.d.comb += self.rc.data.eq(
+                    self.mem.mux.bus.dat_r[ :8 ] )
+                with m.Case( F_LH ):
+                  m.d.comb += self.rc.data.eq( Cat(
+                    self.mem.mux.bus.dat_r[ :16 ],
+                    Repl( self.mem.mux.bus.dat_r[ 15 ], 16 ) ) )
+                with m.Case( F_LB ):
+                  m.d.comb += self.rc.data.eq( Cat(
+                    self.mem.mux.bus.dat_r[ :8 ],
+                    Repl( self.mem.mux.bus.dat_r[ 7 ], 24 ) ) )
+
+          # SB / SH / SW instructions: store a value from a
+          # register into memory.
+          with m.Case( OP_STORE ):
+            # Wait for memory R/W to finish before moving on.
+            with m.If( ( self.mem.mux.bus.ack == 0 ) |
+                       ( self.mem.mux.bus.we  == 0 ) |
+                       ( self.mem.mux.bus.cyc == 0 ) ):
+              m.d.sync += [
+                self.pc.eq( self.pc ),
+                self.mem.mux.bus.cyc.eq( 1 )
+              ]
+              m.next = "CPU_EXECUTE"
+            # Set the memory address to store to.
+            # (Writes to read-only memory are silently ignored)
+            with m.If( self.mem.mux.bus.cyc == 0 ):
+              m.d.sync += self.mem.addr.eq( self.ra.data + Cat(
+                self.mem.mux.bus.dat_r[ 7 : 12 ],
+                self.mem.mux.bus.dat_r[ 25 : 32 ],
+                Repl( self.mem.mux.bus.dat_r[ 31 ], 20 ) ) )
+            with m.Else():
+              # Trigger a trap if the store address is mis-aligned.
+              with m.If( ( self.mem.addr <<
+                         ( 2 - self.f[ :2 ] ) )[ :2 ] != 0 ):
+                trigger_trap( self, m, TRAP_SMIS )
               with m.Else():
-                m.next = "CPU_PC_LOAD"
+                m.d.comb += [
+                  self.mem.mux.bus.dat_w.eq( self.rb.data ),
+                  self.mem.mux.bus.we.eq( self.mem.mux.bus.ack )
+                ]
+                with m.Switch( self.f ):
+                  with m.Case( F_SB ):
+                    m.d.comb += self.mem.ram.dw.eq( RAM_DW_8 )
+                  with m.Case( F_SH ):
+                    m.d.comb += self.mem.ram.dw.eq( RAM_DW_16 )
+                  with m.Case( F_SW ):
+                    m.d.comb += self.mem.ram.dw.eq( RAM_DW_32 )
+
+          # R-type ALU operation: rc = ra ? rb
+          with m.Case( OP_REG ):
+            m.d.comb += [
+              self.alu.a.eq( self.ra.data ),
+              self.alu.b.eq( self.rb.data ),
+              self.alu.f.eq( Cat(
+                self.mem.mux.bus.dat_r[ 12 : 15 ],
+                self.mem.mux.bus.dat_r[ 30 ] ) ),
+              self.rc.data.eq( self.alu.y ),
+              self.rc.en.eq( self.rc.addr[ :5 ] != 0 )
+            ]
+
+          # I-type ALU operation: rc = ra ? immediate
+          # (Immediate is truncated for SLLI, SRLI, SRAI)
+          with m.Case( OP_IMM ):
+            m.d.comb += [
+              self.alu.a.eq( self.ra.data ),
+              self.alu.b.eq(
+                Mux( self.mem.mux.bus.dat_r[ 12 : 14 ] == 0b01,
+                     self.mem.mux.bus.dat_r[ 20 : 25 ],
+                     Cat( self.mem.mux.bus.dat_r[ 20 : 32 ],
+                       Repl( self.mem.mux.bus.dat_r[ 31 ], 20 ) ) ) ),
+              self.alu.f.eq( Cat(
+                self.mem.mux.bus.dat_r[ 12 : 15 ],
+                Mux( self.mem.mux.bus.dat_r[ 12 : 14 ] == 0b01,
+                     self.mem.mux.bus.dat_r[ 30 ],
+                     0 ) ) ),
+              self.rc.data.eq( self.alu.y ),
+              self.rc.en.eq( self.rc.addr[ :5 ] != 0 )
+            ]
+
+          # System call instruction: ECALL, EBREAK, MRET, WFI,
+          # and atomic CSR operations.
+          with m.Case( OP_SYSTEM ):
+            # "EBREAK" instruction: enter the interrupt context
+            # with 'breakpoint' as the cause of the exception.
+            with m.If( ( self.ra.addr[ :5 ] == 0 )
+                     & ( self.rc.addr[ :5 ] == 0 )
+                     & ( self.f   == 0 )
+                     & ( self.mem.mux.bus.dat_r[ 20 : 32 ] == 1 ) ):
+              trigger_trap( self, m, TRAP_BREAK )
+            # Other trap-related system call instructions:
+            with m.Elif( self.f == F_TRAPS ):
+              # An 'empty' ECALL instruction should raise an
+              # 'environment-call-from-M-mode" exception.
+              with m.If( ( self.ra.addr[ :5 ] == 0 ) &
+                         ( self.rc.addr[ :5 ] == 0 ) &
+                         ( self.mem.mux.bus.dat_r[ 20 : 32 ] == 0 ) ):
+                trigger_trap( self, m, TRAP_ECALL )
+              # 'MTRET' should return from an interrupt context.
+              # This is a nop if it occurs outside of an interrupt.
+              with m.Elif( self.mem.mux.bus.dat_r[ 20 : 32 ] == IMM_MRET ):
+                with m.If( self.irq == 1 ):
+                  m.d.sync += [
+                    self.pc.eq( self.csr.mepc.shadow ),
+                    self.irq.eq( 0 )
+                  ]
+            # Defer to the CSR module for atomic CSR reads/writes.
+            # 'CSRR[WSC]': Write/Set/Clear CSR value from a register.
+            # 'CSRR[WSC]I': Write/Set/Clear CSR value from immediate.
             with m.Else():
-              m.next = "CPU_PC_LOAD"
-          # Defer to the CSR module for valid 'CSRRx' operations.
-          # 'CSRR[WSC]': Write/Set/Clear CSR value from a register.
-          with m.Elif( self.f[ 2 ] == 0 ):
-            m.d.comb += [
-              self.csr.rin.eq( self.ra.data ),
-              self.csr.rsel.eq( self.imm ),
-              self.csr.f.eq( self.f )
+              m.d.comb += [
+                self.csr.rin.eq(
+                  Mux( self.f[ 2 ] == 0,
+                       self.ra.data,
+                       Cat( self.ra.addr[ :5 ],
+                            Repl( self.ra.addr[ 4 ], 27 ) ) ) ),
+                self.csr.rsel.eq( self.mem.mux.bus.dat_r[ 20 : 32 ] ),
+                self.csr.f.eq( self.f )
+              ]
+              # Wait a cycle to let CSR values propagate.
+              with m.If( iws == 0 ):
+                m.d.sync += self.csr.rw.eq( 1 )
+                m.d.sync += [
+                  iws.eq( 1 ),
+                  self.pc.eq( self.pc )
+                ]
+                m.next = "CPU_EXECUTE"
+              with m.Else():
+                m.d.sync += self.csr.rw.eq( 0 )
+                m.d.comb += [
+                  self.rc.data.eq( self.csr.csrs.bus.r_data ),
+                  self.rc.en.eq( self.rc.addr[ :5 ] != 0 )
+                ]
+
+          # FENCE instruction: clear any I-caches and ensure all
+          # memory operations are applied. There is no I-cache,
+          # and there is no caching of memory operations. So...nop.
+          with m.Case( OP_FENCE ):
+            m.next = "CPU_IFETCH"
+
+          # LED instruction: Non-standard, but good for testing.
+          with m.Case( OP_LED ):
+            m.d.sync += [
+              self.red_on.eq( ( self.ra.data & R_RED ) != 0 ),
+              self.grn_on.eq( ( self.ra.data & R_GRN ) != 0 ),
+              self.blu_on.eq( ( self.ra.data & R_BLU ) != 0 ),
             ]
-            csr_rw( self, m, rws_c )
-          # Note: 'CSRRxI' operations treat the 'rs1' / 'ra'
-          # value as a 5-bit sign-extended immediate.
-          # 'CSRR[WSC]I': Write/Set/Clear immediate value to CSR.
-          with m.Else():
-            m.d.comb += [
-              self.csr.rsel.eq( self.imm ),
-              self.csr.rin.eq( Cat( self.ra.addr[ :5 ],
-                               Repl( self.ra.addr[ 4 ], 27 ) ) ),
-              self.csr.f.eq( self.f )
-            ]
-            csr_rw( self, m, rws_c )
-        # "Memory Fence" instruction:
-        # For now, this doesn't actually need to do anything.
-        # Memory operations are globally visible as soon as they
-        # complete, in both the simulated RAM and ROM modules. Also,
-        # this CPU only has one 'hart' (hardware thread).
-        # But if I ever implement an instruction cache, this
-        # operation should empty and/or refresh it.
-        with m.Elif( self.opcode == OP_FENCE ):
-          m.next = "CPU_PC_LOAD"
-        # Non-standard LED opcode. This is for testing on an FPGA
-        # before I have a working GPIO peripheral. Let's be honest,
-        # colorful LEDs are more important than debugging interfaces.
-        with m.Elif( self.opcode == OP_LED ):
-          m.d.sync += [
-            self.red_on.eq( ( self.ra.data & R_RED ) != 0 ),
-            self.grn_on.eq( ( self.ra.data & R_GRN ) != 0 ),
-            self.blu_on.eq( ( self.ra.data & R_BLU ) != 0 )
-          ]
-          m.next = "CPU_PC_LOAD"
-        # Unrecognized operations skip to loading the next
-        # PC value, although the RISC-V spec says that this
-        # should trigger an error.
-        with m.Else():
-          m.next = "CPU_PC_LOAD"
-        # Wait until register access wait-states elapse, and
-        # forbid register writes on the first tick.
-        with m.If( rws_c == 0 ):
-          m.d.comb += self.rc.en.eq( 0 )
-        with m.If( rws_c < self.rws ):
-          m.d.sync += [
-            rws_c.eq( rws_c + 1 ),
-            self.pc.eq( self.ipc )
-          ]
-          m.next = "CPU_PC_DECODE"
-      # "Jump" operation (or "Branch" if the branch is taken).
-      with m.State( "CPU_JUMP" ):
-        # ('m.next' is set in the 'jump_to' helper method; an
-        #  exception may be triggered if the address is invalid)
-        jump_to( self, m, ( self.ipc + self.imm ) )
-      # "Load / Store operation" - wait for memory access to finish.
-      # Note: This state is skipped on loads to r0.
-      with m.State( "CPU_LDST" ):
-        m.d.comb += self.mem.mux.bus.cyc.eq( 1 )
-        # Maintain the cominatorial logic holding the memory
-        # address at the 'mp' (memory pointer) value.
-        m.d.comb += [
-          self.mp.eq( self.ra.data + self.imm ),
-          self.mem.addr.eq( self.mp )
-        ]
-        with m.If( self.opcode == OP_STORE ):
-          m.d.comb += [
-            self.mem.mux.bus.we.eq( self.mem.mux.bus.ack ),
-            self.mem.mux.bus.dat_w.eq( self.rb.data )
-          ]
-          # "Store Byte" operation:
-          with m.If( self.f == F_SB ):
-            m.d.comb += self.mem.ram.dw.eq( RAM_DW_8 )
-          # "Store Halfword" operation:
-          with m.Elif( self.f == F_SH ):
-            m.d.comb += self.mem.ram.dw.eq( RAM_DW_16 )
-          # "Store Word" operation:
-          with m.Elif( self.f == F_SW ):
-            m.d.comb += self.mem.ram.dw.eq( RAM_DW_32 )
-          # Only move on after writing.
-          with m.If( ( self.mem.mux.bus.ack ) & ( self.mem.mux.bus.we ) ):
-            m.next = "CPU_PC_LOAD"
-          with m.Else():
-            m.next = "CPU_LDST"
-        # Wait for memory reads.
-        with m.Elif( self.mem.mux.bus.ack == 0 ):
-          m.next = "CPU_LDST"
-        # Store operations.
-        # Load operations.
-        with m.Elif( self.opcode == OP_LOAD ):
-          m.next = "CPU_PC_LOAD"
-          # Assert the CPU register 'write' signal.
-          m.d.comb += self.rc.en.eq( 1 )
-          # "Load Byte" operation:
-          with m.If( self.f == F_LB ):
-            m.d.comb += self.rc.data.eq( Cat( self.mem.mux.bus.dat_r[ :8 ], Repl( self.mem.mux.bus.dat_r[ 7 ], 24 ) ) )
-          # "Load Halfword" operation:
-          with m.Elif( self.f == F_LH ):
-            m.d.comb += self.rc.data.eq( Cat( self.mem.mux.bus.dat_r[ :16 ], Repl( self.mem.mux.bus.dat_r[ 15 ], 16 ) ) )
-          # "Load Word" operation:
-          with m.Elif( self.f == F_LW ):
-            m.d.comb += self.rc.data.eq( self.mem.mux.bus.dat_r )
-          # "Load Byte" (without sign extension) operation:
-          with m.Elif( self.f == F_LBU ):
-            m.d.comb += self.rc.data.eq( self.mem.mux.bus.dat_r & 0xFF )
-          # "Load Halfword" (without sign extension) operation:
-          with m.Elif( self.f == F_LHU ):
-            m.d.comb += self.rc.data.eq(
-              ( self.mem.mux.bus.dat_r & 0xFFFF ) )
-        with m.Else():
-          m.next = "CPU_PC_LOAD"
-      # "Trap Entry" - update PC and EPC CSR, and context switch.
-      with m.State( "CPU_TRAP_ENTER" ):
-        m.d.sync += [
-          self.csr.mepc.shadow.eq( self.ipc ),
-          self.irq.eq( 1 )
-        ]
-        m.next = "CPU_PC_ROM_FETCH"
-      # "Trap Exit" - update PC and context switch.
-      with m.State( "CPU_TRAP_EXIT" ):
-        m.d.sync += [
-          self.pc.eq( self.csr.mepc.shadow ),
-          self.irq.eq( 0 )
-        ]
-        m.next = "CPU_PC_ROM_FETCH"
-      # "PC Load Letter" - increment the PC.
-      with m.State( "CPU_PC_LOAD" ):
-        # Clear the CSR r/w signal, and increment the PC.
-        m.d.sync += self.csr.rw.eq( 0 )
-        jump_to( self, m, ( self.ipc + 4 ) )
 
     # End of CPU module definition.
     return m
@@ -660,12 +600,22 @@ if __name__ == "__main__":
       print( '--- CPU Tests ---' )
       # Simulate the 'infinite loop' ROM to screen for syntax errors.
       cpu_sim( loop_test )
-      cpu_sim( sh_test )
-      cpu_sim( sw_test )
-      cpu_sim( io_test )
-      cpu_sim( misalign_jmp_test )
-      cpu_sim( misalign_ldst_test )
       cpu_spi_sim( loop_test )
+      cpu_sim( ram_pc_test )
+      cpu_sim( misalign_ldst_test )
+      cpu_sim( sw_test )
+      cpu_sim( lb_test )
+      cpu_sim( lbu_test )
+      cpu_sim( lh_test )
+      cpu_sim( sh_test )
+      cpu_sim( lhu_test )
+      cpu_sim( lw_test )
+      cpu_sim( sb_test )
+      cpu_sim( mcycle_test )
+      cpu_sim( minstret_test )
+      cpu_spi_sim( ram_pc_test )
+      cpu_sim( quick_test )
+      cpu_spi_sim( quick_test )
       # Run auto-generated RV32I compliance tests with a multiplexed
       # ROM module containing a different program for each one.
       # (The CPU gets reset between each program.)

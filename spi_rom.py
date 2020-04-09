@@ -38,7 +38,7 @@ class SPI_ROM( Elaboratable, Interface ):
     # SPI Flash address command.
     self.spio = Signal( 32, reset = 0x03000000 )
     # Data counter.
-    self.dc = Signal( 5, reset = 0b00000 )
+    self.dc = Signal( 6, reset = 0b000000 )
 
     # Initialize Wishbone bus interface.
     Interface.__init__( self, addr_width = ceil( log2( self.dlen + 1 ) ), data_width = 32 )

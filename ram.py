@@ -55,13 +55,19 @@ class RAM( Elaboratable, Interface ):
     m.d.comb += self.r.addr.eq( self.adr >> 2 )
     # Only set ack if 'cyc' is asserted.
     m.d.sync += self.ack.eq( self.cyc & ( self.stb & ( self.we == 0 ) ) )
-    # Word-aligned reads.
-    with m.If( ( self.adr & 0b11 ) == 0b00 ):
-      m.d.comb += self.dat_r.eq( LITTLE_END_L( self.r.data ) )
-    # Partial reads.
-    with m.Else():
-      m.d.comb += self.dat_r.eq( LITTLE_END_L(
-        self.r.data << ( ( self.adr & 0b11 ) << 3 ) ) )
+    with m.Switch( self.adr[ :2 ] ):
+      # Word-aligned reads.
+      with m.Case( 0b00 ):
+        m.d.comb += self.dat_r.eq( LITTLE_END_L( self.r.data ) )
+      # Single-byte offset.
+      with m.Case( 0b01 ):
+        m.d.comb += self.dat_r.eq( LITTLE_END_L( self.r.data << 8 ) )
+      # Halfword offset.
+      with m.Case( 0b10 ):
+        m.d.comb += self.dat_r.eq( LITTLE_END_L( self.r.data << 16 ) )
+      # Three-byte offset.
+      with m.Case( 0b11 ):
+        m.d.comb += self.dat_r.eq( LITTLE_END_L( self.r.data << 24 ) )
 
     # Write the 'din' value if 'wen' is set.
     with m.If( self.we ):
@@ -76,28 +82,52 @@ class RAM( Elaboratable, Interface ):
       # Writes requiring wait-states:
       with m.Elif( ( self.wws == 0 ) & ( self.ack == 0 ) ):
         m.d.sync += self.wws.eq( self.wws + 1 )
+      # Partial writes:
+      # Multi-word writes are not allowed, so this module
+      # assumes the design will not allow mis-aligned access.
       with m.Else():
         m.d.sync += [
           self.wws.eq( 0 ),
           self.ack.eq( self.cyc )
         ]
-        # Word-aligned partial writes.
-        with m.If( ( self.adr & 0b11 ) == 0b00 ):
-          m.d.comb += [
-            self.w.addr.eq( self.adr >> 2 ),
-            self.w.en.eq( self.cyc ),
-            self.w.data.eq( self.r.data | LITTLE_END_L( ( self.dat_w & ( 0xFFFFFFFF >> ( self.dw << 3 ) ) ) ) )
-          ]
-        # Un-aligned partial writes.
-        with m.Else():
-          # Assume that read ports hold data from the same addresses.
-          m.d.comb += [
-            self.w.addr.eq( self.adr >> 2 ),
-            self.w.en.eq( self.cyc ),
-            self.w.data.eq( ( self.r.data &
-              ~( ( ( 0xFFFFFFFF << ( self.dw << 3 ) ) & 0xFFFFFFFF ) >> ( ( self.adr & 0b11 ) << 3 ) ) ) |
-              ( LITTLE_END_L( ( self.dat_w & 0xFFFFFFFF >> ( self.dw << 3 ) ) << ( ( ( self.adr & 0b11 ) << 3 ) ) ) ) ),
-          ]
+        m.d.comb += [
+          self.w.addr.eq( self.adr >> 2 ),
+          self.w.en.eq( self.cyc )
+        ]
+        with m.Switch( self.adr[ :2 ] ):
+          with m.Case( 0b00 ):
+            with m.Switch( self.dw ):
+              with m.Case( RAM_DW_8 ):
+                m.d.comb += self.w.data.eq(
+                  Cat( self.r.data[ 0 : 24 ], self.dat_w[ 0 : 8 ] ) )
+              with m.Case( RAM_DW_16 ):
+                m.d.comb += self.w.data.eq(
+                  Cat( self.r.data[ 0 : 16 ], self.dat_w[ 8 : 16 ],
+                       self.dat_w[ 0 : 8 ] ) )
+          with m.Case( 0b01 ):
+            with m.Switch( self.dw ):
+              with m.Case( RAM_DW_8 ):
+                m.d.comb += self.w.data.eq(
+                  Cat( self.r.data[ 0 : 16 ], self.dat_w[ 0 : 8 ],
+                       self.r.data[ 24 : 32 ] ) )
+              with m.Case( RAM_DW_16 ):
+                m.d.comb += self.w.data.eq(
+                  Cat( self.r.data[ 0 : 8 ], self.dat_w[ 8 : 16 ],
+                       self.dat_w[ 0 : 8 ], self.r.data[ 24 : 32 ] ) )
+          with m.Case( 0b10 ):
+            with m.Switch( self.dw ):
+              with m.Case( RAM_DW_8 ):
+                m.d.comb += self.w.data.eq(
+                  Cat( self.r.data[ 0 : 8 ], self.dat_w[ 0 : 8 ],
+                       self.r.data[ 16 : 32 ] ) )
+              with m.Case( RAM_DW_16 ):
+                m.d.comb += self.w.data.eq(
+                  Cat( self.dat_w[ 8 : 16 ], self.dat_w[ 0 : 8 ],
+                       self.r.data[ 0 : 16 ] ) )
+          with m.Case( 0b11 ):
+            # (Only single-byte writes are allowed)
+            m.d.comb += self.w.data.eq(
+              Cat( self.dat_w[ 0 : 8 ], self.r.data[ 8 : 32 ] ) )
 
     # End of RAM module definition.
     return m
@@ -236,9 +266,6 @@ def ram_test( ram ):
   yield from ram_write_ut( ram, ram.size - 1, 0x00000012, RAM_DW_8, 1 )
   yield from ram_read_ut( ram, ram.size - 4, 0x12CDEF89 )
   yield from ram_write_ut( ram, ram.size - 4, 0xABCDEF89, RAM_DW_32, 1 )
-  yield from ram_write_ut( ram, ram.size - 3, 0x00234567, RAM_DW_32, 1 )
-  yield from ram_read_ut( ram, ram.size - 4, 0x23456789 )
-  yield from ram_read_ut( ram, ram.size - 3, 0x00234567 )
 
   # Done.
   yield Tick()

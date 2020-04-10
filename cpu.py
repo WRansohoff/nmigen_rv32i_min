@@ -584,7 +584,12 @@ if __name__ == "__main__":
       warnings.filterwarnings( "ignore", category = UnusedElaboratable )
       sopts = ''
       # Optional: increases design size but provides more info.
-      #sopts += '-noflatten'
+      #sopts += '-noflatten '
+      # Optional: optimization flags seem to help a bit;
+      # probably ~5% fewer gates, ~15% faster?
+      #sopts += '-retime '
+      #sopts += '-relut '
+      #sopts += '-abc2 '
       #cpu = CPU( ROM( led_rom ) )
       prog_start = ( 2 * 1024 * 1024 )
       cpu = CPU( SPI_ROM( prog_start, prog_start + 1024, None ) )
@@ -602,17 +607,6 @@ if __name__ == "__main__":
       cpu_sim( loop_test )
       cpu_spi_sim( loop_test )
       cpu_sim( ram_pc_test )
-      cpu_sim( misalign_ldst_test )
-      cpu_sim( sw_test )
-      cpu_sim( lb_test )
-      cpu_sim( lbu_test )
-      cpu_sim( lh_test )
-      cpu_sim( sh_test )
-      cpu_sim( lhu_test )
-      cpu_sim( lw_test )
-      cpu_sim( sb_test )
-      cpu_sim( mcycle_test )
-      cpu_sim( minstret_test )
       cpu_spi_sim( ram_pc_test )
       cpu_sim( quick_test )
       cpu_spi_sim( quick_test )

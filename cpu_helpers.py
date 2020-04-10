@@ -20,7 +20,7 @@ def trigger_trap( self, cpu, trap_num ):
     self.irq.eq( 1 )
   ]
   # Set PC to the interrupt handler address.
-  with cpu.If( ( self.csr.mtvec.shadow & 0b11 ) == MTVEC_MODE_DIRECT ):
+  with cpu.If( ( self.csr.mtvec.shadow[ :2 ] ) == MTVEC_MODE_DIRECT ):
     # "Direct" interrupt mode: use a common handler.
     cpu.d.sync += self.pc.eq( self.csr.mtvec.shadow & 0xFFFFFFFC )
   with cpu.Else():

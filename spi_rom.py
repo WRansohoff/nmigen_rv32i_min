@@ -61,8 +61,6 @@ class SPI_ROM( Elaboratable, Interface ):
 
     # Clock rests at 0.
     m.d.comb += self.spi.clk.o.eq( 0 )
-    # SPI Flash can only address 24 bits.
-    m.d.comb += self.spio.eq( ( 0x03000000 | ( ( self.adr + self.dstart ) & 0x00FFFFFF ) ) )
 
     # Use a state machine for Flash access.
     # "Mode 0" SPI is very simple:
@@ -77,25 +75,29 @@ class SPI_ROM( Elaboratable, Interface ):
       # their connected SPI Flash after configuring themselves
       # in order to save power and prevent unintended writes.
       with m.State( "SPI_RESET" ):
-        m.d.sync += self.spi.cs.o.eq( 1 )
+        m.d.sync += [
+          self.spi.cs.o.eq( 1 ),
+          self.spio.eq( 0xAB000000 )
+        ]
         m.next = "SPI_POWERUP"
       with m.State( "SPI_POWERUP" ):
-        m.d.sync += self.dc.eq( self.dc + 1 )
-        m.d.comb += self.spi.clk.o.eq( ~ClockSignal( "sync" ) )
-        m.d.comb += self.spi.mosi.o.eq( 0xAB >> ( 7 - self.dc ) )
+        m.d.comb += [
+          self.spi.clk.o.eq( ~ClockSignal( "sync" ) ),
+          self.spi.mosi.o.eq( self.spio[ 31 ] )
+        ]
+        m.d.sync += [
+          self.spio.eq( self.spio << 1 ),
+          self.dc.eq( self.dc + 1 )
+        ]
+        m.next = "SPI_POWERUP"
         # Wait a few extra cycles after ending the transaction to
         # allow the chip to wake up from sleep mode.
         # TODO: Time this based on clock frequency?
         with m.If( self.dc == 30 ):
-          m.d.sync += self.spi.cs.o.eq( 0 )
           m.next = "SPI_WAITING"
         # De-assert CS after sending 8 bits of data = 16 clock edges.
         with m.Elif( self.dc >= 8 ):
           m.d.sync += self.spi.cs.o.eq( 0 )
-          m.next = "SPI_POWERUP"
-        # Toggle the 'clk' pin every cycle.
-        with m.Else():
-          m.next = "SPI_POWERUP"
       # 'Waiting' state: Keep the 'cs' pin high until a new read is
       # requested, then move to 'SPI_TX' to send the read command.
       # Also keep 'ack' asserted until 'stb' is released.
@@ -108,6 +110,7 @@ class SPI_ROM( Elaboratable, Interface ):
         with m.If( ( self.cyc == 1 ) & ( self.stb == 1 ) & ( self.ack == 0 ) ):
           m.d.sync += [
             self.spi.cs.o.eq( 1 ),
+            self.spio.eq( ( 0x03000000 | ( ( self.adr + self.dstart ) & 0x00FFFFFF ) ) ),
             self.ack.eq( 0 ),
             self.dc.eq( 31 )
           ]
@@ -116,9 +119,14 @@ class SPI_ROM( Elaboratable, Interface ):
       # followed by the desired 24-bit address. (Encoded in 'spio')
       with m.State( "SPI_TX" ):
         # Set the 'mosi' pin to the next value and increment 'dc'.
-        m.d.comb += self.spi.mosi.o.eq( self.spio >> self.dc )
-        m.d.sync += self.dc.eq( self.dc - 1 )
-        m.d.comb += self.spi.clk.o.eq( ~ClockSignal( "sync" ) )
+        m.d.sync += [
+          self.dc.eq( self.dc - 1 ),
+          self.spio.eq( self.spio << 1 )
+        ]
+        m.d.comb += [
+          self.spi.clk.o.eq( ~ClockSignal( "sync" ) ),
+          self.spi.mosi.o.eq( self.spio[ 31 ] )
+        ]
         # Move to 'receive data' state once 32 bits have elapsed.
         # Also clear 'dat_r' and 'dc' before doing so.
         with m.If( self.dc == 0 ):
@@ -146,7 +154,7 @@ class SPI_ROM( Elaboratable, Interface ):
             m.d.comb += self.spi.miso.i.eq( ( self.data[ self.adr >> 2 ] >> ( self.dc - 24 ) ) & 0b1 )
         m.d.sync += [
           self.dc.eq( self.dc - 1 ),
-          self.dat_r.eq( self.dat_r | ( self.spi.miso.i << self.dc ) )
+          self.dat_r.bit_select( self.dc, 1 ).eq( self.spi.miso.i )
         ]
         m.d.comb += self.spi.clk.o.eq( ~ClockSignal( "sync" ) )
         # Assert 'ack' signal and move back to 'waiting' state

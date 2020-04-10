@@ -1,3 +1,5 @@
+from nmigen.hdl.ast import Past
+
 from isa import *
 
 # Helper method to increment the 'minstret' CSR.
@@ -16,7 +18,7 @@ def trigger_trap( self, cpu, trap_num ):
   # Set mcause, mepc, interrupt context flag.
   cpu.d.sync += [
     self.csr.mcause.shadow.eq( trap_num ),
-    self.csr.mepc.shadow.eq( self.ipc ),
+    self.csr.mepc.shadow.eq( Past( self.pc ) ),
     self.irq.eq( 1 )
   ]
   # Set PC to the interrupt handler address.

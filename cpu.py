@@ -11,8 +11,12 @@ from rom import *
 from rvmem import *
 from cpu_helpers import *
 
+import os
 import sys
 import warnings
+
+# Optional: Enable verbose output for debugging.
+#os.environ["NMIGEN_verbose"] = "Yes"
 
 # CPU module.
 class CPU( Elaboratable ):
@@ -21,8 +25,6 @@ class CPU( Elaboratable ):
     self.clk_rst = Signal( reset = 0b0, reset_less = True )
     # Program Counter register.
     self.pc = Signal( 32, reset = 0x00000000 )
-    # Intermediary program counter storage.
-    self.ipc = Signal( 32, reset = 0x00000000 )
     # The main 32 CPU registers for 'normal' and 'interrupt' contexts.
     # I don't think that the base specification includes priority
     # levels, so for now, we only need one extra set of registers
@@ -116,8 +118,7 @@ class CPU( Elaboratable ):
           self.rc.addr.eq( Cat(
             self.mem.mux.bus.dat_r[ 7  : 12 ], self.irq ) ),
           self.f.eq( self.mem.mux.bus.dat_r[ 12 : 15 ] ),
-          self.op.eq( self.mem.mux.bus.dat_r[ 0 : 7 ] ),
-          self.ipc.eq( self.pc )
+          self.op.eq( self.mem.mux.bus.dat_r[ 0 : 7 ] )
         ]
         # Wait a tick to let the register data load.
         with m.If( iws == 0 ):
@@ -149,7 +150,7 @@ class CPU( Elaboratable ):
           # upper bits plus the current PC.
           with m.Case( OP_AUIPC ):
             m.d.comb += [
-              self.rc.data.eq( self.ipc +
+              self.rc.data.eq( self.pc +
                 ( self.mem.mux.bus.dat_r & 0xFFFFF000 ) ),
               self.rc.en.eq( self.rc.addr[ :5 ] != 0 )
             ]
@@ -157,14 +158,14 @@ class CPU( Elaboratable ):
           # JAL instruction: jump to an offset address (or trap if
           # the address is invalid), and put the next PC in rc.
           with m.Case( OP_JAL ):
-            m.d.sync += self.pc.eq( self.ipc + Cat(
+            m.d.sync += self.pc.eq( self.pc + Cat(
               Repl( 0, 1 ),
               self.mem.mux.bus.dat_r[ 21: 31 ],
               self.mem.mux.bus.dat_r[ 20 ],
               self.mem.mux.bus.dat_r[ 12 : 20 ],
               Repl( self.mem.mux.bus.dat_r[ 31 ], 12 ) ) ),
             m.d.comb += [
-              self.rc.data.eq( self.ipc + 4 ),
+              self.rc.data.eq( self.pc + 4 ),
               self.rc.en.eq( self.rc.addr[ :5 ] != 0 )
             ]
 
@@ -176,7 +177,7 @@ class CPU( Elaboratable ):
               self.mem.mux.bus.dat_r[ 20 : 32 ],
               Repl( self.mem.mux.bus.dat_r[ 31 ], 20 ) ) ),
             m.d.comb += [
-              self.rc.data.eq( self.ipc + 4 ),
+              self.rc.data.eq( self.pc + 4 ),
               self.rc.en.eq( self.rc.addr[ :5 ] != 0 )
             ]
 
@@ -186,7 +187,7 @@ class CPU( Elaboratable ):
             # BEQ / BNE.
             with m.If( self.f[ 2 ] == 0 ):
               with m.If( ( self.ra.data != self.rb.data ) == self.f[ 0 ] ):
-                m.d.sync += self.pc.eq( self.ipc + Cat(
+                m.d.sync += self.pc.eq( self.pc + Cat(
                   Repl( 0, 1 ),
                   self.mem.mux.bus.dat_r[ 8 : 12 ],
                   self.mem.mux.bus.dat_r[ 25 : 31 ],
@@ -200,7 +201,7 @@ class CPU( Elaboratable ):
                 self.alu.f.eq( self.f[ 1: ] )
               ]
               with m.If( self.alu.y != self.f[ 0 ] ):
-                m.d.sync += self.pc.eq( self.ipc + Cat(
+                m.d.sync += self.pc.eq( self.pc + Cat(
                   Repl( 0, 1 ),
                   self.mem.mux.bus.dat_r[ 8 : 12 ],
                   self.mem.mux.bus.dat_r[ 25 : 31 ],
@@ -590,6 +591,8 @@ if __name__ == "__main__":
       #sopts += '-retime '
       #sopts += '-relut '
       #sopts += '-abc2 '
+      # (Running a lot of ABC passes is slow, but helps even more.)
+      #sopts += '-abc9 '
       #cpu = CPU( ROM( led_rom ) )
       prog_start = ( 2 * 1024 * 1024 )
       cpu = CPU( SPI_ROM( prog_start, prog_start + 1024, None ) )

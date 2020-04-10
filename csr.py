@@ -1,9 +1,9 @@
-from nmigen_soc.csr import *
-from nmigen_soc.csr.bus import *
-from nmigen_soc.csr.wishbone import *
+from nmigen import *
+from nmigen.back.pysim import *
+from nmigen_boards.upduino_v2 import *
+
 from nmigen_soc.wishbone import *
 from nmigen_soc.memory import *
-from nmigen_boards.upduino_v2 import *
 
 from isa import *
 
@@ -21,100 +21,73 @@ import warnings
 # 'WPRI' = Writes Preserved, Reads Ignored. #
 #############################################
 
-# Helper method to generate CSR memory map.
-def gen_csrs( self ):
-  # Create the CSR multiplexer.
-  self.csrs = Multiplexer( addr_width = 12,
-                           data_width = 32,
-                           alignment  = 0 )
-  for csr_name, reg in CSRS.items():
-    creg = CSReg( csr_name, reg )
-    self.csrs.add( creg, addr = reg[ 'c_addr' ] )
-    setattr( self, csr_name, creg )
-
-# CSR register for use in the multiplexer.
-class CSReg( Elaboratable, Element ):
-  def __init__( self, reg_name, reg ):
-    csr_r, csr_w = False, False
-    self.mask_r, self.mask_ro = reg[ 'mask_r' ], reg[ 'mask_ro' ]
-    self.mask_s, self.mask_c = reg[ 'mask_s' ], reg[ 'mask_c' ]
-    self.rst = reg[ 'rst' ]
-    for name, field in reg[ 'bits' ].items():
-      if 'r' in field[ 2 ]:
-        csr_r = True
-      if ( 'w' in field[ 2 ] ) | \
-         ( 's' in field[ 2 ] ) | \
-         ( 'c' in field[ 2 ] ):
-        csr_w = True
-    self.shadow = Signal( 32, reset = self.rst,
-                          name = "%s_shadow"%reg_name )
-    self.access = "%s%s"%( ( 'r' if csr_r else '' ),
-                           ( 'w' if csr_w else '' ) )
-    Element.__init__( self, 32, self.access )
-  def elaborate( self, platform ):
-    m = Module()
-    if self.access.readable():
-      m.d.comb += self.r_data.eq( self.shadow & self.mask_r )
-    if self.access.writable():
-      with m.If( self.w_stb ):
-        # New register value = (ones) & ~(zeros).
-        # ones  = (old_val & read_only) | (input & set_mask)
-        # zeros = ~(input) & clear_mask
-        m.d.sync += self.shadow.eq( ( ( self.shadow & self.mask_ro ) |
-                                    ( self.w_data & self.mask_s ) ) &
-                                    ~( ~( self.w_data ) & self.mask_c ) )
-    return m
-
 # Core "CSR" class, which addresses Control and Status Registers.
-class CSR( Elaboratable ):
+class CSR( Elaboratable, Interface ):
   def __init__( self ):
-    # CSR input/output signals.
-    self.rsel = Signal( 12, reset = 0x000 )
-    self.rin  = Signal( 32, reset = 0x00000000 )
-    self.rw   = Signal( 1,  reset = 0b0 )
-    self.f    = Signal( 3,  reset = 0b000 )
-    gen_csrs( self )
+    # CSR function select signal.
+    self.f  = Signal( 3,  reset = 0b000 )
+    # Actual data to write (depends on write/set/clear function)
+    self.wd = Signal( 32, reset = 0x00000000 )
+    # Initialize wishbone bus interface.
+    Interface.__init__( self, addr_width = 12, data_width = 32 )
+    self.memory_map = MemoryMap( addr_width = self.addr_width,
+                                 data_width = self.data_width,
+                                 alignment = 0 )
+    # Initialize required CSR signals and constants.
+    for cname, reg in CSRS.items():
+      for bname, bits in reg[ 'bits' ].items():
+        if 'w' in bits[ 2 ]:
+          setattr( self,
+                   "%s_%s"%( cname, bname ),
+                   Signal( bits[ 1 ] - bits[ 0 ] + 1,
+                           name = "%s_%s"%( cname, bname ),
+                           reset = bits[ 3 ] ) )
+        elif 'r' in bits[ 2 ]:
+          setattr( self,
+                   "%s_%s"%( cname, bname ),
+                   Const( bits[ 3 ] ) )
 
   def elaborate( self, platform ):
     m = Module()
-    # Register CSR submodules.
-    m.submodules.csrs          = self.csrs
-    for name, reg in CSRS.items():
-      setattr( m.submodules, name, getattr( self, name ) )
-
-    # Set read strobe and address to 0 by default.
-    m.d.comb += [
-      self.csrs.bus.addr.eq( self.rsel ),
-      self.csrs.bus.w_stb.eq( 0 ),
-      self.csrs.bus.r_stb.eq( 1 )
-    ]
 
     # The 'MCYCLE' CSR increments every clock tick unless inhibited.
-    with m.If( self.mcountinhibit.shadow[ 0 ] == 0 ):
-      m.d.sync += self.mcycle.shadow.eq( self.mcycle.shadow + 1 )
-      with m.If( self.mcycle.shadow == 0xFFFFFFFF ):
-        m.d.sync += self.mcycleh.shadow.eq( self.mcycleh.shadow + 1 )
+    with m.If( self.mcountinhibit_cy == 0 ):
+      m.d.sync += self.mcycle_cycles.eq( self.mcycle_cycles + 1 )
+      with m.If( self.mcycle_cycles == 0xFFFFFFFF ):
+        m.d.sync += self.mcycleh_cycles.eq( self.mcycleh_cycles + 1 )
 
-    # Handle 32-bit CSR read / write logic.
-    with m.If( self.rw != 0 ):
-      with m.If( ( self.f & 0b11 ) == 0b01 ):
+    # Read values default to 0.
+    m.d.sync += self.dat_r.eq( 0 )
+
+    with m.Switch( self.adr ):
+      # Generate logic for supported CSR reads / writes.
+      for cname, reg in CSRS.items():
+        with m.Case( reg[ 'c_addr' ] ):
+          # Assemble the read value from individual bitfields.
+          for bname, bits in reg[ 'bits' ].items():
+            if 'r' in bits[ 2 ]:
+              m.d.sync += self.dat_r \
+                .bit_select( bits[ 0 ], bits[ 1 ] - bits[ 0 ] + 1 ) \
+                .eq( getattr( self, "%s_%s"%( cname, bname ) ) )
+            with m.If( self.we == 1 ):
+              # Writes are enabled; set new values on the next tick.
+              if 'w' in bits[ 2 ]:
+                m.d.sync += getattr( self, "%s_%s"%( cname, bname ) ) \
+                  .eq( self.wd[ bits[ 0 ] : ( bits[ 1 ] + 1 ) ] )
+
+    # Process 32-bit CSR write logic.
+    with m.If( ( self.f & 0b11 ) == 0b01 ):
       # 'Write' - set the register to the input value.
-        m.d.comb += [
-          self.csrs.bus.w_stb.eq( 1 ),
-          self.csrs.bus.w_data.eq( self.rin )
-        ]
-      with m.Elif( ( ( self.f & 0b11 ) == 0b10 ) & ( self.rin != 0 ) ):
-        # 'Set' - set bits which are set in the input value.
-        m.d.comb += [
-          self.csrs.bus.w_stb.eq( 1 ),
-          self.csrs.bus.w_data.eq( self.rin | self.csrs.bus.r_data )
-        ]
-      with m.Elif( ( ( self.f & 0b11 ) == 0b11 ) & ( self.rin != 0 ) ):
-        # 'Clear' - reset bits which are set in the input value.
-        m.d.comb += [
-          self.csrs.bus.w_stb.eq( 1 ),
-          self.csrs.bus.w_data.eq( ~( self.rin ) & self.csrs.bus.r_data )
-        ]
+      m.d.comb += self.wd.eq( self.dat_w )
+    with m.Elif( ( ( self.f & 0b11 ) == 0b10 ) & ( self.dat_w != 0 ) ):
+      # 'Set' - set bits which are set in the input value.
+      m.d.comb +=  self.wd.eq( self.dat_w | self.dat_r )
+    with m.Elif( ( ( self.f & 0b11 ) == 0b11 ) & ( self.dat_w != 0 ) ):
+      # 'Clear' - reset bits which are set in the input value.
+      m.d.comb += self.wd.eq( ~( self.dat_w ) & self.dat_r )
+    with m.Else():
+      # Read-only operation; set write data to current value.
+      m.d.comb += self.wd.eq( self.dat_r )
 
     return m
 
@@ -128,16 +101,15 @@ f = 0
 # Perform an individual CSR unit test.
 def csr_ut( csr, reg, rin, cf, expected ):
   global p, f
-  # Set rsel, rin, f.
-  yield csr.rsel.eq( reg )
-  yield csr.rin.eq( rin )
+  # Set address, write data, f.
+  yield csr.adr.eq( reg )
+  yield csr.dat_w.eq( rin )
   yield csr.f.eq( cf )
-  yield csr.rw.eq( 0 )
   # Wait a tick.
   yield Tick()
   # Check the result after combinatorial logic.
   yield Settle()
-  actual = yield csr.csrs.bus.r_data
+  actual = yield csr.dat_r
   if hexs( expected ) != hexs( actual ):
     f += 1
     print( "\033[31mFAIL:\033[0m CSR 0x%03X = %s (got: %s)"
@@ -146,15 +118,15 @@ def csr_ut( csr, reg, rin, cf, expected ):
     p += 1
     print( "\033[32mPASS:\033[0m CSR 0x%03X = %s"
            %( reg, hexs( expected ) ) )
-  # Set 'rw' and wait another two ticks.
-  yield csr.rw.eq( 1 )
-  yield Tick()
+  # Set 'rw' and wait another tick.
+  yield csr.we.eq( 1 )
   yield Tick()
   yield Settle()
   # Done. Reset rsel, rin, f, rw.
-  yield csr.rsel.eq( 0 )
-  yield csr.rin.eq( 0 )
+  yield csr.adr.eq( 0 )
+  yield csr.dat_w.eq( 0 )
   yield csr.f.eq( 0 )
+  yield csr.we.eq( 0 )
 
 # Perform some basic CSR operation tests on a fully re-writable CSR.
 def csr_rw_ut( csr, reg ):
@@ -231,11 +203,9 @@ def csr_test( csr ):
   yield from csr_ut( csr, CSRA_MIE, 0xFFFFFFFF, F_CSRRWI, 0x00000000 )
   yield from csr_ut( csr, CSRA_MIE, 0xFFFFFFFF, F_CSRRCI, 0x00000888 )
   yield from csr_ut( csr, CSRA_MIE, 0x00000000, F_CSRRSI, 0x00000000 )
-  # Test reading / writing the 'MIP' CSR. (Bits can only be cleared)
+  # Test reading / writing the 'MIP' CSR.
   yield from csr_ut( csr, CSRA_MIP, 0x00000000, F_CSRRW, 0x00000000 )
   yield from csr_ut( csr, CSRA_MIP, 0xFFFFFFFF, F_CSRRS, 0x00000000 )
-  yield from csr_ut( csr, CSRA_MIP, 0xFFFFFFFF, F_CSRRC, 0x00000000 )
-  yield csr.mip.shadow.eq( 0x00000888 )
   yield from csr_ut( csr, CSRA_MIP, 0xFFFFFFFF, F_CSRRC, 0x00000888 )
   yield from csr_ut( csr, CSRA_MIP, 0x00000000, F_CSRRS, 0x00000000 )
   # Test reading / writing the 'MCAUSE' CSR.
@@ -258,21 +228,29 @@ def csr_test( csr ):
 
   # Test reading / writing the 'MCYCLE' CSR, after resetting it.
   # Verify that the it counts up every cycle unless it is written to.
-  cyc_start = ( yield csr.mcycle.shadow ) & 0xFFFFFFFF
+  # ('we' is active 1/2 cycles in the unit test function)
+  cyc_start = ( yield csr.mcycle_cycles ) & 0xFFFFFFFF
   yield from csr_ut( csr, CSRA_MCYCLE, 0x00000000, F_CSRRS,  cyc_start )
-  yield from csr_ut( csr, CSRA_MCYCLE, 0xFFFFFFFF, F_CSRRSI, cyc_start + 3 )
+  yield Tick()
+  yield from csr_ut( csr, CSRA_MCYCLE, 0xFFFFFFFF, F_CSRRSI, cyc_start + 1 )
   yield from csr_ut( csr, CSRA_MCYCLE, 0x01234567, F_CSRRC,  0xFFFFFFFF )
   yield from csr_ut( csr, CSRA_MCYCLE, 0x0C0FFEE0, F_CSRRW,  0xFEDCBA98 )
   yield from csr_ut( csr, CSRA_MCYCLE, 0xFFFFFCBA, F_CSRRWI, 0x0C0FFEE0 )
   yield from csr_ut( csr, CSRA_MCYCLE, 0xFFFFFFFF, F_CSRRCI, 0xFFFFFCBA )
   yield from csr_ut( csr, CSRA_MCYCLE, 0x00000000, F_CSRRC,  0x00000000 )
-  yield from csr_ut( csr, CSRA_MCYCLE, 0x00000000, F_CSRRS,  0x00000002 )
-  yield from csr_ut( csr, CSRA_MCYCLE, 0x00000000, F_CSRRS,  0x00000005 )
-  yield from csr_ut( csr, CSRA_MCYCLE, 0x00000000, F_CSRRS,  0x00000008 )
+  yield Tick()
+  yield from csr_ut( csr, CSRA_MCYCLE, 0x00000000, F_CSRRS,  0x00000001 )
+  yield Tick()
+  yield Tick()
+  yield from csr_ut( csr, CSRA_MCYCLE, 0x00000000, F_CSRRS,  0x00000003 )
+  yield Tick()
+  yield Tick()
+  yield Tick()
+  yield from csr_ut( csr, CSRA_MCYCLE, 0x00000000, F_CSRRS,  0x00000006 )
   # Test reading / writing the 'MCYCLEH' CSR.
   # (It's a 64-bit hi/lo value, so it increments whenever
-  #  MCYCLE == 0xFFFFFFFF. That happens twice above.)
-  yield from csr_ut( csr, CSRA_MCYCLEH, 0xFFFFFFFF, F_CSRRCI, 0x00000002 )
+  #  MCYCLE == 0xFFFFFFFF. That happens once above.)
+  yield from csr_ut( csr, CSRA_MCYCLEH, 0xFFFFFFFF, F_CSRRCI, 0x00000001 )
   yield from csr_rw_ut( csr, CSRA_MCYCLEH )
   # Test reading / writing the 'MINSTRET' CSR after clearing it.
   yield from csr_rw_ut( csr, CSRA_MINSTRET )

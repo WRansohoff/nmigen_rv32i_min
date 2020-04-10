@@ -104,7 +104,7 @@ class CPU( Elaboratable ):
             m.next = "CPU_DECODE"
         # If the instruction address is misaligned, trigger a trap.
         with m.Else():
-          m.d.sync += self.csr.mtval.shadow.eq( self.pc )
+          m.d.sync += self.csr.mtval_einfo.eq( self.pc )
           trigger_trap( self, m, TRAP_IMIS )
 
       # "Decode instruction": Set CPU register addresses etc.
@@ -341,7 +341,7 @@ class CPU( Elaboratable ):
               with m.Elif( self.mem.mux.bus.dat_r[ 20 : 32 ] == IMM_MRET ):
                 with m.If( self.irq == 1 ):
                   m.d.sync += [
-                    self.pc.eq( self.csr.mepc.shadow ),
+                    self.pc.eq( self.csr.mepc_mepc << 2 ),
                     self.irq.eq( 0 )
                   ]
             # Defer to the CSR module for atomic CSR reads/writes.
@@ -349,26 +349,26 @@ class CPU( Elaboratable ):
             # 'CSRR[WSC]I': Write/Set/Clear CSR value from immediate.
             with m.Else():
               m.d.comb += [
-                self.csr.rin.eq(
+                self.csr.dat_w.eq(
                   Mux( self.f[ 2 ] == 0,
                        self.ra.data,
                        Cat( self.ra.addr[ :5 ],
                             Repl( self.ra.addr[ 4 ], 27 ) ) ) ),
-                self.csr.rsel.eq( self.mem.mux.bus.dat_r[ 20 : 32 ] ),
+                self.csr.adr.eq( self.mem.mux.bus.dat_r[ 20 : 32 ] ),
                 self.csr.f.eq( self.f )
               ]
               # Wait a cycle to let CSR values propagate.
               with m.If( iws == 0 ):
-                m.d.sync += self.csr.rw.eq( 1 )
+                m.d.sync += self.csr.we.eq( 1 )
                 m.d.sync += [
                   iws.eq( 1 ),
                   self.pc.eq( self.pc )
                 ]
                 m.next = "CPU_EXECUTE"
               with m.Else():
-                m.d.sync += self.csr.rw.eq( 0 )
+                m.d.sync += self.csr.we.eq( 0 )
                 m.d.comb += [
-                  self.rc.data.eq( self.csr.csrs.bus.r_data ),
+                  self.rc.data.eq( self.csr.dat_r ),
                   self.rc.en.eq( self.rc.addr[ :5 ] != 0 )
                 ]
 
@@ -470,7 +470,7 @@ def cpu_run( cpu, expected ):
     yield Settle()
     timeout = timeout + 1
     # Only check expected values once per instruction.
-    ninstret = yield cpu.csr.minstret.shadow
+    ninstret = yield cpu.csr.minstret_instrs
     if ninstret != instret:
       ni += 1
       instret = ninstret
@@ -591,8 +591,6 @@ if __name__ == "__main__":
       #sopts += '-retime '
       #sopts += '-relut '
       #sopts += '-abc2 '
-      # (Running a lot of ABC passes is slow, but helps even more.)
-      #sopts += '-abc9 '
       #cpu = CPU( ROM( led_rom ) )
       prog_start = ( 2 * 1024 * 1024 )
       cpu = CPU( SPI_ROM( prog_start, prog_start + 1024, None ) )

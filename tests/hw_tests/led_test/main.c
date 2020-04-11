@@ -3,9 +3,7 @@
 #include <string.h>
 // Device header files
 #include "encoding.h"
-
-// Non-standard 'set LED from register' instruction.
-#define LED() __asm__( ".word 0x00058076" );
+#include "tubul.h"
 
 // Pre-boot reset handler: disable interrupts, set the
 // stack pointer, then call the 'main' method.
@@ -29,17 +27,24 @@ int main( void ) {
   // Clear the .bss RAM section.
   memset( &_sbss, 0x00, ( ( void* )&_ebss - ( void* )&_sbss ) );
 
+  // Set GPIO pins 39-41 to output mode.
+  GPIO->P3 |= ( ( 2 << GPIO39_O ) |
+                ( 2 << GPIO40_O ) |
+                ( 2 << GPIO41_O ) );
   // Endlessly increment a register, occasionally toggling
   // the on-board LEDs.
-  __asm__( "li a0, 0" );
-  __asm__( "li a1, 0" );
+  int counter = 0;
   while( 1 ) {
-    __asm__( "addi a0, a0, 1" );
-    // The non-standard 'LED' instruction sets RGB LEDs based on a
-    // register's 3 LSbits. Right-shift the value by several bits
-    // so that the transitions are visible.
-    __asm__( "srli a1, a0, 12" );
-    LED();
+    if( ( ( counter >> 10 ) & 1 ) == 1 ) {
+      GPIO->P3 ^= ( 1 << GPIO39_O );
+    }
+    if( ( ( counter >> 11 ) & 1 ) == 1 ) {
+      GPIO->P3 ^= ( 1 << GPIO40_O );
+    }
+    if( ( ( counter >> 12 ) & 1 ) == 1 ) {
+      GPIO->P3 ^= ( 1 << GPIO41_O );
+    }
+    ++counter;
   }
   return 0; // lol
 }

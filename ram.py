@@ -11,16 +11,16 @@ from isa import *
 ###############
 
 # Data input width definitions.
-RAM_DW_8  = 3
-RAM_DW_16 = 2
-RAM_DW_32 = 0
+RAM_DW_8  = 0
+RAM_DW_16 = 1
+RAM_DW_32 = 2
 
 class RAM( Elaboratable, Interface ):
   def __init__( self, size_words ):
     # Record size.
     self.size = ( size_words * 4 )
     # Width of data input.
-    self.dw   = Signal( 2, reset = 0b00 )
+    self.dw   = Signal( 3, reset = 0b000 )
     # 'Write wait-state' bit.
     # Mis-aligned data must be read before re-writing.
     self.wws  = Signal( 1, reset = 0b0 )

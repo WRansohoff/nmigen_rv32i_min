@@ -217,24 +217,23 @@ class CPU( Elaboratable ):
             # Then store the value in the destination register.
             with m.Else():
               m.d.comb += self.rc.en.eq( self.rc.addr[ :5 ] != 0 )
-              with m.Switch( self.f ):
-                with m.Case( F_LW ):
-                  m.d.comb += self.rc.data.eq(
-                    self.mem.mux.bus.dat_r )
-                with m.Case( F_LHU ):
-                  m.d.comb += self.rc.data.eq(
-                    self.mem.mux.bus.dat_r[ :16 ] )
-                with m.Case( F_LBU ):
-                  m.d.comb += self.rc.data.eq(
-                    self.mem.mux.bus.dat_r[ :8 ] )
-                with m.Case( F_LH ):
-                  m.d.comb += self.rc.data.eq( Cat(
-                    self.mem.mux.bus.dat_r[ :16 ],
-                    Repl( self.mem.mux.bus.dat_r[ 15 ], 16 ) ) )
-                with m.Case( F_LB ):
-                  m.d.comb += self.rc.data.eq( Cat(
-                    self.mem.mux.bus.dat_r[ :8 ],
-                    Repl( self.mem.mux.bus.dat_r[ 7 ], 24 ) ) )
+              with m.If( self.f == F_LW ):
+                m.d.comb += self.rc.data.eq(
+                  self.mem.mux.bus.dat_r )
+              with m.Elif( self.f == F_LHU ):
+                m.d.comb += self.rc.data.eq(
+                  self.mem.mux.bus.dat_r[ :16 ] )
+              with m.Elif( self.f == F_LBU ):
+                m.d.comb += self.rc.data.eq(
+                  self.mem.mux.bus.dat_r[ :8 ] )
+              with m.Elif( self.f == F_LH ):
+                m.d.comb += self.rc.data.eq( Cat(
+                  self.mem.mux.bus.dat_r[ :16 ],
+                  Repl( self.mem.mux.bus.dat_r[ 15 ], 16 ) ) )
+              with m.Elif( self.f == F_LB ):
+                m.d.comb += self.rc.data.eq( Cat(
+                  self.mem.mux.bus.dat_r[ :8 ],
+                  Repl( self.mem.mux.bus.dat_r[ 7 ], 24 ) ) )
 
           # SB / SH / SW instructions: store a value from a
           # register into memory.
@@ -264,15 +263,9 @@ class CPU( Elaboratable ):
               with m.Else():
                 m.d.comb += [
                   self.mem.mux.bus.dat_w.eq( self.rb.data ),
-                  self.mem.mux.bus.we.eq( self.mem.mux.bus.ack )
+                  self.mem.mux.bus.we.eq( self.mem.mux.bus.ack ),
+                  self.mem.ram.dw.eq( self.f )
                 ]
-                with m.Switch( self.f ):
-                  with m.Case( F_SB ):
-                    m.d.comb += self.mem.ram.dw.eq( RAM_DW_8 )
-                  with m.Case( F_SH ):
-                    m.d.comb += self.mem.ram.dw.eq( RAM_DW_16 )
-                  with m.Case( F_SW ):
-                    m.d.comb += self.mem.ram.dw.eq( RAM_DW_32 )
 
           # R-type ALU operation: rc = ra ? rb
           with m.Case( OP_REG ):
@@ -291,11 +284,8 @@ class CPU( Elaboratable ):
           with m.Case( OP_IMM ):
             m.d.comb += [
               self.alu.a.eq( self.ra.data ),
-              self.alu.b.eq(
-                Mux( self.mem.mux.bus.dat_r[ 12 : 14 ] == 0b01,
-                     self.mem.mux.bus.dat_r[ 20 : 25 ],
-                     Cat( self.mem.mux.bus.dat_r[ 20 : 32 ],
-                       Repl( self.mem.mux.bus.dat_r[ 31 ], 20 ) ) ) ),
+              self.alu.b.eq( Cat( self.mem.mux.bus.dat_r[ 20 : 32 ],
+                Repl( self.mem.mux.bus.dat_r[ 31 ], 20 ) ) ),
               self.alu.f.eq( Cat(
                 self.mem.mux.bus.dat_r[ 12 : 15 ],
                 Mux( self.mem.mux.bus.dat_r[ 12 : 14 ] == 0b01,

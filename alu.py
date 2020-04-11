@@ -13,15 +13,12 @@ import sys
 class ALU( Elaboratable ):
   def __init__( self ):
     # 'A' and 'B' data inputs.
-    self.a = Signal( shape = Shape( width = 32, signed = True ),
-                     reset = 0x00000000 )
-    self.b = Signal( shape = Shape( width = 32, signed = True ),
-                     reset = 0x00000000 )
+    self.a = Signal( 32, reset = 0x00000000 )
+    self.b = Signal( 32, reset = 0x00000000 )
     # 'F' function select input.
     self.f = Signal( 4,  reset = 0b0000 )
     # 'Y' data output.
-    self.y = Signal( shape = Shape( width = 32, signed = True ),
-                     reset = 0x00000000 )
+    self.y = Signal( 32, reset = 0x00000000 )
     # (RISC-V does not have ALU condition flags)
 
   def elaborate( self, platform ):
@@ -33,53 +30,38 @@ class ALU( Elaboratable ):
       ta = Signal()
       m.d.sync += ta.eq( ~ta )
 
-    # Latched input values for signed and unsigned operations.
-    xa   = Signal( shape = Shape( width = 32, signed = True ) )
-    xb   = Signal( shape = Shape( width = 32, signed = True ) )
-    ua   = Signal( shape = Shape( width = 32, signed = False ) )
-    ub   = Signal( shape = Shape( width = 32, signed = False ) )
-    fn   = Signal( 4 )
-
-    m.d.comb += [
-      xa.eq( self.a ),
-      xb.eq( self.b ),
-      ua.eq( self.a ),
-      ub.eq( self.b ),
-      fn.eq( self.f ),
-    ]
-
     # Perform ALU computations based on the 'function' bits.
     # Y = A AND B
-    with m.If( fn == ALU_AND ):
-      m.d.comb += self.y.eq( xa & xb )
+    with m.If( self.f == ALU_AND ):
+      m.d.comb += self.y.eq( self.a & self.b )
     # Y = A  OR B
-    with m.Elif( fn == ALU_OR ):
-      m.d.comb += self.y.eq( xa | xb )
+    with m.Elif( self.f == ALU_OR ):
+      m.d.comb += self.y.eq( self.a | self.b )
     # Y = A XOR B
-    with m.Elif( fn == ALU_XOR ):
-      m.d.comb += self.y.eq( xa ^ xb )
+    with m.Elif( self.f == ALU_XOR ):
+      m.d.comb += self.y.eq( self.a ^ self.b )
     # Y = A + B
-    with m.Elif( fn == ALU_ADD ):
-      m.d.comb += self.y.eq( xa + xb )
+    with m.Elif( self.f == ALU_ADD ):
+      m.d.comb += self.y.eq( self.a.as_signed() + self.b.as_signed() )
     # Y = A - B
-    with m.Elif( fn == ALU_SUB ):
-      m.d.comb += self.y.eq( xa - xb )
+    with m.Elif( self.f == ALU_SUB ):
+      m.d.comb += self.y.eq( self.a.as_signed() - self.b.as_signed() )
     # Y = ( A < B ) (signed)
-    with m.Elif( fn == ALU_SLT ):
-      m.d.comb += self.y.eq( xa < xb )
+    with m.Elif( self.f == ALU_SLT ):
+      m.d.comb += self.y.eq( self.a.as_signed() < self.b.as_signed() )
     # Y = ( A <  B ) (unsigned)
-    with m.Elif( fn == ALU_SLTU ):
-      m.d.comb += self.y.eq( ua < ub )
+    with m.Elif( self.f == ALU_SLTU ):
+      m.d.comb += self.y.eq( self.a < self.b )
     # Note: Shift operations cannot shift more than XLEN (32) bits.
     # Y = A << B
-    with m.Elif( fn == ALU_SLL ):
-      m.d.comb += self.y.eq( xa << ( ub[ :5 ] ) )
+    with m.Elif( self.f == ALU_SLL ):
+      m.d.comb += self.y.eq( self.a << ( self.b[ :5 ] ) )
     # Y = A >> B (no sign extend)
-    with m.Elif( fn == ALU_SRL ):
-      m.d.comb += self.y.eq( ua >> ( ub[ :5 ] ) )
+    with m.Elif( self.f == ALU_SRL ):
+      m.d.comb += self.y.eq( self.a >> ( self.b[ :5 ] ) )
     # Y = A >> B (with sign extend)
-    with m.Elif( fn == ALU_SRA ):
-      m.d.comb += self.y.eq( xa >> ( ub[ :5 ] ) )
+    with m.Elif( self.f == ALU_SRA ):
+      m.d.comb += self.y.eq( self.a.as_signed() >> ( self.b[ :5 ] ) )
     # Return 0 after one clock cycle for unrecognized commands.
     with m.Else():
       m.d.comb += self.y.eq( 0x00000000 )

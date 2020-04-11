@@ -54,11 +54,14 @@ class GPIO( Elaboratable, Interface ):
     m = Module()
 
     # Set up I/O pin resources.
-    for i in PINS:
-      if platform is None:
-        setattr( self, "p%d"%i, DummyGPIO( "pin_%d"%i ) )
-      else:
-        setattr( self, "p%d"%i, platform.request( "gpio", i ) )
+    if platform is None:
+      self.p = Array(
+        DummyGPIO( "pin_%d"%i ) if i in PINS else None
+        for i in range( max( PINS ) + 1 ) )
+    else:
+      self.p = Array(
+        platform.request( "gpio", i ) if i in PINS else None
+        for i in range( max( PINS ) + 1 ) )
 
     # Read bits default to 0. Bus signals follow 'cyc'.
     m.d.comb += [
@@ -77,7 +80,7 @@ class GPIO( Elaboratable, Interface ):
           for j in range( 16 ):
             pnum = ( i * 16 ) + j
             if pnum in PINS:
-              pin = getattr( self, "p%d"%pnum )
+              pin = self.p[ pnum ]
               # Read logic: populate 'value' and 'direction' bits.
               m.d.comb += self.dat_r.bit_select( j * 2, 2 ).eq(
                 Cat( Mux( pin.oe, pin.o, pin.i ), pin.oe ) )

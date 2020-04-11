@@ -30,13 +30,11 @@ Each test simulation also creates a `.vcd` file containing the waveform results,
 
 # Test Coverage
 
-Note that I've only implemented the most basic exceptions, interrupts don't work, and I'll need to implement some buses before I can add any peripherals. Fortunately, [the `nmigen-soc` repository](https://github.com/nmigen/nmigen-soc) contains a [Wishbone bus implementation](https://opencores.org/howto/wishbone), but I need to do some reading to figure out how that works.
+The RISC-V RV32I compliance tests can be simulated, and they probably all pass. I try to run the full test suite regularly as I make changes, but sometimes a broken commit slips through.
 
-Until I add a GPIO peripheral and/or debugging interface, the only means of testing the CPU in real hardware is through a non-standard "LED" opcode. It sets the output states of pins 39-41 to the 3 least-significant bits of a given CPU register; those pins are usually connected to LEDs on `iCE40UP` boards because they also have PWM capabilities.
+I've also only implemented the most basic exceptions, interrupts aren't implemented, and there's only a very basic GPIO peripheral.
 
-The CPU design is also fairly inefficient; it uses almost 4,000 LUTs, and it sounds like a minimal implementation shouldn't take many more than 1,000. It also doesn't include a debugging interface.
-
-So even though this table of test coverage looks okay, there's plenty more work to do before it can run an arbitrary C program.
+And the CPU design is fairly inefficient; it uses almost 4,000 LUTs, and it sounds like a minimal implementation shouldn't take many more than 1,000. It also doesn't include a debugging interface yet.
 
 ## Compliance Tests
 
@@ -94,7 +92,7 @@ So even though this table of test coverage looks okay, there's plenty more work 
 
 This CPU does not implement User mode, Supervisor mode, or Hypervisor mode. That means all of the code will run in the top-level Machine mode, which still requires a basic subset of the `RISC-V` "Control and Status Registers" (CSRs):
 
-The `MIE` and `MIP` CSRs won't really function properly until I finish implementing interrupts in the CPU.
+The `MIE` and `MIP` CSRs won't really function properly until I finish implementing interrupts in the CPU. I also haven't added the memory-mapped 'time' CSRs yet.
 
 |    CSR Name     | Logic Implemented? |
 |:---------------:|:------------------:|
@@ -107,6 +105,8 @@ The `MIE` and `MIP` CSRs won't really function properly until I finish implement
 | `MSCRATCH`      | :heavy_check_mark: |
 | `MEPC`          | :heavy_check_mark: |
 | `MTVAL`         | :heavy_check_mark: |
+| `MTIME`         |         :x:        |
+| `MTIMECMP`      |         :x:        |
 | `MCYCLE`        | :heavy_check_mark: |
 | `MINSTRET`      | :heavy_check_mark: |
 | `MCOUNTINHIBIT` | :heavy_check_mark: |
@@ -115,14 +115,14 @@ The `MIE` and `MIP` CSRs won't really function properly until I finish implement
 
 This should work with C programs compiled by GCC for the `RV32I` architecture; just flash the binary image to a 2MByte offset in the board's SPI Flash. See `tests/hw_tests` for a minimal example.
 
-I haven't looked at the timing analysis yet, and I've only tried running the core at a sluggish 6MHz. There's also no instruction cache, so programs run from NVM will spend most of their time waiting for the SPI Flash to return data.
+The timing analysis hovers around 11-13MHz without optimizations, so I've been running the core at a sluggish 6MHz for testing. There's also no instruction cache, so programs that run from NVM will spend most of their time waiting for the SPI Flash to return data.
+
+Loading code into RAM and running it there should work, but I've only tested that in the simulator.
 
 # Notes to Self
 
 - The RISC-V spec says that any instruction ending in `0x0000` is illegal; I should build that into the CPU, but I haven't yet.
 
-- I haven't implemented interrupts yet; only some basic exceptions.
+- I haven't implemented interrupts yet; only the most basic exceptions.
 
-- The spec does not define behavior when an unspecified opcode is encountered. For now, I'll just skip to incrementing the PC if that happens. But once I implement traps, it might merit raising an exception.
-
-- There's a `Mux(...)` expression which might be able to replace some more of the repetitive 'if/else' logic.
+- The spec does not define behavior when an unspecified opcode is encountered. For now, I'll just skip to incrementing the PC if that happens. But it might merit raising an exception.

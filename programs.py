@@ -67,6 +67,16 @@ led_rom = rom_img( [
   LED( 15 ), JALR( 16, 14, 0 )
 ] )
 
+# "GPIO Test" program: toggle pin 39 as an output.
+gpio_rom = rom_img( [
+  # Set GPIO pin 39 to output mode.
+  LI( 8, 0x40000000 ), LI( 1, 0x00008000 ), LI( 2, 0x00004000 ),
+  SW( 8, 1, 0x008 ), LI( 3, 0 ), LI( 4, 10 ), AUIPC( 5, 0 ),
+  # Toggle pin 39 and loop back.
+  ADDI( 3, 3, 1 ), BNE( 3, 4, -4 ), XOR( 6, 6, 2 ), OR( 6, 6, 1 ),
+  SW( 8, 6, 0x008 ), LI( 3, 0 ), JALR( 7, 5, 0 )
+] )
+
 ########################################
 # Expected runtime register values for #
 # the CPU test programs defined above: #
@@ -157,6 +167,9 @@ led_exp = {
   'end': 100
 }
 
+# GPIO test program 'expected' values; just a stub for now.
+gpio_exp = { 'end': 1000 }
+
 ############################################
 # Collected definitions for test programs. #
 # These are just arrays with string names, #
@@ -171,6 +184,8 @@ quick_test   = [ 'quick test', 'cpu_quick',
                  quick_rom, [], quick_exp ]
 led_test     = [ 'led test', 'cpu_led',
                  led_rom, [], led_exp ]
+gpio_test    = [ 'gpio test', 'cpu_gpio',
+                 gpio_rom, [], gpio_exp ]
 
 # Multiplexed ROM image for the collected RV32I compliance tests.
 from tests.test_roms.rv32i_add import *

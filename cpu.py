@@ -45,13 +45,9 @@ class CPU( Elaboratable ):
     self.alu    = ALU()
     # CSR 'system registers'.
     self.csr    = CSR()
-    # Memory module to hold the ROM and RAM module(s)
+    # Memory module to hold peripherals and ROM / RAM module(s)
     # (1KB of RAM = 256 words)
     self.mem    = RV_Memory( rom_module, 256 )
-    # RGB LED signals for debugging.
-    self.red_on = Signal( 1, reset = 0b0 )
-    self.grn_on = Signal( 1, reset = 0b0 )
-    self.blu_on = Signal( 1, reset = 0b0 )
 
   # CPU object's 'elaborate' method to generate the hardware logic.
   def elaborate( self, platform ):
@@ -66,17 +62,6 @@ class CPU( Elaboratable ):
     m.submodules.rb  = self.rb
     m.submodules.rc  = self.rc
 
-    # LED pins, for testing.
-    if platform != None:
-      rled = platform.request( 'led_r', 0 )
-      gled = platform.request( 'led_g', 0 )
-      bled = platform.request( 'led_b', 0 )
-      m.d.comb += [
-        rled.o.eq( self.red_on ),
-        gled.o.eq( self.grn_on ),
-        bled.o.eq( self.blu_on )
-      ]
-
     # Generic wait-state counter for multi-cycle instructions.
     iws = Signal( 2, reset = 0 )
 
@@ -88,7 +73,7 @@ class CPU( Elaboratable ):
         # Instruction addresses must be word-aligned.
         with m.If( self.pc[ :2 ] == 0 ):
           m.d.sync += [
-            self.mem.addr.eq( self.pc ),
+            self.mem.mux.bus.adr.eq( self.pc ),
             self.mem.mux.bus.cyc.eq( 1 )
           ]
           # Wait for memory access.
@@ -213,11 +198,12 @@ class CPU( Elaboratable ):
           with m.Case( OP_LOAD ):
             # Set the memory address to load from.
             with m.If( self.mem.mux.bus.cyc == 0 ):
-              m.d.sync += self.mem.addr.eq( self.ra.data + Cat(
-                self.mem.mux.bus.dat_r[ 20 : 32 ],
-                Repl( self.mem.mux.bus.dat_r[ 31 ], 20 ) ) )
+              m.d.sync += self.mem.mux.bus.adr.eq(
+                self.ra.data + Cat(
+                  self.mem.mux.bus.dat_r[ 20 : 32 ],
+                  Repl( self.mem.mux.bus.dat_r[ 31 ], 20 ) ) )
             # Trigger a trap if the load address is mis-aligned.
-            with m.If( ( self.mem.addr <<
+            with m.If( ( self.mem.mux.bus.adr <<
                        ( 2 - self.f[ :2 ] ) )[ :2 ] != 0 ):
               trigger_trap( self, m, TRAP_LMIS )
             # Wait for the memory operation to complete.
@@ -265,13 +251,14 @@ class CPU( Elaboratable ):
             # Set the memory address to store to.
             # (Writes to read-only memory are silently ignored)
             with m.If( self.mem.mux.bus.cyc == 0 ):
-              m.d.sync += self.mem.addr.eq( self.ra.data + Cat(
-                self.mem.mux.bus.dat_r[ 7 : 12 ],
-                self.mem.mux.bus.dat_r[ 25 : 32 ],
-                Repl( self.mem.mux.bus.dat_r[ 31 ], 20 ) ) )
+              m.d.sync += self.mem.mux.bus.adr.eq(
+                self.ra.data + Cat(
+                  self.mem.mux.bus.dat_r[ 7 : 12 ],
+                  self.mem.mux.bus.dat_r[ 25 : 32 ],
+                  Repl( self.mem.mux.bus.dat_r[ 31 ], 20 ) ) )
             with m.Else():
               # Trigger a trap if the store address is mis-aligned.
-              with m.If( ( self.mem.addr <<
+              with m.If( ( self.mem.mux.bus.adr <<
                          ( 2 - self.f[ :2 ] ) )[ :2 ] != 0 ):
                 trigger_trap( self, m, TRAP_SMIS )
               with m.Else():
@@ -377,14 +364,6 @@ class CPU( Elaboratable ):
           # and there is no caching of memory operations. So...nop.
           with m.Case( OP_FENCE ):
             m.next = "CPU_IFETCH"
-
-          # LED instruction: Non-standard, but good for testing.
-          with m.Case( OP_LED ):
-            m.d.sync += [
-              self.red_on.eq( ( self.ra.data & R_RED ) != 0 ),
-              self.grn_on.eq( ( self.ra.data & R_GRN ) != 0 ),
-              self.blu_on.eq( ( self.ra.data & R_BLU ) != 0 ),
-            ]
 
     # End of CPU module definition.
     return m
@@ -591,9 +570,8 @@ if __name__ == "__main__":
       #sopts += '-retime '
       #sopts += '-relut '
       #sopts += '-abc2 '
-      #cpu = CPU( ROM( led_rom ) )
       prog_start = ( 2 * 1024 * 1024 )
-      cpu = CPU( SPI_ROM( prog_start, prog_start + 1024, None ) )
+      cpu = CPU( SPI_ROM( prog_start, prog_start + 2048, None ) )
       UpduinoV2Platform().build( ResetInserter( cpu.clk_rst )( cpu ),
                                  do_build = True,
                                  do_program = False,
@@ -624,8 +602,6 @@ if __name__ == "__main__":
       cpu_sim( ram_pc_test )
       # Simulate a basic 'quick test' ROM.
       cpu_sim( quick_test )
-      # Simulate the LED test ROM.
-      cpu_sim( led_test )
 
       # Done; print results.
       print( "CPU Tests: %d Passed, %d Failed"%( p, f ) )

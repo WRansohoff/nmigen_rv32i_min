@@ -25,7 +25,7 @@ class DummySPI():
     self.miso = DummyPin( 'miso' )
 
 # Core SPI Flash "ROM" module.
-class SPI_ROM( Elaboratable, Interface ):
+class SPI_ROM( Elaboratable ):
   def __init__( self, dat_start, dat_end, data ):
     # Starting address in the Flash chip. This probably won't
     # be zero, because many FPGA boards use their external SPI
@@ -40,10 +40,6 @@ class SPI_ROM( Elaboratable, Interface ):
     # Data counter.
     self.dc = Signal( 6, reset = 0b000000 )
 
-    # Initialize Wishbone bus interface.
-    Interface.__init__( self, addr_width = ceil( log2( self.dlen + 1 ) ), data_width = 32 )
-    self.memory_map = MemoryMap( addr_width = self.addr_width, data_width = self.data_width, alignment = 0 )
-
     # Backing data store for a test ROM image. Not used when
     # the module is built for real hardware.
     if data is not None:
@@ -51,8 +47,27 @@ class SPI_ROM( Elaboratable, Interface ):
     else:
       self.data = None
 
+    # Initialize Wishbone bus arbiter.
+    self.arb = Arbiter( addr_width = ceil( log2( self.dlen + 1 ) ),
+                        data_width = 32 )
+    self.arb.bus.memory_map = MemoryMap(
+      addr_width = self.arb.bus.addr_width,
+      data_width = self.arb.bus.data_width,
+      alignment = 0 )
+
+  def new_bus( self ):
+    # Initialize a new Wishbone bus interface.
+    bus = Interface( addr_width = self.arb.bus.addr_width,
+                     data_width = self.arb.bus.data_width )
+    bus.memory_map = MemoryMap( addr_width = bus.addr_width,
+                                data_width = bus.data_width,
+                                alignment = 0 )
+    self.arb.add( bus )
+    return bus
+
   def elaborate( self, platform ):
     m = Module()
+    m.submodules.arb = self.arb
 
     if platform is None:
       self.spi = DummySPI()
@@ -103,15 +118,18 @@ class SPI_ROM( Elaboratable, Interface ):
       # Also keep 'ack' asserted until 'stb' is released.
       with m.State( "SPI_WAITING" ):
         m.d.sync += [
-          self.ack.eq( self.cyc & ( self.ack & self.stb ) ),
+          self.arb.bus.ack.eq( self.arb.bus.cyc &
+            ( self.arb.bus.ack & self.arb.bus.stb ) ),
           self.spi.cs.o.eq( 0 )
         ]
         m.next = "SPI_WAITING"
-        with m.If( ( self.cyc == 1 ) & ( self.stb == 1 ) & ( self.ack == 0 ) ):
+        with m.If( ( self.arb.bus.cyc == 1 ) &
+                   ( self.arb.bus.stb == 1 ) &
+                   ( self.arb.bus.ack == 0 ) ):
           m.d.sync += [
             self.spi.cs.o.eq( 1 ),
-            self.spio.eq( ( 0x03000000 | ( ( self.adr + self.dstart ) & 0x00FFFFFF ) ) ),
-            self.ack.eq( 0 ),
+            self.spio.eq( ( 0x03000000 | ( ( self.arb.bus.adr + self.dstart ) & 0x00FFFFFF ) ) ),
+            self.arb.bus.ack.eq( 0 ),
             self.dc.eq( 31 )
           ]
           m.next = "SPI_TX"
@@ -132,7 +150,7 @@ class SPI_ROM( Elaboratable, Interface ):
         with m.If( self.dc == 0 ):
           m.d.sync += [
             self.dc.eq( 7 ),
-            self.dat_r.eq( 0 )
+            self.arb.bus.dat_r.eq( 0 )
           ]
           m.next = "SPI_RX"
         with m.Else():
@@ -145,16 +163,16 @@ class SPI_ROM( Elaboratable, Interface ):
         # Simulate the 'miso' pin value for tests.
         if platform is None:
           with m.If( self.dc < 8 ):
-            m.d.comb += self.spi.miso.i.eq( ( self.data[ self.adr >> 2 ] >> ( self.dc + 24 ) ) & 0b1 )
+            m.d.comb += self.spi.miso.i.eq( ( self.data[ self.arb.bus.adr >> 2 ] >> ( self.dc + 24 ) ) & 0b1 )
           with m.Elif( self.dc < 16 ):
-            m.d.comb += self.spi.miso.i.eq( ( self.data[ self.adr >> 2 ] >> ( self.dc + 8 ) ) & 0b1 )
+            m.d.comb += self.spi.miso.i.eq( ( self.data[ self.arb.bus.adr >> 2 ] >> ( self.dc + 8 ) ) & 0b1 )
           with m.Elif( self.dc < 24 ):
-            m.d.comb += self.spi.miso.i.eq( ( self.data[ self.adr >> 2 ] >> ( self.dc - 8 ) ) & 0b1 )
+            m.d.comb += self.spi.miso.i.eq( ( self.data[ self.arb.bus.adr >> 2 ] >> ( self.dc - 8 ) ) & 0b1 )
           with m.Else():
-            m.d.comb += self.spi.miso.i.eq( ( self.data[ self.adr >> 2 ] >> ( self.dc - 24 ) ) & 0b1 )
+            m.d.comb += self.spi.miso.i.eq( ( self.data[ self.arb.bus.adr >> 2 ] >> ( self.dc - 24 ) ) & 0b1 )
         m.d.sync += [
           self.dc.eq( self.dc - 1 ),
-          self.dat_r.bit_select( self.dc, 1 ).eq( self.spi.miso.i )
+          self.arb.bus.dat_r.bit_select( self.dc, 1 ).eq( self.spi.miso.i )
         ]
         m.d.comb += self.spi.clk.o.eq( ~ClockSignal( "sync" ) )
         # Assert 'ack' signal and move back to 'waiting' state
@@ -163,7 +181,7 @@ class SPI_ROM( Elaboratable, Interface ):
           with m.If( self.dc[ 3 : 5 ] == 0b11 ):
             m.d.sync += [
               self.spi.cs.o.eq( 0 ),
-              self.ack.eq( self.cyc )
+              self.arb.bus.ack.eq( self.arb.bus.cyc )
             ]
             m.next = "SPI_WAITING"
           with m.Else():
@@ -197,10 +215,10 @@ def spi_rom_ut( name, actual, expected ):
 # Helper method to test reading a byte of SPI data.
 def spi_read_word( srom, virt_addr, phys_addr, simword, end_wait ):
   # Set 'address'.
-  yield srom.adr.eq( virt_addr )
+  yield srom.arb.bus.adr.eq( virt_addr )
   # Set 'strobe' and 'cycle' to request a new read.
-  yield srom.stb.eq( 1 )
-  yield srom.cyc.eq( 1 )
+  yield srom.arb.bus.stb.eq( 1 )
+  yield srom.arb.bus.cyc.eq( 1 )
   # Wait a tick; the (inverted) CS pin should then be low, and
   # the 'read command' value should be set correctly.
   yield Tick()
@@ -225,7 +243,7 @@ def spi_read_word( srom, virt_addr, phys_addr, simword, end_wait ):
     yield Tick()
     yield Settle()
     expect = expect | ( ( 1 << i ) & simword )
-    progress = yield srom.dat_r
+    progress = yield srom.arb.bus.dat_r
     spi_rom_ut( "SPI Read Word [%d]"%i, progress, expect )
     if ( ( i & 0b111 ) == 0 ):
       i = i + 15
@@ -240,8 +258,8 @@ def spi_read_word( srom, virt_addr, phys_addr, simword, end_wait ):
   # delayed reads from the bus.
   for i in range( end_wait ):
     yield Tick()
-  yield srom.stb.eq( 0 )
-  yield srom.cyc.eq( 0 )
+  yield srom.arb.bus.stb.eq( 0 )
+  yield srom.arb.bus.cyc.eq( 0 )
   yield Tick()
   yield Settle()
 

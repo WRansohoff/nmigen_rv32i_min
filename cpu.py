@@ -472,7 +472,7 @@ def cpu_spi_sim( test ):
       yield from cpu_run( cpu, test[ 4 ] )
       print( "\033[35mDONE\033[0m running %s: executed %d instructions"
              %( test[ 0 ], test[ 4 ][ 'end' ] ) )
-    sim.add_clock( 1e-6 )
+    sim.add_clock( 1 / 6000000 )
     sim.add_sync_process( proc )
     sim.run()
 
@@ -498,7 +498,7 @@ def cpu_sim( test ):
       yield from cpu_run( cpu, test[ 4 ] )
       print( "\033[35mDONE\033[0m running %s: executed %d instructions"
              %( test[ 0 ], test[ 4 ][ 'end' ] ) )
-    sim.add_clock( 1e-6 )
+    sim.add_clock( 1 / 6000000 )
     sim.add_sync_process( proc )
     sim.run()
 
@@ -538,7 +538,7 @@ def cpu_mux_sim( tests ):
                %( tests[ 2 ][ i ][ 0 ], tests[ 2 ][ i ][ 4 ][ 'end' ] ) )
       print( "\033[35mDONE\033[0m running %s: executed %d instructions"
              %( tests[ 0 ], num_i ) )
-    sim.add_clock( 1e-6 )
+    sim.add_clock( 1 / 6000000 )
     sim.add_sync_process( proc )
     sim.run()
 
@@ -583,9 +583,11 @@ if __name__ == "__main__":
       # ROM module containing a different program for each one.
       # (The CPU gets reset between each program.)
       cpu_mux_sim( rv32i_compliance )
-      # Run non-standard CSR tests individually.
+      # Run non-standard CSR / peripheral tests individually.
       cpu_sim( mcycle_test )
       cpu_sim( minstret_test )
+      cpu_sim( gpio_test )
+      cpu_sim( npx_test )
 
       # Miscellaneous tests which are not part of the RV32I test suite.
       # Simulate the 'run from RAM' test ROM.

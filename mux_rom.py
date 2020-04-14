@@ -11,41 +11,56 @@ from isa import *
 # Multiplexed ROM module: #
 ###########################
 
-class MUXROM( Elaboratable, Interface ):
+class MUXROM( Elaboratable ):
   def __init__( self, roms ):
     # Collect max / mins from available ROMs.
-    max_addr_len = 1
+    self.max_addr_len = 1
     for rom in roms:
-      if ( rom.size * 4 ) > max_addr_len:
-        max_addr_len = rom.size * 4
+      if ( rom.size * 4 ) > self.max_addr_len:
+        self.max_addr_len = rom.size * 4
     # 'Select' signal to choose which ROM module to address.
     self.select = Signal( range( len( roms ) ), reset = 0 )
     # Rom storage.
     self.roms = roms
     # Number of ROMs.
     self.rlen = len( roms )
-    # Initialize wishbone bus interface.
-    Interface.__init__( self, addr_width = ceil( log2( max_addr_len + 1 ) ), data_width = 32 )
-    self.memory_map = MemoryMap( addr_width = self.addr_width, data_width = self.data_width, alignment = 0 )
+    # Initialize Wishbone bus arbiter.
+    self.arb = Arbiter( addr_width = ceil( log2( self.max_addr_len + 1 ) ),
+                        data_width = 32 )
+    self.arb.bus.memory_map = MemoryMap(
+      addr_width = self.arb.bus.addr_width,
+      data_width = self.arb.bus.data_width,
+      alignment = 0 )
+
+  def new_bus( self ):
+    # Initialize a new Wishbone bus interface.
+    bus = Interface( addr_width = self.arb.bus.addr_width,
+                     data_width = self.arb.bus.data_width )
+    bus.memory_map = MemoryMap( addr_width = bus.addr_width,
+                                data_width = bus.data_width,
+                                alignment = 0 )
+    self.arb.add( bus )
+    return bus
 
   def elaborate( self, platform ):
     # Module object.
     m = Module()
+    m.submodules.arb = self.arb
     # Register each ROM submodule.
     for i in range( self.rlen ):
       m.submodules[ "rom_%d"%i ] = self.roms[ i ]
 
     # Return 0 for an out-of-range 'select' signal.
     with m.If( self.select >= self.rlen ):
-      m.d.comb += self.dat_r.eq( 0x00000000 )
+      m.d.comb += self.arb.bus.dat_r.eq( 0x00000000 )
     # Forward the bus signals to the appropriate ROM.
     with m.Else():
       m.d.comb += [
-        self.roms[ self.select ].adr.eq( self.adr ),
-        self.ack.eq( self.roms[ self.select ].ack ),
-        self.roms[ self.select ].stb.eq( self.stb ),
-        self.roms[ self.select ].cyc.eq( self.cyc ),
-        self.dat_r.eq( self.roms[ self.select ].dat_r )
+        self.roms[ self.select ].arb.bus.adr.eq( self.arb.bus.adr ),
+        self.arb.bus.ack.eq( self.roms[ self.select ].arb.bus.ack ),
+        self.roms[ self.select ].arb.bus.stb.eq( self.arb.bus.stb ),
+        self.roms[ self.select ].arb.bus.cyc.eq( self.arb.bus.cyc ),
+        self.arb.bus.dat_r.eq( self.roms[ self.select ].arb.bus.dat_r )
       ]
 
     # End of module definition.
@@ -63,13 +78,13 @@ def muxrom_read_ut( mrom, select, address, expected ):
   global p, f
   # Set select and address, then wait three ticks.
   yield mrom.select.eq( select )
-  yield mrom.adr.eq( address )
+  yield mrom.arb.bus.adr.eq( address )
   yield Tick()
   yield Tick()
   yield Tick()
   # Done. Check the result after the combinational logic settles.
   yield Settle()
-  actual = yield mrom.dat_r
+  actual = yield mrom.arb.bus.dat_r
   if expected != actual:
     f += 1
     print( "\033[31mFAIL:\033[0m ROM[ 0x%08X ] = 0x%08X (got: 0x%08X)"
@@ -90,7 +105,7 @@ def muxrom_test( mrom ):
   print( "--- Multiplexed ROM Tests ---" )
 
   # Assert 'cyc' to activate the bus.
-  yield mrom.cyc.eq( 1 )
+  yield mrom.arb.bus.cyc.eq( 1 )
   # Test reading from the first ROM.
   yield from muxrom_read_ut( mrom, 0, 0x0,
     LITTLE_END( ( yield mrom.roms[ 0 ].data[ 0 ] ) ) )

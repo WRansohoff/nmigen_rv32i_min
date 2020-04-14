@@ -4,6 +4,8 @@ from nmigen_soc.wishbone import *
 from nmigen_soc.memory import *
 
 from gpio import *
+from gpio_mux import *
+from npx import *
 from ram import *
 
 #############################################################
@@ -16,6 +18,9 @@ from ram import *
 # *  0x2------- = RAM                                       #
 # *  0x4------- = Peripherals                               #
 # ** 0x4000---- = GPIO pins                                 #
+# ** 0x4001---- = GPIO multiplexer                          #
+# ** 0x4002---- = Neopixel peripherals                      #
+# ** 0x400200-- = Neopixel peripheral #1                    #
 #############################################################
 
 class RV_Memory( Elaboratable ):
@@ -24,14 +29,20 @@ class RV_Memory( Elaboratable ):
     self.mux = Decoder( addr_width = 32,
                         data_width = 32,
                         alignment = 0 )
-    # Add ROM and RAM submodules to the multiplexer.
+    # Add ROM and RAM buses to the multiplexer.
     self.rom = rom_module
     self.ram = RAM( ram_words )
-    self.mux.add( self.rom,  addr = 0x00000000 )
-    self.mux.add( self.ram,  addr = 0x20000000 )
+    self.rom_di = self.rom.new_bus()
+    self.ram_di = self.ram.new_bus()
+    self.mux.add( self.rom_di,   addr = 0x00000000 )
+    self.mux.add( self.ram_di,   addr = 0x20000000 )
     # Add peripheral buses to the multiplexer.
     self.gpio = GPIO()
-    self.mux.add( self.gpio, addr = 0x40000000 )
+    self.mux.add( self.gpio,     addr = 0x40000000 )
+    self.npx1 = NeoPixels( self.ram.new_bus() )
+    self.mux.add( self.npx1,     addr = 0x40020000 )
+    self.gpio_mux = GPIO_Mux( [ self.gpio, self.npx1 ] )
+    self.mux.add( self.gpio_mux, addr = 0x40010000 )
 
   def elaborate( self, platform ):
     m = Module()
@@ -40,6 +51,8 @@ class RV_Memory( Elaboratable ):
     m.submodules.rom = self.rom
     m.submodules.ram = self.ram
     m.submodules.gpio = self.gpio
+    m.submodules.npx1 = self.npx1
+    m.submodules.gpio_mux = self.gpio_mux
 
     # Currently, all bus transactions are single-cycle.
     # So set the 'strobe' signal equal to the 'cycle' one.

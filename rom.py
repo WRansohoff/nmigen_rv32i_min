@@ -10,7 +10,7 @@ from isa import *
 # ROM module: #
 ###############
 
-class ROM( Elaboratable, Interface ):
+class ROM( Elaboratable ):
   def __init__( self, data ):
     # Data storage.
     self.data = Memory( width = 32, depth = len( data ), init = data )
@@ -18,34 +18,49 @@ class ROM( Elaboratable, Interface ):
     self.r = self.data.read_port()
     # Record size.
     self.size = len( data ) * 4
-    # Initialize Wishbone bus interface.
-    Interface.__init__( self, addr_width = ceil( log2( self.size + 1 ) ), data_width = 32 )
-    self.memory_map = MemoryMap( addr_width = self.addr_width, data_width = self.data_width, alignment = 0 )
+    # Initialize Wishbone bus arbiter.
+    self.arb = Arbiter( addr_width = ceil( log2( self.size + 1 ) ),
+                        data_width = 32 )
+    self.arb.bus.memory_map = MemoryMap(
+      addr_width = self.arb.bus.addr_width,
+      data_width = self.arb.bus.data_width,
+      alignment = 0 )
+
+  def new_bus( self ):
+    # Initialize a new Wishbone bus interface.
+    bus = Interface( addr_width = self.arb.bus.addr_width,
+                     data_width = self.arb.bus.data_width )
+    bus.memory_map = MemoryMap( addr_width = bus.addr_width,
+                                data_width = bus.data_width,
+                                alignment = 0 )
+    self.arb.add( bus )
+    return bus
 
   def elaborate( self, platform ):
-    # Core ROM module.
+    # Initialize the core ROM module from its superclass (Arbiter).
     m = Module()
+    m.submodules.arb = self.arb
     m.submodules.r = self.r
 
     # 'ack' signal should rest at 0.
-    m.d.sync += self.ack.eq( 0 )
+    m.d.sync += self.arb.bus.ack.eq( 0 )
 
     # Only acknowledge reads when 'cyc' and 'stb' are asserted.
-    with m.If( self.cyc ):
+    with m.If( self.arb.bus.cyc ):
       # (Ack one cycle after 'stb' is asserted.)
-      m.d.sync += self.ack.eq( self.stb )
+      m.d.sync += self.arb.bus.ack.eq( self.arb.bus.stb )
 
     # Set the 'output' value to the requested 'data' array index.
     # If a read would 'spill over' into an out-of-bounds data byte,
     # set that byte to 0x00.
     # Word-aligned reads
-    m.d.comb += self.r.addr.eq( self.adr >> 2 )
-    with m.If( ( self.adr & 0b11 ) == 0b00 ):
-      m.d.sync += self.dat_r.eq( LITTLE_END_L( self.r.data ) )
+    m.d.comb += self.r.addr.eq( self.arb.bus.adr >> 2 )
+    with m.If( ( self.arb.bus.adr & 0b11 ) == 0b00 ):
+      m.d.sync += self.arb.bus.dat_r.eq( LITTLE_END_L( self.r.data ) )
     # Un-aligned reads
     with m.Else():
-      m.d.sync += self.dat_r.eq(
-        LITTLE_END_L( self.r.data << ( ( self.adr & 0b11 ) << 3 ) ) )
+      m.d.sync += self.arb.bus.dat_r.eq(
+        LITTLE_END_L( self.r.data << ( ( self.arb.bus.adr & 0b11 ) << 3 ) ) )
 
     # End of ROM module definition.
     return m
@@ -61,12 +76,12 @@ f = 0
 def rom_read_ut( rom, address, expected ):
   global p, f
   # Set address, and wait two ticks.
-  yield rom.adr.eq( address )
+  yield rom.arb.bus.adr.eq( address )
   yield Tick()
   yield Tick()
   # Done. Check the result after combinational logic settles.
   yield Settle()
-  actual = yield rom.dat_r
+  actual = yield rom.arb.bus.dat_r
   if expected != actual:
     f += 1
     print( "\033[31mFAIL:\033[0m ROM[ 0x%08X ] = 0x%08X (got: 0x%08X)"
@@ -87,7 +102,7 @@ def rom_test( rom ):
   print( "--- ROM Tests ---" )
 
   # Assert 'cyc' to activate the bus.
-  yield rom.cyc.eq( 1 )
+  yield rom.arb.bus.cyc.eq( 1 )
   # Test the ROM's "happy path" (reading valid data).
   yield from rom_read_ut( rom, 0x0, LITTLE_END( 0x01234567 ) )
   yield from rom_read_ut( rom, 0x4, LITTLE_END( 0x89ABCDEF ) )

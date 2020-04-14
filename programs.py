@@ -77,6 +77,24 @@ gpio_rom = rom_img( [
   SW( 8, 6, 0x008 ), LI( 3, 0 ), JALR( 7, 5, 0 )
 ] )
 
+# "Neopixel Test" program: send a few colors through a
+# WS2812B/SK6812 peripheral.
+npx_rom = rom_img( [
+  # Load 4 colors; 24 bits each.
+  LI( 1, 0x20000000 ), LI( 2, 0x0000AA00 ), SW( 1, 2, 0x000 ),
+  LI( 2, 0x00AAAA00 ), SW( 1, 2, 0x004 ),
+  LI( 2, 0xAAAAAA00 ), SW( 1, 2, 0x008 ),
+  # Set GPIO pin 2 to be controlled by the neopixel peripheral.
+  LI( 3, 0x40010000 ), LI( 4, 0x00000100 ), SW( 3, 4, 0x000 ),
+  # Set the neopixel peripheral to send 4 colors from RAM.
+  LI( 3, 0x40020000 ), LI( 4, 0x00000400 ),
+  SW( 3, 1, 0x000 ), SW( 3, 4, 0x004 ),
+  # Start a transfer, wait for it to finish, repeat.
+  ORI( 4, 4, 0x001 ), AUIPC( 6, 0 ), SW( 3, 4, 0x004 ),
+  LW( 7, 3, 0x000 ), ANDI( 7, 7, 0x001 ), BNE( 7, 0, -4 ),
+  JALR( 8, 6, 0x00000 )
+] )
+
 ########################################
 # Expected runtime register values for #
 # the CPU test programs defined above: #
@@ -170,6 +188,9 @@ led_exp = {
 # GPIO test program 'expected' values; just a stub for now.
 gpio_exp = { 'end': 1000 }
 
+# "Neopixel" test program 'expected' values; just a stub for now.
+npx_exp = { 'end': 1000 }
+
 ############################################
 # Collected definitions for test programs. #
 # These are just arrays with string names, #
@@ -186,6 +207,8 @@ led_test     = [ 'led test', 'cpu_led',
                  led_rom, [], led_exp ]
 gpio_test    = [ 'gpio test', 'cpu_gpio',
                  gpio_rom, [], gpio_exp ]
+npx_test    = [ '"neopixel" test', 'cpu_npx',
+                 npx_rom, [], npx_exp ]
 
 # Multiplexed ROM image for the collected RV32I compliance tests.
 from tests.test_roms.rv32i_add import *
@@ -253,3 +276,4 @@ rv32i_compliance = [ 'RV32I compliance tests', 'rv32i_compliance',
 # Non-standard compiled test programs.
 from tests.test_roms.rv32i_mcycle import *
 from tests.test_roms.rv32i_minstret import *
+from tests.test_roms.rv32i_neopixels import *

@@ -16,7 +16,7 @@ test_path = "%s/"%( os.path.dirname( sys.argv[ 0 ] ) )
 # of the RISC-V assembly test files.
 def get_section_hex( op, sect, in_dir ):
   hdump = subprocess.run( [ od, '-s', '-j', sect,
-                            './%s/%s/%s.o'
+                            './%s/%s/%s'
                             %( test_path, in_dir, op ) ],
                           stdout = subprocess.PIPE
                         ).stdout.decode( 'utf-8' )
@@ -78,6 +78,8 @@ def write_py_tests( op, hext, hexd, out_dir ):
     # for jumps, except for the 'fence' test which uses 3x because
     # it has a long 'prefetcher test' which counts down from 100.
     num_instrs = ( instrs * 3 ) if 'fence' in op else ( instrs * 2 )
+    # (Also run the 'neopixels' simulation for longer)
+    num_instrs = ( num_instrs * 20 ) if 'neopixels' in op else num_instrs
     # The 'SBREAK' test executes the 'pass' or 'fail' macro
     # in the interrupt context, so add 32 to its register addresses.
     roff = ( 32 if 'sbreak' in op else 0 )
@@ -107,9 +109,15 @@ for fn in os.listdir( './%s/rv32i_compliance'%test_path ):
   if fn[ -1 ] == 'o':
     op = fn[ :-2 ]
     # Get machine code instructions for the operation's tests.
-    hext = get_section_hex( op, '.text', 'rv32i_compliance' )
+    hext = get_section_hex( '%s.o'%op, '.text', 'rv32i_compliance' )
     # Get initialized RAM data for the operation's tests.
-    hexd = get_section_hex( op, '.data', 'rv32i_compliance' )
+    hexd = get_section_hex( '%s.o'%op, '.data', 'rv32i_compliance' )
     # Write a Python file with the test ROM image and a simple
     # "expect r7 = 93, r10 = 0 after running all tests" condition.
     write_py_tests( op[ 2 : -3 ].lower(), hext, hexd, 'test_roms' )
+# Generate a test image for the 'neopixel test' C program.
+# TODO: Do a better job of generalizing this logic for programs
+# other than the compliance tests.
+hext = get_section_hex( 'main.elf', '.text', 'hw_tests/npx_test' )
+hexd = get_section_hex( 'main.elf', '.data', 'hw_tests/npx_test' )
+write_py_tests( 'neopixels', hext, hexd, 'test_roms' )

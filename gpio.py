@@ -17,19 +17,12 @@ from isa import *
 #  resources.append(Resource("gpio", i, Pins("%d"%i, dir="io"),
 #                   Attrs(IO_STANDARD = "SB_LVCMOS")))
 
-# Dummy GPIO pin class for simulations.
-class DummyGPIO():
-  def __init__( self, name ):
-    self.o  = Signal( name = "%s_o"%name )
-    self.i  = Signal( name = "%s_i"%name )
-    self.oe = Signal( name = "%s_oe"%name )
-
 # Supported pin numbers: iCE40 pins are numbered based on the
 # package, so this is only valid for the iCE40UP5K-SG48.
 # These pins are the ones available on 'Upduino' board headers,
 # plus the LEDs on pins 39-41.
-PINS = [ 2, 3, 4, 9, 11, 12, 13, 18, 19, 21, 23, 25, 26, 27, 31, 32,
-         34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48 ]
+PINS = [ 2, 3, 4, 9, 11, 13, 18, 19, 21, 23, 25, 26, 27, 31, 32, 34,
+         35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48 ]
 
 class GPIO( Elaboratable, Interface ):
   def __init__( self ):
@@ -49,19 +42,14 @@ class GPIO( Elaboratable, Interface ):
     self.memory_map = MemoryMap( addr_width = self.addr_width,
                                  data_width = self.data_width,
                                  alignment = 0 )
+    # Backing data store. A 'Memory' would be more efficient, but
+    # the 'pin multiplexer' peripheral needs parallel access.
+    self.p = Array(
+      Signal( 2, reset = 0, name = "gpio_%d"%i ) if i in PINS else None
+      for i in range( 49 ) )
 
   def elaborate( self, platform ):
     m = Module()
-
-    # Set up I/O pin resources.
-    if platform is None:
-      self.p = Array(
-        DummyGPIO( "pin_%d"%i ) if i in PINS else None
-        for i in range( max( PINS ) + 1 ) )
-    else:
-      self.p = Array(
-        platform.request( "gpio", i ) if i in PINS else None
-        for i in range( max( PINS ) + 1 ) )
 
     # Read bits default to 0. Bus signals follow 'cyc'.
     m.d.comb += [
@@ -80,17 +68,14 @@ class GPIO( Elaboratable, Interface ):
           for j in range( 16 ):
             pnum = ( i * 16 ) + j
             if pnum in PINS:
-              pin = self.p[ pnum ]
               # Read logic: populate 'value' and 'direction' bits.
               m.d.comb += self.dat_r.bit_select( j * 2, 2 ).eq(
-                Cat( Mux( pin.oe, pin.o, pin.i ), pin.oe ) )
+                self.p[ pnum ] )
               # Write logic: if this bus is selected and writes
               # are enabled, set 'value' and 'direction' bits.
               with m.If( ( self.we == 1 ) & ( self.cyc == 1 ) ):
-                m.d.sync += [
-                  pin.o.eq( self.dat_w.bit_select( j * 2, 1 ) ),
-                  pin.oe.eq( self.dat_w.bit_select( j * 2 + 1, 1 ) )
-                ]
+                m.d.sync += self.p[ pnum ].eq(
+                  self.dat_w.bit_select( j * 2, 2 ) )
 
     # (End of GPIO peripheral module definition)
     return m

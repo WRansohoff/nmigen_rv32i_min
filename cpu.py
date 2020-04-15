@@ -398,7 +398,7 @@ def check_vals( expected, ni, cpu ):
                  %( hexs( ex[ 'e' ] ), rama, ni ) )
         else:
           cpd = yield cpu.mem.ram.data[ rama // 4 ]
-          if hexs( LITTLE_END( cpd ) ) == hexs( ex[ 'e' ] ):
+          if hexs( cpd ) == hexs( ex[ 'e' ] ):
             p += 1
             print( "  \033[32mPASS:\033[0m RAM == %s @ 0x%08X"
                    " after %d operations"
@@ -493,7 +493,7 @@ def cpu_sim( test ):
     def proc():
       # Initialize RAM values.
       for i in range( len( test[ 3 ] ) ):
-        yield cpu.mem.ram.data[ i ].eq( test[ 3 ][ i ] )
+        yield cpu.mem.ram.data[ i ].eq( LITTLE_END( test[ 3 ][ i ] ) )
       # Run the program and print pass/fail for individual tests.
       yield from cpu_run( cpu, test[ 4 ] )
       print( "\033[35mDONE\033[0m running %s: executed %d instructions"
@@ -531,7 +531,7 @@ def cpu_mux_sim( tests ):
         yield Settle()
         # Initialize RAM values.
         for j in range( len( tests[ 2 ][ i ][ 3 ] ) ):
-          yield cpu.mem.ram.data[ j ].eq( tests[ 2 ][ i ][ 3 ][ j ] )
+          yield cpu.mem.ram.data[ j ].eq( LITTLE_END( tests[ 2 ][ i ][ 3 ][ j ] ) )
         yield from cpu_run( cpu, tests[ 2 ][ i ][ 4 ] )
         print( "  \033[34mDONE\033[0m running '%s' ROM image:"
                " executed %d instructions"

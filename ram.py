@@ -74,16 +74,16 @@ class RAM( Elaboratable ):
     with m.Switch( self.arb.bus.adr[ :2 ] ):
       # Word-aligned reads.
       with m.Case( 0b00 ):
-        m.d.comb += self.arb.bus.dat_r.eq( LITTLE_END_L( self.r.data ) )
+        m.d.comb += self.arb.bus.dat_r.eq( self.r.data )
       # Single-byte offset.
       with m.Case( 0b01 ):
-        m.d.comb += self.arb.bus.dat_r.eq( LITTLE_END_L( self.r.data << 8 ) )
+        m.d.comb += self.arb.bus.dat_r.eq( self.r.data >> 8 )
       # Halfword offset.
       with m.Case( 0b10 ):
-        m.d.comb += self.arb.bus.dat_r.eq( LITTLE_END_L( self.r.data << 16 ) )
+        m.d.comb += self.arb.bus.dat_r.eq( self.r.data >> 16 )
       # Three-byte offset.
       with m.Case( 0b11 ):
-        m.d.comb += self.arb.bus.dat_r.eq( LITTLE_END_L( self.r.data << 24 ) )
+        m.d.comb += self.arb.bus.dat_r.eq( self.r.data >> 24 )
 
     # Write the 'din' value if 'wen' is set.
     with m.If( self.arb.bus.we ):
@@ -92,7 +92,7 @@ class RAM( Elaboratable ):
         m.d.comb += [
           self.w.addr.eq( self.arb.bus.adr >> 2 ),
           self.w.en.eq( self.arb.bus.cyc ),
-          self.w.data.eq( LITTLE_END_L( self.arb.bus.dat_w ) )
+          self.w.data.eq( self.arb.bus.dat_w )
         ]
         m.d.sync += self.arb.bus.ack.eq( 1 )
       # Writes requiring wait-states:
@@ -115,22 +115,12 @@ class RAM( Elaboratable ):
             with m.Switch( self.dw ):
               with m.Case( RAM_DW_8 ):
                 m.d.comb += self.w.data.eq(
-                  Cat( self.r.data[ 0 : 24 ], self.arb.bus.dat_w[ 0 : 8 ] ) )
+                  Cat( self.arb.bus.dat_w[ 0 : 8 ], self.r.data[ 8 : 32 ] ) )
               with m.Case( RAM_DW_16 ):
                 m.d.comb += self.w.data.eq(
-                  Cat( self.r.data[ 0 : 16 ], self.arb.bus.dat_w[ 8 : 16 ],
-                       self.arb.bus.dat_w[ 0 : 8 ] ) )
+                  Cat( self.arb.bus.dat_w[ 0 : 16 ],
+                       self.r.data[ 16 : 32 ] ) )
           with m.Case( 0b01 ):
-            with m.Switch( self.dw ):
-              with m.Case( RAM_DW_8 ):
-                m.d.comb += self.w.data.eq(
-                  Cat( self.r.data[ 0 : 16 ], self.arb.bus.dat_w[ 0 : 8 ],
-                       self.r.data[ 24 : 32 ] ) )
-              with m.Case( RAM_DW_16 ):
-                m.d.comb += self.w.data.eq(
-                  Cat( self.r.data[ 0 : 8 ], self.arb.bus.dat_w[ 8 : 16 ],
-                       self.arb.bus.dat_w[ 0 : 8 ], self.r.data[ 24 : 32 ] ) )
-          with m.Case( 0b10 ):
             with m.Switch( self.dw ):
               with m.Case( RAM_DW_8 ):
                 m.d.comb += self.w.data.eq(
@@ -138,12 +128,22 @@ class RAM( Elaboratable ):
                        self.r.data[ 16 : 32 ] ) )
               with m.Case( RAM_DW_16 ):
                 m.d.comb += self.w.data.eq(
-                  Cat( self.arb.bus.dat_w[ 8 : 16 ], self.arb.bus.dat_w[ 0 : 8 ],
-                       self.r.data[ 0 : 16 ] ) )
+                  Cat( self.r.data[ 0 : 8 ], self.arb.bus.dat_w[ 0 : 16 ],
+                       self.r.data[ 24 : 32 ] ) )
+          with m.Case( 0b10 ):
+            with m.Switch( self.dw ):
+              with m.Case( RAM_DW_8 ):
+                m.d.comb += self.w.data.eq(
+                  Cat( self.r.data[ 0 : 16 ], self.arb.bus.dat_w[ 0 : 8 ],
+                       self.r.data[ 24 : 32 ] ) )
+              with m.Case( RAM_DW_16 ):
+                m.d.comb += self.w.data.eq(
+                  Cat( self.r.data[ 0 : 16 ],
+                       self.arb.bus.dat_w[ 0 : 16 ] ) )
           with m.Case( 0b11 ):
             # (Only single-byte writes are allowed)
             m.d.comb += self.w.data.eq(
-              Cat( self.arb.bus.dat_w[ 0 : 8 ], self.r.data[ 8 : 32 ] ) )
+              Cat( self.r.data[ 0 : 24 ], self.arb.bus.dat_w[ 0 : 8 ] ) )
 
     # End of RAM module definition.
     return m

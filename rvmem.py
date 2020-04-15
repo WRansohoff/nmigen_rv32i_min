@@ -21,6 +21,7 @@ from ram import *
 # ** 0x4001---- = GPIO multiplexer                          #
 # ** 0x4002---- = Neopixel peripherals                      #
 # ** 0x400200-- = Neopixel peripheral #1                    #
+# ** 0x400201-- = Neopixel peripheral #2                    #
 #############################################################
 
 class RV_Memory( Elaboratable ):
@@ -41,7 +42,9 @@ class RV_Memory( Elaboratable ):
     self.mux.add( self.gpio,     addr = 0x40000000 )
     self.npx1 = NeoPixels( self.ram.new_bus() )
     self.mux.add( self.npx1,     addr = 0x40020000 )
-    self.gpio_mux = GPIO_Mux( [ self.gpio, self.npx1 ] )
+    self.npx2 = NeoPixels( self.ram.new_bus() )
+    self.mux.add( self.npx2,     addr = 0x40020100 )
+    self.gpio_mux = GPIO_Mux( [ self.gpio, self.npx1, self.npx2 ] )
     self.mux.add( self.gpio_mux, addr = 0x40010000 )
 
   def elaborate( self, platform ):

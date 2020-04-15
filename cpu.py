@@ -46,8 +46,8 @@ class CPU( Elaboratable ):
     # CSR 'system registers'.
     self.csr    = CSR()
     # Memory module to hold peripherals and ROM / RAM module(s)
-    # (1KB of RAM = 256 words)
-    self.mem    = RV_Memory( rom_module, 256 )
+    # (4KB of RAM = 1024 words)
+    self.mem    = RV_Memory( rom_module, 1024 )
 
   # CPU object's 'elaborate' method to generate the hardware logic.
   def elaborate( self, platform ):

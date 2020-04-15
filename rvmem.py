@@ -55,6 +55,7 @@ class RV_Memory( Elaboratable ):
     m.submodules.ram = self.ram
     m.submodules.gpio = self.gpio
     m.submodules.npx1 = self.npx1
+    m.submodules.npx2 = self.npx2
     m.submodules.gpio_mux = self.gpio_mux
 
     # Currently, all bus transactions are single-cycle.

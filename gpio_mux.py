@@ -88,7 +88,7 @@ class GPIO_Mux( Elaboratable, Interface ):
         # signals between the selected peripheral and the actual pin.
         with m.Switch( self.pin_mux[ i ] ):
           # GPIO
-          with m.Case( 0x00 ):
+          with m.Case( 0x0 ):
             # Apply 'value' and 'direction' bits.
             m.d.sync += self.p[ i ].oe.eq( self.gpio.p[ i ][ 1 ] )
             # Read or write, depending on the 'direction' bit.
@@ -98,14 +98,14 @@ class GPIO_Mux( Elaboratable, Interface ):
             with m.Else():
               m.d.sync += self.p[ i ].o.eq( self.gpio.p[ i ][ 0 ] )
           # Neopixel peripheral #1
-          with m.Case( 0x01 ):
+          with m.Case( 0x1 ):
             # Set pin to output mode, and set its current value.
             m.d.sync += [
               self.p[ i ].oe.eq( 1 ),
               self.p[ i ].o.eq( self.npx1.px )
             ]
           # Neopixel peripheral #2
-          with m.Case( 0x02 ):
+          with m.Case( 0x2 ):
             # Set pin to output mode, and set its current value.
             m.d.sync += [
               self.p[ i ].oe.eq( 1 ),

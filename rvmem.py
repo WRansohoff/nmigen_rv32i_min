@@ -42,8 +42,10 @@ class RV_Memory( Elaboratable ):
     self.mux.add( self.gpio,     addr = 0x40000000 )
     self.npx1 = NeoPixels( self.ram.new_bus() )
     self.mux.add( self.npx1,     addr = 0x40020000 )
-    self.npx2 = NeoPixels( self.ram.new_bus() )
-    self.mux.add( self.npx2,     addr = 0x40020100 )
+    # Design is currently too large for two neopixel periphs :(
+    #self.npx2 = NeoPixels( self.ram.new_bus() )
+    #self.mux.add( self.npx2,     addr = 0x40020100 )
+    self.npx2 = self.npx1
     self.gpio_mux = GPIO_Mux( [ self.gpio, self.npx1, self.npx2 ] )
     self.mux.add( self.gpio_mux, addr = 0x40010000 )
 
@@ -55,7 +57,7 @@ class RV_Memory( Elaboratable ):
     m.submodules.ram = self.ram
     m.submodules.gpio = self.gpio
     m.submodules.npx1 = self.npx1
-    m.submodules.npx2 = self.npx2
+    #m.submodules.npx2 = self.npx2
     m.submodules.gpio_mux = self.gpio_mux
 
     # Currently, all bus transactions are single-cycle.

@@ -2,7 +2,9 @@
 
 This is a work-in-progress implementation of [the core `RV32I` `RISC-V` instruction set](https://riscv.org/specifications/isa-spec-pdf/), written with nMigen.
 
-Currently it takes up about 70-90% of an `iCE40UP5K` depending on recent changes, but it seems to work. I'm hoping to make it smaller so that it can also fit a debugging interface and some peripherals.
+It is fairly simple, with no I-cache, timers, or configurable interrupts. But it can read programs out of SPI Flash, and it has a peripheral for basic GPIO and driving 'neopixel' LEDs.
+
+Currently it takes up about 95% of an `iCE40UP5K` depending on recent changes, but it seems to work. I'm hoping to make it smaller so that it can also fit a debugging interface and some more LED peripherals.
 
 Know that I'm still learning how to use nMigen, and I wasn't experienced with digital logic design to begin with. So on the off chance that anybody stumbles across this, suggestions are always welcome!
 
@@ -31,10 +33,6 @@ Each test simulation also creates a `.vcd` file containing the waveform results,
 # Test Coverage
 
 The RISC-V RV32I compliance tests can be simulated, and they probably all pass. I try to run the full test suite regularly as I make changes, but sometimes a broken commit slips through.
-
-I've also only implemented the most basic exceptions, interrupts aren't implemented, and there's only a very basic GPIO peripheral.
-
-And the CPU design is fairly inefficient; it uses almost 4,000 LUTs, and it sounds like a minimal implementation shouldn't take many more than 1,000. It also doesn't include a debugging interface yet.
 
 ## Compliance Tests
 

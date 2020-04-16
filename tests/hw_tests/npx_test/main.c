@@ -30,7 +30,7 @@ int main( void ) {
   // Connect GPIO pin 2 to the "neopixel" peripheral.
   IOMUX->CFG1 |= ( IOMUX_NPX1 << IOMUX2_O );
   // Set initial color values for 4 LEDs.
-  #define NUM_LEDS ( 4 )
+  #define NUM_LEDS ( 24 )
   volatile uint8_t color_bytes[ ( NUM_LEDS * 3 ) ];
   int cval = 0x07;
   for ( int i = 0; i < ( NUM_LEDS * 3 ); ++i ) {
@@ -40,10 +40,18 @@ int main( void ) {
   // Set the colors address and length in the peripehral.
   NPX1->ADR = ( uint32_t )&color_bytes;
   NPX1->CR |= ( NUM_LEDS << NPX_CR_LEN_O );
+  int progress = 0;
   while( 1 ) {
     // Send color values in a loop.
     while( ( NPX1->CR & NPX_CR_BSY_M ) != 0 ) {};
     NPX1->CR |= NPX_CR_BSY_M;
+    // Set new color values.
+    ++progress;
+    for ( int i = 0; i < ( NUM_LEDS * 3 ); i += 3 ) {
+      color_bytes[ i ] = ( progress >> 0 ) & 0xFF;
+      color_bytes[ i + 1 ] = ( progress >> 2 ) & 0xFF;
+      color_bytes[ i + 2 ] = ( progress >> 4 ) & 0xFF;
+    }
   }
   return 0; // lol
 }

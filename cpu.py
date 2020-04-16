@@ -127,7 +127,8 @@ class CPU( Elaboratable ):
           # LUI instruction: set destination register to 20 upper bits.
           with m.Case( OP_LUI ):
             m.d.comb += [
-              self.rc.data.eq( self.mem.mux.bus.dat_r & 0xFFFFF000 ),
+              self.rc.data.eq( Cat(
+                Repl( 0, 12 ), self.mem.mux.bus.dat_r[ 12: 32 ] ) ),
               self.rc.en.eq( self.rc.addr[ :5 ] != 0 )
             ]
 
@@ -135,8 +136,8 @@ class CPU( Elaboratable ):
           # upper bits plus the current PC.
           with m.Case( OP_AUIPC ):
             m.d.comb += [
-              self.rc.data.eq( self.pc +
-                ( self.mem.mux.bus.dat_r & 0xFFFFF000 ) ),
+              self.rc.data.eq( self.pc + Cat(
+                Repl( 0, 12 ), self.mem.mux.bus.dat_r[ 12 : 32 ] ) ),
               self.rc.en.eq( self.rc.addr[ :5 ] != 0 )
             ]
 
@@ -555,6 +556,8 @@ if __name__ == "__main__":
       sopts = ''
       # Optional: increases design size but provides more info.
       #sopts += '-noflatten '
+      # Optional: use yosys LUT techmapping. ABC seems better tho.
+      #sopts += '-noabc '
       # Optional: optimization flags seem to help a bit;
       # probably ~5% fewer gates, ~15% faster?
       #sopts += '-retime '

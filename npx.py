@@ -193,7 +193,7 @@ class NeoPixels( Elaboratable, Interface ):
       # SK6812s seem to tolerate shorter latches than WS2812Bs IME.
       with m.State( "NPX_LATCH" ):
         m.d.sync += ccount.eq( ccount + 1 )
-        with m.If( ccount == 0xFFF ):
+        with m.If( ccount[ -1: ] == 1 ):
           m.next = "NPX_WAITING"
           m.d.sync += self.bsy.eq( 0 )
 

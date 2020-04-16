@@ -145,7 +145,10 @@ class NeoPixels( Elaboratable, Interface ):
           # If we've reached the end of the colors array, move
           # to the 'latch' state to finalize the transaction.
           with m.If( cprog == ( self.col_len * 3 ) ):
-            m.d.sync += ccount.eq( 0 )
+            m.d.sync += [
+              ccount.eq( 0 ),
+              self.mux.bus.cyc.eq( 0 )
+            ]
             m.next = "NPX_LATCH"
           # Otherwise, read the next byte from memory. It should
           # be okay to wait for the 'ack' signal, because the LEDs

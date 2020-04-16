@@ -560,6 +560,9 @@ if __name__ == "__main__":
       #sopts += '-retime '
       #sopts += '-relut '
       #sopts += '-abc2 '
+      # 'abc9' option doesn't seem to be as effective with iCE40s as
+      # it is with chips that have (I think) wider LUTs, but...
+      #sopts += '-abc9 '
       prog_start = ( 2 * 1024 * 1024 )
       cpu = CPU( SPI_ROM( prog_start, prog_start + 2048, None ) )
       UpduinoV2Platform().build( ResetInserter( cpu.clk_rst )( cpu ),

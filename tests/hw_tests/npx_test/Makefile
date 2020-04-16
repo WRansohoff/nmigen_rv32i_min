@@ -3,6 +3,15 @@ CC = riscv32-unknown-elf-gcc
 OC = riscv32-unknown-elf-objcopy
 OS = riscv32-unknown-elf-size
 
+# Assembly directives.
+ASFLAGS += -c
+ASFLAGS += -O0
+ASFLAGS += -Wall
+ASFLAGS += -fmessage-length=0
+ASFLAGS += -march=rv32imac
+ASFLAGS += -mabi=ilp32
+ASFLAGS += -mcmodel=medlow
+
 # C compilation directives
 CFLAGS += -c
 CFLAGS += -Wall
@@ -32,13 +41,19 @@ LFLAGS += -T./tubul.ld
 INCLUDE += -I./..
 
 # Source files.
+AS_SRC  = ./start.S
 C_SRC   = ./main.c
 # Object files to build.
-OBJS    = $(C_SRC:.c=.o)
+OBJS    = $(AS_SRC:.S=.o)
+OBJS   += $(C_SRC:.c=.o)
 
 # Default rule to build the whole project.
 .PHONY: all
 all: main.bin
+
+# Rule to build assembly files.
+%.o: %.S
+	$(CC) -x assembler-with-cpp $(ASFLAGS) $(INCLUDE) $< -o $@
 
 # Rule to compile C files.
 %.o: %.c

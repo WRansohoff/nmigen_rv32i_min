@@ -5,6 +5,61 @@
 #include "encoding.h"
 #include "tubul.h"
 
+// 'step' exponent for the rainbow wheel algorithm
+#define NUM_LEDS ( 24 )
+#define SSFT  ( 5 )
+#define STEP  ( 1 << SSFT )
+#define SMAX  ( STEP * 6 )
+#define ISTEP ( SMAX / NUM_LEDS )
+// Storage for LED colors.
+volatile uint8_t color_bytes[ ( NUM_LEDS * 3 ) ];
+
+// Set an LED to a rainbow color based on a 'progress' count.
+// There are no multiply or divide hardware instructions, so 'STEP'
+// needs to be a constant and a power of two to avoid inefficient
+// software math routines. Also, "x * 0xFF" = "( x << 8 ) - x"
+void led_rainbow( int ind, int prg ) {
+  // Red color.
+  if ( ( ( prg > 0 ) && ( prg < STEP ) ) || ( prg > ( STEP * 5 ) ) ) {
+    color_bytes[ ind + 1 ] = 0xFF;
+  }
+  else if ( ( prg > ( STEP * 2 ) ) && ( prg < ( STEP * 4 ) ) ) {
+    color_bytes[ ind + 1 ] = 0x00;
+  }
+  else if ( prg < ( STEP * 2 ) ) {
+    color_bytes[ ind + 1 ] = 0xFF - ( ( ( ( prg - STEP ) << 8 ) - ( prg - STEP ) ) >> SSFT );
+  }
+  else {
+    color_bytes[ ind + 1 ] = ( ( ( prg - ( STEP * 4 ) ) << 8 ) - ( prg - ( STEP * 4 ) ) ) >> SSFT;
+  }
+  // Green color.
+  if ( ( ( prg > STEP ) && ( prg < ( STEP * 3 ) ) ) ) {
+    color_bytes[ ind ] = 0xFF;
+  }
+  else if ( ( prg >= ( STEP * 4 ) ) ) {
+    color_bytes[ ind ] = 0x00;
+  }
+  else if ( ( prg > ( STEP * 3 ) ) && ( prg < ( STEP * 4 ) ) ) {
+    color_bytes[ ind ] = 0xFF - ( ( ( ( prg - ( STEP * 3 ) ) << 8 ) - ( prg - ( STEP * 3 ) ) ) >> SSFT );
+  }
+  else {
+    color_bytes[ ind ] = ( ( prg << 8 ) - prg ) >> SSFT;
+  }
+  // Blue color.
+  if ( ( prg > ( STEP * 3 ) ) && ( prg < ( STEP * 5 ) ) ) {
+    color_bytes[ ind + 2 ] = 0xFF;
+  }
+  else if ( ( prg < ( STEP * 2 ) ) ) {
+    color_bytes[ ind + 2 ] = 0x00;
+  }
+  else if ( ( prg > ( STEP * 5 ) ) ) {
+    color_bytes[ ind + 2 ] = 0xFF - ( ( ( ( prg - ( STEP * 5 ) ) << 8 ) - ( prg - ( STEP * 5 ) ) ) >> SSFT );
+  }
+  else {
+    color_bytes[ ind + 2 ] = ( ( ( prg - ( STEP * 2 ) ) << 8 ) - ( prg - ( STEP * 2 ) ) ) >> SSFT;
+  }
+}
+
 // Pre-boot reset handler: disable interrupts, set the
 // stack pointer, then call the 'main' method.
 __attribute__( ( naked ) ) void reset_handler( void ) {
@@ -29,29 +84,31 @@ int main( void ) {
 
   // Connect GPIO pin 2 to the "neopixel" peripheral.
   IOMUX->CFG1 |= ( IOMUX_NPX1 << IOMUX2_O );
-  // Set initial color values for 4 LEDs.
-  #define NUM_LEDS ( 24 )
-  volatile uint8_t color_bytes[ ( NUM_LEDS * 3 ) ];
-  int cval = 0x07;
-  for ( int i = 0; i < ( NUM_LEDS * 3 ); ++i ) {
-    color_bytes[ i ] = cval;
-    ++cval;
-  }
   // Set the colors address and length in the peripehral.
   NPX1->ADR = ( uint32_t )&color_bytes;
   NPX1->CR |= ( NUM_LEDS << NPX_CR_LEN_O );
+
+  // Progress counters.
   int progress = 0;
+  int iprg = 0;
+
+  // Main loop.
   while( 1 ) {
-    // Send color values in a loop.
+    // Set new color values.
+    for ( int i = 0; i < ( NUM_LEDS * 3 ); i += 3 ) {
+      led_rainbow( i, iprg );
+      iprg += ISTEP;
+      if ( iprg > SMAX ) { iprg -= SMAX; }
+    }
+    ++progress;
+    if ( progress > SMAX ) { progress -= SMAX; }
+    iprg = progress;
+
+    // Start async transfer once the current one finishes.
+    // TODO: 'transfer complete' would be a good candidate for an
+    // interrupt, once I can fit software interrupts in the design...
     while( ( NPX1->CR & NPX_CR_BSY_M ) != 0 ) {};
     NPX1->CR |= NPX_CR_BSY_M;
-    // Set new color values.
-    ++progress;
-    for ( int i = 0; i < ( NUM_LEDS * 3 ); i += 3 ) {
-      color_bytes[ i ] = ( progress >> 0 ) & 0xFF;
-      color_bytes[ i + 1 ] = ( progress >> 2 ) & 0xFF;
-      color_bytes[ i + 2 ] = ( progress >> 4 ) & 0xFF;
-    }
   }
   return 0; // lol
 }

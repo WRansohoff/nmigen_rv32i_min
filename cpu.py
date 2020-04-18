@@ -29,8 +29,8 @@ class CPU( Elaboratable ):
     # I don't think that the base specification includes priority
     # levels, so for now, we only need one extra set of registers
     # to handle context-switching in hardware.
-    self.r      = Memory( width = 32, depth = 64,
-                          init = ( 0x00000000 for i in range( 64 ) ) )
+    self.r      = Memory( width = 32, depth = 32,
+                          init = ( 0x00000000 for i in range( 32 ) ) )
     # Read ports for rs1 (ra), rs2 (rb), and rd (rc).
     self.ra     = self.r.read_port()
     self.rb     = self.r.read_port()
@@ -96,12 +96,9 @@ class CPU( Elaboratable ):
       with m.State( "CPU_DECODE" ):
         # Set CPU register access addresses.
         m.d.sync += [
-          self.ra.addr.eq( Cat(
-            self.mem.mux.bus.dat_r[ 15 : 20 ], self.irq ) ),
-          self.rb.addr.eq( Cat(
-            self.mem.mux.bus.dat_r[ 20 : 25 ], self.irq ) ),
-          self.rc.addr.eq( Cat(
-            self.mem.mux.bus.dat_r[ 7  : 12 ], self.irq ) ),
+          self.ra.addr.eq( self.mem.mux.bus.dat_r[ 15 : 20 ] ),
+          self.rb.addr.eq( self.mem.mux.bus.dat_r[ 20 : 25 ] ),
+          self.rc.addr.eq( self.mem.mux.bus.dat_r[ 7  : 12 ] ),
           self.f.eq( self.mem.mux.bus.dat_r[ 12 : 15 ] ),
           self.op.eq( self.mem.mux.bus.dat_r[ 0 : 7 ] )
         ]
@@ -129,7 +126,7 @@ class CPU( Elaboratable ):
             m.d.comb += [
               self.rc.data.eq( Cat(
                 Repl( 0, 12 ), self.mem.mux.bus.dat_r[ 12: 32 ] ) ),
-              self.rc.en.eq( self.rc.addr[ :5 ] != 0 )
+              self.rc.en.eq( self.rc.addr != 0 )
             ]
 
           # AUIPC instruction: set destination register to 20
@@ -138,7 +135,7 @@ class CPU( Elaboratable ):
             m.d.comb += [
               self.rc.data.eq( self.pc + Cat(
                 Repl( 0, 12 ), self.mem.mux.bus.dat_r[ 12 : 32 ] ) ),
-              self.rc.en.eq( self.rc.addr[ :5 ] != 0 )
+              self.rc.en.eq( self.rc.addr != 0 )
             ]
 
           # JAL instruction: jump to an offset address (or trap if
@@ -152,7 +149,7 @@ class CPU( Elaboratable ):
               Repl( self.mem.mux.bus.dat_r[ 31 ], 12 ) ) ),
             m.d.comb += [
               self.rc.data.eq( self.pc + 4 ),
-              self.rc.en.eq( self.rc.addr[ :5 ] != 0 )
+              self.rc.en.eq( self.rc.addr != 0 )
             ]
 
           # JALR instruction: jump to a new address from a register
@@ -164,7 +161,7 @@ class CPU( Elaboratable ):
               Repl( self.mem.mux.bus.dat_r[ 31 ], 20 ) ) ),
             m.d.comb += [
               self.rc.data.eq( self.pc + 4 ),
-              self.rc.en.eq( self.rc.addr[ :5 ] != 0 )
+              self.rc.en.eq( self.rc.addr != 0 )
             ]
 
           # BEQ / BNE / BLT / BGE / BLTU / BGEU instructions:
@@ -217,7 +214,7 @@ class CPU( Elaboratable ):
               m.next = "CPU_EXECUTE"
             # Then store the value in the destination register.
             with m.Else():
-              m.d.comb += self.rc.en.eq( self.rc.addr[ :5 ] != 0 )
+              m.d.comb += self.rc.en.eq( self.rc.addr != 0 )
               with m.If( self.f == F_LW ):
                 m.d.comb += self.rc.data.eq(
                   self.mem.mux.bus.dat_r )
@@ -277,7 +274,7 @@ class CPU( Elaboratable ):
                 self.mem.mux.bus.dat_r[ 12 : 15 ],
                 self.mem.mux.bus.dat_r[ 30 ] ) ),
               self.rc.data.eq( self.alu.y ),
-              self.rc.en.eq( self.rc.addr[ :5 ] != 0 )
+              self.rc.en.eq( self.rc.addr != 0 )
             ]
 
           # I-type ALU operation: rc = ra ? immediate
@@ -293,7 +290,7 @@ class CPU( Elaboratable ):
                      self.mem.mux.bus.dat_r[ 30 ],
                      0 ) ) ),
               self.rc.data.eq( self.alu.y ),
-              self.rc.en.eq( self.rc.addr[ :5 ] != 0 )
+              self.rc.en.eq( self.rc.addr != 0 )
             ]
 
           # System call instruction: ECALL, EBREAK, MRET, WFI,
@@ -301,27 +298,21 @@ class CPU( Elaboratable ):
           with m.Case( OP_SYSTEM ):
             # "EBREAK" instruction: enter the interrupt context
             # with 'breakpoint' as the cause of the exception.
-            with m.If( ( self.ra.addr[ :5 ] == 0 )
-                     & ( self.rc.addr[ :5 ] == 0 )
-                     & ( self.f   == 0 )
-                     & ( self.mem.mux.bus.dat_r[ 20 : 32 ] == 1 ) ):
-              trigger_trap( self, m, TRAP_BREAK )
-            # Other trap-related system call instructions:
-            with m.Elif( self.f == F_TRAPS ):
-              # An 'empty' ECALL instruction should raise an
-              # 'environment-call-from-M-mode" exception.
-              with m.If( ( self.ra.addr[ :5 ] == 0 ) &
-                         ( self.rc.addr[ :5 ] == 0 ) &
-                         ( self.mem.mux.bus.dat_r[ 20 : 32 ] == 0 ) ):
-                trigger_trap( self, m, TRAP_ECALL )
-              # 'MTRET' should return from an interrupt context.
-              # This is a nop if it occurs outside of an interrupt.
-              with m.Elif( self.mem.mux.bus.dat_r[ 20 : 32 ] == IMM_MRET ):
-                with m.If( self.irq == 1 ):
-                  m.d.sync += [
-                    self.pc.eq( self.csr.mepc_mepc << 2 ),
-                    self.irq.eq( 0 )
-                  ]
+            with m.If( self.f == 0 ):
+              with m.Switch( self.mem.mux.bus.dat_r[ 20 : 22 ] ):
+                # An 'empty' ECALL instruction should raise an
+                # 'environment-call-from-M-mode" exception.
+                with m.Case( 0 ):
+                  trigger_trap( self, m, TRAP_ECALL )
+                # "EBREAK" instruction: enter the interrupt context
+                # with 'breakpoint' as the cause of the exception.
+                with m.Case( 1 ):
+                  trigger_trap( self, m, TRAP_BREAK )
+                # 'MRET' jumps to the stored 'pre-trap' PC in the
+                # 30 MSbits of the MEPC CSR.
+                with m.Case( 2 ):
+                  m.d.sync += self.pc.eq( Cat( Repl( 0, 2 ),
+                                               self.csr.mepc_mepc ) )
             # Defer to the CSR module for atomic CSR reads/writes.
             # 'CSRR[WSC]': Write/Set/Clear CSR value from a register.
             # 'CSRR[WSC]I': Write/Set/Clear CSR value from immediate.
@@ -330,7 +321,7 @@ class CPU( Elaboratable ):
                 self.csr.dat_w.eq(
                   Mux( self.f[ 2 ] == 0,
                        self.ra.data,
-                       Cat( self.ra.addr[ :5 ],
+                       Cat( self.ra.addr,
                             Repl( self.ra.addr[ 4 ], 27 ) ) ) ),
                 self.csr.adr.eq( self.mem.mux.bus.dat_r[ 20 : 32 ] ),
                 self.csr.f.eq( self.f )
@@ -347,7 +338,7 @@ class CPU( Elaboratable ):
                 m.d.sync += self.csr.we.eq( 0 )
                 m.d.comb += [
                   self.rc.data.eq( self.csr.dat_r ),
-                  self.rc.en.eq( self.rc.addr[ :5 ] != 0 )
+                  self.rc.en.eq( self.rc.addr != 0 )
                 ]
 
           # FENCE instruction: clear any I-caches and ensure all

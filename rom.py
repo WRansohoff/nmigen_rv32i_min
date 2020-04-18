@@ -42,13 +42,22 @@ class ROM( Elaboratable ):
     m.submodules.arb = self.arb
     m.submodules.r = self.r
 
+    # Memory access wait states.
+    rws = Signal( 1, reset = 0 )
+
     # 'ack' signal should rest at 0.
-    m.d.sync += self.arb.bus.ack.eq( 0 )
+    m.d.sync += [
+      self.arb.bus.ack.eq( 0 ),
+      rws.eq( 0 )
+    ]
 
     # Only acknowledge reads when 'cyc' and 'stb' are asserted.
     with m.If( self.arb.bus.cyc ):
-      # (Ack one cycle after 'stb' is asserted.)
-      m.d.sync += self.arb.bus.ack.eq( self.arb.bus.stb )
+      # (Ack one cycle after activation.)
+      with m.If( rws == 0 ):
+        m.d.sync += rws.eq( 1 )
+      with m.Else():
+        m.d.sync += self.arb.bus.ack.eq( self.arb.bus.stb )
 
     # Set the 'output' value to the requested 'data' array index.
     # If a read would 'spill over' into an out-of-bounds data byte,

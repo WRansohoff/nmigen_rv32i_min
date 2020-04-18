@@ -194,8 +194,10 @@ MSTATUS_MBE_BIG = 0b1
 # This is a two-bit field, but values >= 2 are reserved.
 MTVEC_MODE_VECTORED = 0b1
 MTVEC_MODE_DIRECT   = 0b0
-# CSR memory map definitions.
-CSRS = {
+# Disable some machine-mode CSRs - this makes the CPU non-compliant
+# with the RISC-V privileged spec, but these CSRs are not required
+# for most general-purpose C code and it saves space.
+'''
   'mhartid': {
     'c_addr': CSRA_MHARTID,
     'bits': { 'id': [ 0, 31, 'r', 0x00000000 ] }
@@ -215,6 +217,37 @@ CSRS = {
     'c_addr': CSRA_MIMPID,
     'bits': { 'imp': [ 0, 31, 'r', MIMP_ID ] }
   },
+  'mstatush': {
+    'c_addr': CSRA_MSTATUSH,
+    'bits': {
+      'mbe':  [ 5, 5, 'r',  0 ]
+    }
+  },
+  'mcycle': {
+    'c_addr': CSRA_MCYCLE,
+    'bits': { 'cycles': [ 0, 31, 'rw', 0 ] }
+  },
+  'mcycleh': {
+    'c_addr': CSRA_MCYCLEH,
+    'bits': { 'cycles': [ 0, 31, 'rw', 0 ] }
+  },
+  'minstreth': {
+    'c_addr': CSRA_MINSTRETH,
+    'bits': { 'instrs': [ 0, 31, 'rw', 0 ] }
+  },
+  'mcountinhibit': {
+    'c_addr': CSRA_MCOUNTINHIBIT,
+    'bits': {
+      'cy':   [ 0, 0, 'rw', 0 ],
+      'res1': [ 1, 1, 'r',  0 ],
+      'im':   [ 2, 2, 'rw', 0 ],
+      # Hardware performance monitors not implemented.
+      'res2': [ 3, 31, 'r', 0 ]
+    }
+  }
+'''
+# CSR memory map definitions.
+CSRS = {
   'misa': {
     'c_addr': CSRA_MISA,
     'bits': {
@@ -230,26 +263,8 @@ CSRS = {
       'mpp':  [ 11, 12, 'r',  0b11 ],
     }
   },
-  'mstatush': {
-    'c_addr': CSRA_MSTATUSH,
-    'bits': {
-      'mbe':  [ 5, 5, 'r',  0 ]
-    }
-  },
-  'mcycle': {
-    'c_addr': CSRA_MCYCLE,
-    'bits': { 'cycles': [ 0, 31, 'rw', 0 ] }
-  },
-  'mcycleh': {
-    'c_addr': CSRA_MCYCLEH,
-    'bits': { 'cycles': [ 0, 31, 'rw', 0 ] }
-  },
   'minstret': {
     'c_addr': CSRA_MINSTRET,
-    'bits': { 'instrs': [ 0, 31, 'rw', 0 ] }
-  },
-  'minstreth': {
-    'c_addr': CSRA_MINSTRETH,
     'bits': { 'instrs': [ 0, 31, 'rw', 0 ] }
   },
   'mie': {
@@ -298,16 +313,6 @@ CSRS = {
     'c_addr': CSRA_MTVAL,
     'bits': { 'einfo': [ 0, 31, 'rw', 0 ] }
   },
-  'mcountinhibit': {
-    'c_addr': CSRA_MCOUNTINHIBIT,
-    'bits': {
-      'cy':   [ 0, 0, 'rw', 0 ],
-      'res1': [ 1, 1, 'r',  0 ],
-      'im':   [ 2, 2, 'rw', 0 ],
-      # Hardware performance monitors not implemented.
-      'res2': [ 3, 31, 'r', 0 ]
-    }
-  }
 }
 # Calculate 'read', 'read-only', 'set', and 'clear' bitmasks,
 # and assign mutiplexer-local addresses to each CSR.

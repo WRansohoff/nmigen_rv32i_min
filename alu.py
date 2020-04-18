@@ -54,6 +54,7 @@ class ALU( Elaboratable ):
       m.d.comb += self.y.eq( self.a < self.b )
     # Note: Shift operations cannot shift more than XLEN (32) bits.
     # Y = A << B
+    # TODO: Left shifts can be expressed as flip(y) = flip(a) >> b
     with m.Elif( self.f == ALU_SLL ):
       m.d.comb += self.y.eq( self.a << ( self.b[ :5 ] ) )
     # Y = A >> B (no sign extend)

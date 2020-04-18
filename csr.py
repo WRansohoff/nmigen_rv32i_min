@@ -51,10 +51,11 @@ class CSR( Elaboratable, Interface ):
     m = Module()
 
     # The 'MCYCLE' CSR increments every clock tick unless inhibited.
-    with m.If( self.mcountinhibit_cy == 0 ):
-      m.d.sync += self.mcycle_cycles.eq( self.mcycle_cycles + 1 )
-      with m.If( self.mcycle_cycles == 0xFFFFFFFF ):
-        m.d.sync += self.mcycleh_cycles.eq( self.mcycleh_cycles + 1 )
+    # (Currently disabled to save space.)
+    #with m.If( self.mcountinhibit_cy == 0 ):
+      #m.d.sync += self.mcycle_cycles.eq( self.mcycle_cycles + 1 )
+      #with m.If( self.mcycle_cycles == 0xFFFFFFFF ):
+        #m.d.sync += self.mcycleh_cycles.eq( self.mcycleh_cycles + 1 )
 
     # Read values default to 0.
     m.d.sync += self.dat_r.eq( 0 )
@@ -76,13 +77,13 @@ class CSR( Elaboratable, Interface ):
                   .eq( self.wd[ bits[ 0 ] : ( bits[ 1 ] + 1 ) ] )
 
     # Process 32-bit CSR write logic.
-    with m.If( ( self.f & 0b11 ) == 0b01 ):
+    with m.If( ( self.f[ :2 ] ) == 0b01 ):
       # 'Write' - set the register to the input value.
       m.d.comb += self.wd.eq( self.dat_w )
-    with m.Elif( ( ( self.f & 0b11 ) == 0b10 ) & ( self.dat_w != 0 ) ):
+    with m.Elif( ( ( self.f[ :2 ] ) == 0b10 ) & ( self.dat_w != 0 ) ):
       # 'Set' - set bits which are set in the input value.
       m.d.comb +=  self.wd.eq( self.dat_w | self.dat_r )
-    with m.Elif( ( ( self.f & 0b11 ) == 0b11 ) & ( self.dat_w != 0 ) ):
+    with m.Elif( ( ( self.f[ :2 ] ) == 0b11 ) & ( self.dat_w != 0 ) ):
       # 'Clear' - reset bits which are set in the input value.
       m.d.comb += self.wd.eq( ~( self.dat_w ) & self.dat_r )
     with m.Else():
@@ -160,6 +161,8 @@ def csr_test( csr ):
   yield from csr_ut( csr, CSRA_MISA, 0xC3FFFFFF, F_CSRRW,  0x40000100 )
   yield from csr_ut( csr, CSRA_MISA, 0x00001234, F_CSRRWI, 0x40000100 )
 
+  # (ID registers currently disabled to save space.)
+  '''
   # Test reading / writing the 'MVENDORID' CSR. (Should be read-only)
   yield from csr_ut( csr, CSRA_MVENDORID, 0x00000000, F_CSRRW, VENDOR_ID )
   yield from csr_ut( csr, CSRA_MVENDORID, 0xFFFFFFFF, F_CSRRS, VENDOR_ID )
@@ -177,6 +180,7 @@ def csr_test( csr ):
   yield from csr_ut( csr, CSRA_MHARTID, 0x00000000, F_CSRRW, 0 )
   yield from csr_ut( csr, CSRA_MHARTID, 0xFFFFFFFF, F_CSRRS, 0 )
   yield from csr_ut( csr, CSRA_MHARTID, 0xFFFFFFFF, F_CSRRC, 0 )
+  '''
 
   # Test reading / writing 'MSTATUS' CSR. (Only 'MIE' can be written)
   yield from csr_ut( csr, CSRA_MSTATUS, 0xFFFFFFFF, F_CSRRWI, 0x00001800 )
@@ -229,6 +233,8 @@ def csr_test( csr ):
   # Test reading / writing the 'MCYCLE' CSR, after resetting it.
   # Verify that the it counts up every cycle unless it is written to.
   # ('we' is active 1/2 cycles in the unit test function)
+  # (Counter CSRs are currently disabled to save space.)
+  '''
   cyc_start = ( yield csr.mcycle_cycles ) & 0xFFFFFFFF
   yield from csr_ut( csr, CSRA_MCYCLE, 0x00000000, F_CSRRS,  cyc_start )
   yield Tick()
@@ -262,6 +268,7 @@ def csr_test( csr ):
   yield from csr_ut( csr, CSRA_MCOUNTINHIBIT, 0xFFFFFFFF, F_CSRRSI, 0x00000000 )
   yield from csr_ut( csr, CSRA_MCOUNTINHIBIT, 0x01234567, F_CSRRC,  0x00000005 )
   yield from csr_ut( csr, CSRA_MCOUNTINHIBIT, 0x0C0FFEE0, F_CSRRW,  0x00000000 )
+  '''
 
   # Test an unrecognized CSR.
   yield from csr_ut( csr, 0x101, 0x89ABCDEF, F_CSRRW,  0x00000000 )

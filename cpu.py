@@ -83,9 +83,17 @@ class CPU( Elaboratable ):
           with m.Else():
             # Increment 'instructions retired' counter. TODO: obo
             minstret_incr( self, m )
+            # Set CPU register access addresses.
+            m.d.sync += [
+              self.ra.addr.eq( self.mem.mux.bus.dat_r[ 15 : 20 ] ),
+              self.rb.addr.eq( self.mem.mux.bus.dat_r[ 20 : 25 ] ),
+              self.rc.addr.eq( self.mem.mux.bus.dat_r[ 7  : 12 ] ),
+              self.f.eq( self.mem.mux.bus.dat_r[ 12 : 15 ] ),
+              self.op.eq( self.mem.mux.bus.dat_r[ 0 : 7 ] ),
+              self.mem.mux.bus.cyc.eq( 0 ),
+              iws.eq( 0 )
+            ]
             # Move on to the 'decode instruction' state.
-            m.d.sync += iws.eq( 0 )
-            m.d.sync += self.mem.mux.bus.cyc.eq( 0 )
             m.next = "CPU_DECODE"
         # If the instruction address is misaligned, trigger a trap.
         with m.Else():
@@ -94,21 +102,7 @@ class CPU( Elaboratable ):
 
       # "Decode instruction": Set CPU register addresses etc.
       with m.State( "CPU_DECODE" ):
-        # Set CPU register access addresses.
-        m.d.sync += [
-          self.ra.addr.eq( self.mem.mux.bus.dat_r[ 15 : 20 ] ),
-          self.rb.addr.eq( self.mem.mux.bus.dat_r[ 20 : 25 ] ),
-          self.rc.addr.eq( self.mem.mux.bus.dat_r[ 7  : 12 ] ),
-          self.f.eq( self.mem.mux.bus.dat_r[ 12 : 15 ] ),
-          self.op.eq( self.mem.mux.bus.dat_r[ 0 : 7 ] )
-        ]
-        # Wait a tick to let the register data load.
-        with m.If( iws == 0 ):
-          m.d.sync += iws.eq( 1 )
-          m.next = "CPU_DECODE"
-        with m.Else():
-          m.d.sync += iws.eq( 0 )
-          m.next = "CPU_EXECUTE"
+        m.next = "CPU_EXECUTE"
 
       # "Execute instruction": Run the currently-loaded instruction.
       with m.State( "CPU_EXECUTE" ):
@@ -121,44 +115,29 @@ class CPU( Elaboratable ):
 
         # Switch case for opcodes.
         with m.Switch( self.op ):
-          # LUI instruction: set destination register to 20 upper bits.
-          with m.Case( OP_LUI ):
+          # LUI / AUIPC instructions: set destination register to
+          # 20 upper bits, +pc for AUIPC.
+          with m.Case( '0-10111' ):
             m.d.comb += [
-              self.rc.data.eq( Cat(
-                Repl( 0, 12 ), self.mem.mux.bus.dat_r[ 12: 32 ] ) ),
-              self.rc.en.eq( self.rc.addr != 0 )
-            ]
-
-          # AUIPC instruction: set destination register to 20
-          # upper bits plus the current PC.
-          with m.Case( OP_AUIPC ):
-            m.d.comb += [
-              self.rc.data.eq( self.pc + Cat(
+              self.rc.data.eq( Mux(
+                self.mem.mux.bus.dat_r[ 5 ], 0, self.pc ) + Cat(
                 Repl( 0, 12 ), self.mem.mux.bus.dat_r[ 12 : 32 ] ) ),
               self.rc.en.eq( self.rc.addr != 0 )
             ]
 
-          # JAL instruction: jump to an offset address (or trap if
-          # the address is invalid), and put the next PC in rc.
-          with m.Case( OP_JAL ):
-            m.d.sync += self.pc.eq( self.pc + Cat(
-              Repl( 0, 1 ),
-              self.mem.mux.bus.dat_r[ 21: 31 ],
-              self.mem.mux.bus.dat_r[ 20 ],
-              self.mem.mux.bus.dat_r[ 12 : 20 ],
-              Repl( self.mem.mux.bus.dat_r[ 31 ], 12 ) ) ),
-            m.d.comb += [
-              self.rc.data.eq( self.pc + 4 ),
-              self.rc.en.eq( self.rc.addr != 0 )
-            ]
-
-          # JALR instruction: jump to a new address from a register
-          # (or trap if the address is invalid), and put the
-          # next PC in the destination register.
-          with m.Case( OP_JALR ):
-            m.d.sync += self.pc.eq( self.ra.data + Cat(
-              self.mem.mux.bus.dat_r[ 20 : 32 ],
-              Repl( self.mem.mux.bus.dat_r[ 31 ], 20 ) ) ),
+          with m.Case( '110-111' ):
+            m.d.sync += self.pc.eq(
+              Mux( self.mem.mux.bus.dat_r[ 3 ],
+                   self.pc + Cat(
+                     Repl( 0, 1 ),
+                     self.mem.mux.bus.dat_r[ 21: 31 ],
+                     self.mem.mux.bus.dat_r[ 20 ],
+                     self.mem.mux.bus.dat_r[ 12 : 20 ],
+                     Repl( self.mem.mux.bus.dat_r[ 31 ], 12 ) ),
+                   self.ra.data + Cat(
+                     self.mem.mux.bus.dat_r[ 20 : 32 ],
+                     Repl( self.mem.mux.bus.dat_r[ 31 ], 20 ) ) ),
+            )
             m.d.comb += [
               self.rc.data.eq( self.pc + 4 ),
               self.rc.en.eq( self.rc.addr != 0 )
@@ -167,29 +146,21 @@ class CPU( Elaboratable ):
           # BEQ / BNE / BLT / BGE / BLTU / BGEU instructions:
           # same as JAL, but only if conditions are met.
           with m.Case( OP_BRANCH ):
-            # BEQ / BNE.
-            with m.If( self.f[ 2 ] == 0 ):
-              with m.If( ( self.ra.data != self.rb.data ) == self.f[ 0 ] ):
-                m.d.sync += self.pc.eq( self.pc + Cat(
-                  Repl( 0, 1 ),
-                  self.mem.mux.bus.dat_r[ 8 : 12 ],
-                  self.mem.mux.bus.dat_r[ 25 : 31 ],
-                  self.mem.mux.bus.dat_r[ 7 ],
-                  Repl( self.mem.mux.bus.dat_r[ 31 ], 20 ) ) )
-            # BLT / BGE / BLTU / BGEU. (Use SLT/SLTU ALU ops)
-            with m.Else():
-              m.d.comb += [
-                self.alu.a.eq( self.ra.data ),
-                self.alu.b.eq( self.rb.data ),
-                self.alu.f.eq( self.f[ 1: ] )
-              ]
-              with m.If( self.alu.y != self.f[ 0 ] ):
-                m.d.sync += self.pc.eq( self.pc + Cat(
-                  Repl( 0, 1 ),
-                  self.mem.mux.bus.dat_r[ 8 : 12 ],
-                  self.mem.mux.bus.dat_r[ 25 : 31 ],
-                  self.mem.mux.bus.dat_r[ 7 ],
-                  Repl( self.mem.mux.bus.dat_r[ 31 ], 20 ) ) )
+            # BEQ / BNE: use SUB ALU op.
+            # BLT / BGE / BLTU / BGEU: use SLT/SLTU ALU ops.
+            m.d.comb += [
+              self.alu.a.eq( self.ra.data ),
+              self.alu.b.eq( self.rb.data ),
+              self.alu.f.eq( Mux( self.f[ 2 ], self.f[ 1: ], 0b1000 ) )
+            ]
+            # Check the result.
+            with m.If( ( ( self.alu.y == 0 ) ^ self.f[ 0 ] ) != self.f[ 2 ] ):
+              m.d.sync += self.pc.eq( self.pc + Cat(
+                Repl( 0, 1 ),
+                self.mem.mux.bus.dat_r[ 8 : 12 ],
+                self.mem.mux.bus.dat_r[ 25 : 31 ],
+                self.mem.mux.bus.dat_r[ 7 ],
+                Repl( self.mem.mux.bus.dat_r[ 31 ], 20 ) ) )
 
           # LB / LBU / LH / LHU / LW instructions: load a value
           # from memory into a register.
@@ -286,9 +257,8 @@ class CPU( Elaboratable ):
                 Repl( self.mem.mux.bus.dat_r[ 31 ], 20 ) ) ),
               self.alu.f.eq( Cat(
                 self.mem.mux.bus.dat_r[ 12 : 15 ],
-                Mux( self.mem.mux.bus.dat_r[ 12 : 14 ] == 0b01,
-                     self.mem.mux.bus.dat_r[ 30 ],
-                     0 ) ) ),
+                self.mem.mux.bus.dat_r[ 12 ] &
+                self.mem.mux.bus.dat_r[ 30 ] ) ),
               self.rc.data.eq( self.alu.y ),
               self.rc.en.eq( self.rc.addr != 0 )
             ]
@@ -299,6 +269,8 @@ class CPU( Elaboratable ):
             # "EBREAK" instruction: enter the interrupt context
             # with 'breakpoint' as the cause of the exception.
             with m.If( self.f == 0 ):
+              # The ECALL immediate encoding uses all 12 bits, but
+              # the supported subset can be deduced from 2.
               with m.Switch( self.mem.mux.bus.dat_r[ 20 : 22 ] ):
                 # An 'empty' ECALL instruction should raise an
                 # 'environment-call-from-M-mode" exception.

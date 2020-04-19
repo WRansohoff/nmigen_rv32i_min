@@ -31,41 +31,37 @@ class ALU( Elaboratable ):
       m.d.sync += ta.eq( ~ta )
 
     # Perform ALU computations based on the 'function' bits.
-    # Y = A AND B
-    with m.If( self.f == ALU_AND ):
-      m.d.comb += self.y.eq( self.a & self.b )
-    # Y = A  OR B
-    with m.Elif( self.f == ALU_OR ):
-      m.d.comb += self.y.eq( self.a | self.b )
-    # Y = A XOR B
-    with m.Elif( self.f == ALU_XOR ):
-      m.d.comb += self.y.eq( self.a ^ self.b )
-    # Y = A + B
-    with m.Elif( self.f == ALU_ADD ):
-      m.d.comb += self.y.eq( self.a.as_signed() + self.b.as_signed() )
-    # Y = A - B
-    with m.Elif( self.f == ALU_SUB ):
-      m.d.comb += self.y.eq( self.a.as_signed() - self.b.as_signed() )
-    # Y = ( A < B ) (signed)
-    with m.Elif( self.f == ALU_SLT ):
-      m.d.comb += self.y.eq( self.a.as_signed() < self.b.as_signed() )
-    # Y = ( A <  B ) (unsigned)
-    with m.Elif( self.f == ALU_SLTU ):
-      m.d.comb += self.y.eq( self.a < self.b )
-    # Note: Shift operations cannot shift more than XLEN (32) bits.
-    # Y = A << B
-    # TODO: Left shifts can be expressed as flip(y) = flip(a) >> b
-    with m.Elif( self.f == ALU_SLL ):
-      m.d.comb += self.y.eq( self.a << ( self.b[ :5 ] ) )
-    # Y = A >> B (no sign extend)
-    with m.Elif( self.f == ALU_SRL ):
-      m.d.comb += self.y.eq( self.a >> ( self.b[ :5 ] ) )
-    # Y = A >> B (with sign extend)
-    with m.Elif( self.f == ALU_SRA ):
-      m.d.comb += self.y.eq( self.a.as_signed() >> ( self.b[ :5 ] ) )
-    # Return 0 after one clock cycle for unrecognized commands.
-    with m.Else():
-      m.d.comb += self.y.eq( 0x00000000 )
+    with m.Switch( self.f[ :3 ] ):
+      # Y = A AND B
+      with m.Case( ALU_AND & 0b111 ):
+        m.d.comb += self.y.eq( self.a & self.b )
+      # Y = A  OR B
+      with m.Case( ALU_OR & 0b111 ):
+        m.d.comb += self.y.eq( self.a | self.b )
+      # Y = A XOR B
+      with m.Case( ALU_XOR & 0b111 ):
+        m.d.comb += self.y.eq( self.a ^ self.b )
+      # Y = A +/- B
+      with m.Case( ALU_ADD & 0b111 ):
+        m.d.comb += self.y.eq( Mux( self.f[ 3 ],
+          self.a.as_signed() - self.b.as_signed(),
+          self.a.as_signed() + self.b.as_signed() ) )
+      # Y = ( A < B ) (signed)
+      with m.Case( ALU_SLT & 0b111 ):
+        m.d.comb += self.y.eq( self.a.as_signed() < self.b.as_signed() )
+      # Y = ( A <  B ) (unsigned)
+      with m.Case( ALU_SLTU & 0b111 ):
+        m.d.comb += self.y.eq( self.a < self.b )
+      # Note: Shift operations cannot shift more than XLEN (32) bits.
+      # Y = A << B
+      # TODO: Left shifts can be expressed as flip(y) = flip(a) >> b
+      with m.Case( ALU_SLL & 0b111 ):
+        m.d.comb += self.y.eq( self.a << ( self.b[ :5 ] ) )
+      # Y = A >> B
+      with m.Case( ALU_SRL & 0b111 ):
+        m.d.comb += self.y.eq( Mux( self.f[ 3 ],
+          self.a.as_signed() >> ( self.b[ :5 ] ),
+          self.a >> ( self.b[ :5 ] ) ) )
 
     # End of ALU module definition.
     return m

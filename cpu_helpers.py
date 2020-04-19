@@ -23,8 +23,6 @@ def minstret_incr( self, cpu ):
 # Helper method to enter the trap handler and jump to the
 # appropriate address.
 def trigger_trap( self, cpu, trap_num ):
-  # Clear memory bus access flag.
-  cpu.d.sync += self.mem.mux.bus.cyc.eq( 1 )
   # Set mcause, mepc, interrupt context flag.
   cpu.d.sync += [
     self.csr.mcause_interrupt.eq( 0 ),
@@ -34,10 +32,11 @@ def trigger_trap( self, cpu, trap_num ):
   # Set PC to the interrupt handler address.
   with cpu.If( ( self.csr.mtvec_mode ) == MTVEC_MODE_DIRECT ):
     # "Direct" interrupt mode: use a common handler.
-    cpu.d.sync += self.pc.eq( self.csr.mtvec_base << 2 )
+    cpu.d.sync += self.pc.eq( Cat( Repl( 0, 2 ),
+                              self.csr.mtvec_base ) )
   with cpu.Else():
     # "Vecotred" interrupt mode: each trap has its own handler.
-    cpu.d.sync += self.pc.eq(
-      ( self.csr.mtvec_base + trap_num ) << 2 )
+    cpu.d.sync += self.pc.eq( Cat( Repl( 0, 2 ),
+      ( self.csr.mtvec_base + trap_num ) ) )
   # Move back to 'instruction fetch' state.
   cpu.next = "CPU_IFETCH"

@@ -42,28 +42,21 @@ class ROM( Elaboratable ):
     m.submodules.arb = self.arb
     m.submodules.r = self.r
 
-    # Memory access wait states.
+    # Ack two cycles after activation, for memory port access and
+    # synchronous read-out (to prevent combinatorial loops).
     rws = Signal( 1, reset = 0 )
-
-    # 'ack' signal should rest at 0.
     m.d.sync += [
-      self.arb.bus.ack.eq( 0 ),
-      rws.eq( 0 )
+      rws.eq( self.arb.bus.cyc ),
+      self.arb.bus.ack.eq( self.arb.bus.cyc & rws )
     ]
 
-    # Only acknowledge reads when 'cyc' and 'stb' are asserted.
-    with m.If( self.arb.bus.cyc ):
-      # (Ack one cycle after activation.)
-      with m.If( rws == 0 ):
-        m.d.sync += rws.eq( 1 )
-      with m.Else():
-        m.d.sync += self.arb.bus.ack.eq( self.arb.bus.stb )
+    # Set read port address (in words).
+    m.d.comb += self.r.addr.eq( self.arb.bus.adr >> 2 )
 
     # Set the 'output' value to the requested 'data' array index.
     # If a read would 'spill over' into an out-of-bounds data byte,
     # set that byte to 0x00.
     # Word-aligned reads
-    m.d.comb += self.r.addr.eq( self.arb.bus.adr >> 2 )
     with m.If( ( self.arb.bus.adr & 0b11 ) == 0b00 ):
       m.d.sync += self.arb.bus.dat_r.eq( LITTLE_END_L( self.r.data ) )
     # Un-aligned reads

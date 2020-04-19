@@ -52,30 +52,23 @@ class RAM( Elaboratable ):
     m.submodules.w = self.w
     m.submodules.arb = self.arb
 
-    # Memory access wait states.
+    # Ack two cycles after activation, for memory port access and
+    # synchronous read-out (to prevent combinatorial loops).
     rws = Signal( 1, reset = 0 )
-
-    # 'ack' signal should rest at 0.
     m.d.sync += [
-      self.arb.bus.ack.eq( 0 ),
-      rws.eq( 0 )
+      rws.eq( self.arb.bus.cyc ),
+      self.arb.bus.ack.eq( self.arb.bus.cyc & rws )
     ]
 
-    # Set the RAM port addresses and write enable bit.
     m.d.comb += [
+      # Set the RAM port addresses.
       self.r.addr.eq( self.arb.bus.adr >> 2 ),
       self.w.addr.eq( self.r.addr ),
-      self.w.en.eq( self.arb.bus.cyc & self.arb.bus.we )
+      # Set the 'write enable' flag once the reads are valid.
+      self.w.en.eq( rws & self.arb.bus.we )
     ]
-    # Only acknowledge when 'cyc' and 'stb' are asserted.
-    with m.If( self.arb.bus.cyc ):
-      # (Ack one cycle after activation.)
-      with m.If( rws == 0 ):
-        m.d.sync += rws.eq( 1 )
-      with m.Else():
-        m.d.sync += self.arb.bus.ack.eq( self.arb.bus.stb )
 
-    # Read logic:
+    # Read logic: it's synchronous to avoid combinatorial loops.
     m.d.sync += self.arb.bus.dat_r.eq( self.r.data >>
       ( self.arb.bus.adr[ :2 ] << 3 ) )
 
@@ -83,35 +76,34 @@ class RAM( Elaboratable ):
     m.d.comb += self.w.data.eq( self.r.data )
     # Multi-word writes are not allowed, so this module
     # assumes the design will not allow mis-aligned access.
-    with m.If( self.arb.bus.we == 1 ):
-      with m.Switch( self.dw ):
-        with m.Case( RAM_DW_8 ):
-          with m.Switch( self.arb.bus.adr[ :2 ] ):
-            with m.Case( 0b00 ):
-              m.d.comb += self.w.data.bit_select( 0, 8 ).eq(
-                self.arb.bus.dat_w & 0xFF )
-            with m.Case( 0b01 ):
-              m.d.comb += self.w.data.bit_select( 8, 8 ).eq(
-                self.arb.bus.dat_w & 0xFF )
-            with m.Case( 0b10 ):
-              m.d.comb += self.w.data.bit_select( 16, 8 ).eq(
-                self.arb.bus.dat_w & 0xFF )
-            with m.Case( 0b11 ):
-              m.d.comb += self.w.data.bit_select( 24, 8 ).eq(
-                self.arb.bus.dat_w & 0xFF )
-        with m.Case( RAM_DW_16 ):
-          with m.Switch( self.arb.bus.adr[ :2 ] ):
-            with m.Case( 0b00 ):
-              m.d.comb += self.w.data.bit_select( 0, 16 ).eq(
-                self.arb.bus.dat_w & 0xFFFF )
-            with m.Case( 0b01 ):
-              m.d.comb += self.w.data.bit_select( 8, 16 ).eq(
-                self.arb.bus.dat_w & 0xFFFF )
-            with m.Case( 0b10 ):
-              m.d.comb += self.w.data.bit_select( 16, 16 ).eq(
-                self.arb.bus.dat_w & 0xFFFF )
-        with m.Case( RAM_DW_32 ):
-          m.d.comb += self.w.data.eq( self.arb.bus.dat_w )
+    with m.Switch( self.dw ):
+      with m.Case( RAM_DW_8 ):
+        with m.Switch( self.arb.bus.adr[ :2 ] ):
+          with m.Case( 0b00 ):
+            m.d.comb += self.w.data.bit_select( 0, 8 ).eq(
+              self.arb.bus.dat_w & 0xFF )
+          with m.Case( 0b01 ):
+            m.d.comb += self.w.data.bit_select( 8, 8 ).eq(
+              self.arb.bus.dat_w & 0xFF )
+          with m.Case( 0b10 ):
+            m.d.comb += self.w.data.bit_select( 16, 8 ).eq(
+              self.arb.bus.dat_w & 0xFF )
+          with m.Case( 0b11 ):
+            m.d.comb += self.w.data.bit_select( 24, 8 ).eq(
+              self.arb.bus.dat_w & 0xFF )
+      with m.Case( RAM_DW_16 ):
+        with m.Switch( self.arb.bus.adr[ :2 ] ):
+          with m.Case( 0b00 ):
+            m.d.comb += self.w.data.bit_select( 0, 16 ).eq(
+              self.arb.bus.dat_w & 0xFFFF )
+          with m.Case( 0b01 ):
+            m.d.comb += self.w.data.bit_select( 8, 16 ).eq(
+              self.arb.bus.dat_w & 0xFFFF )
+          with m.Case( 0b10 ):
+            m.d.comb += self.w.data.bit_select( 16, 16 ).eq(
+              self.arb.bus.dat_w & 0xFFFF )
+      with m.Case( RAM_DW_32 ):
+        m.d.comb += self.w.data.eq( self.arb.bus.dat_w )
 
     # End of RAM module definition.
     return m

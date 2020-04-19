@@ -39,4 +39,6 @@ def trigger_trap( self, cpu, trap_num ):
     cpu.d.sync += self.pc.eq( Cat( Repl( 0, 2 ),
       ( self.csr.mtvec_base + trap_num ) ) )
   # Move back to 'instruction fetch' state.
-  cpu.next = "CPU_IFETCH"
+  # (TODO: remove after finalizing the move away from using
+  #  an FSM with von-neumann architecture)
+  #cpu.next = "CPU_IFETCH"

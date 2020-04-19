@@ -2,9 +2,9 @@
 
 This is a work-in-progress implementation of [the core `RV32I` `RISC-V` instruction set](https://riscv.org/specifications/isa-spec-pdf/), written with nMigen.
 
-It is fairly simple, with no I-cache, timers, or configurable interrupts. But it can read programs out of SPI Flash, and it has a peripheral for basic GPIO and driving 'neopixel' LEDs.
+It is fairly simple, with no I-cache, timers, or configurable interrupts. But it can read programs out of SPI Flash, and it has one peripheral for basic GPIO and one for driving 'neopixel' LEDs.
 
-Currently it takes up about 95% of an `iCE40UP5K` depending on recent changes, but it seems to work. I'm hoping to make it smaller so that it can also fit a debugging interface and some more LED peripherals.
+Currently it uses about 85% of the logic cells in an `iCE40UP5K`, but it seems to work. I'm hoping to make it smaller so that it can also fit a debugging interface and some more LED peripherals.
 
 Know that I'm still learning how to use nMigen, and I wasn't experienced with digital logic design to begin with. So on the off chance that anybody stumbles across this, suggestions are always welcome!
 

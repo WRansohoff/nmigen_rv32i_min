@@ -24,7 +24,7 @@ from isa import *
 #           Cleared by hardware after the latching period finishes.
 # ** 1:     Current pin value.
 # ** 2-7:   Reserved.
-# ** 8-24:  Number of LEDs in the string. The peripheral will access
+# ** 8-20:  Number of LEDs in the string. The peripheral will access
 #           memory starting at the 'colors array address' register,
 #           and continuing for (3 * 'num_leds') bytes.
 NPX_COL = 0
@@ -41,7 +41,7 @@ class NeoPixels( Elaboratable, Interface ):
     # Colors array starting address.
     self.col_adr = Signal( 32, reset = 0 )
     # Number of LEDs in the strand.
-    self.col_len = Signal( 16, reset = 0 )
+    self.col_len = Signal( 12, reset = 0 )
     # 'Ongoing transfer' / 'busy' / 'start new transfer' signal.
     self.bsy     = Signal( 1,  reset = 0 )
     # Current value to set the output pin(s) to.
@@ -89,12 +89,12 @@ class NeoPixels( Elaboratable, Interface ):
         m.d.comb += [
           self.dat_r.bit_select( 0, 1 ).eq( self.bsy ),
           self.dat_r.bit_select( 1, 2 ).eq( self.px ),
-          self.dat_r.bit_select( 8, 16 ).eq( self.col_len )
+          self.dat_r.bit_select( 8, 12 ).eq( self.col_len )
         ]
         with m.If( ( self.we == 1 ) &
                    ( self.cyc == 1 ) &
                    ( self.bsy == 0 ) ):
-          m.d.sync += self.col_len.eq( self.dat_w[ 8 : 24 ] )
+          m.d.sync += self.col_len.eq( self.dat_w[ 8 : 20 ] )
           m.d.sync += self.bsy.eq( self.dat_w[ 0 ] )
 
     # State machine to send colors once the peripheral is activated.
@@ -105,7 +105,7 @@ class NeoPixels( Elaboratable, Interface ):
 
     # FSM signals:
     # Color array progress tracker.
-    cprog  = Signal( 20, reset = 0 )
+    cprog  = Signal( 16, reset = 0 )
     # Current color.
     ccol   = Signal( 8, reset = 0 )
     # Main countdown counter. For counting progress between color

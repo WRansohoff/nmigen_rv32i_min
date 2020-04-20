@@ -58,7 +58,7 @@ class CSR( Elaboratable, Interface ):
         #m.d.sync += self.mcycleh_cycles.eq( self.mcycleh_cycles + 1 )
 
     # Read values default to 0.
-    m.d.sync += self.dat_r.eq( 0 )
+    m.d.comb += self.dat_r.eq( 0 )
 
     with m.Switch( self.adr ):
       # Generate logic for supported CSR reads / writes.
@@ -67,7 +67,7 @@ class CSR( Elaboratable, Interface ):
           # Assemble the read value from individual bitfields.
           for bname, bits in reg[ 'bits' ].items():
             if 'r' in bits[ 2 ]:
-              m.d.sync += self.dat_r \
+              m.d.comb += self.dat_r \
                 .bit_select( bits[ 0 ], bits[ 1 ] - bits[ 0 ] + 1 ) \
                 .eq( getattr( self, "%s_%s"%( cname, bname ) ) )
             with m.If( self.we == 1 ):

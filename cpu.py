@@ -197,10 +197,8 @@ class CPU( Elaboratable ):
           # Store the requested value in memory.
           with m.Else():
             m.d.comb += [
-              self.mem.dmux.bus.dat_w.eq( self.rb.data ),
               self.mem.dmux.bus.we.eq( 1 ),
               self.mem.dmux.bus.cyc.eq( 1 ),
-              self.mem.ram.dw.eq( self.mem.imux.bus.dat_r[ 12 : 15 ] )
             ]
             # Don't proceed until the operation completes.
             with m.If( self.mem.dmux.bus.ack == 0 ):
@@ -238,21 +236,11 @@ class CPU( Elaboratable ):
                      Cat( self.ra.addr,
                           Repl( self.ra.addr[ 4 ], 27 ) ) ) ),
               self.csr.adr.eq( self.mem.imux.bus.dat_r[ 20 : 32 ] ),
-              self.csr.f.eq( self.mem.imux.bus.dat_r[ 12 : 15 ] )
+              self.csr.f.eq( self.mem.imux.bus.dat_r[ 12 : 15 ] ),
+              self.rc.data.eq( self.csr.dat_r ),
+              self.rc.en.eq( self.rc.addr != 0 ),
+              self.csr.we.eq( 1 )
             ]
-            # Wait a cycle to let CSR values propagate.
-            with m.If( iws == 1 ):
-              m.d.sync += self.csr.we.eq( 1 )
-              m.d.sync += [
-                iws.eq( 2 ),
-                self.pc.eq( self.pc )
-              ]
-            with m.Else():
-              m.d.sync += self.csr.we.eq( 0 )
-              m.d.comb += [
-                self.rc.data.eq( self.csr.dat_r ),
-                self.rc.en.eq( self.rc.addr != 0 )
-              ]
 
         # FENCE instruction: clear any I-caches and ensure all
         # memory operations are applied. There is no I-cache,
@@ -299,11 +287,15 @@ class CPU( Elaboratable ):
 
       # Store instructions: set the data bus' memory address.
       with m.Case( OP_STORE ):
-        m.d.comb += self.mem.dmux.bus.adr.eq(
-          self.ra.data + Cat(
-            self.mem.imux.bus.dat_r[ 7 : 12 ],
-            self.mem.imux.bus.dat_r[ 25 : 32 ],
-            Repl( self.mem.imux.bus.dat_r[ 31 ], 20 ) ) )
+        m.d.comb += [
+          self.mem.dmux.bus.adr.eq(
+            self.ra.data + Cat(
+              self.mem.imux.bus.dat_r[ 7 : 12 ],
+              self.mem.imux.bus.dat_r[ 25 : 32 ],
+              Repl( self.mem.imux.bus.dat_r[ 31 ], 20 ) ) ),
+          self.mem.ram.dw.eq( self.mem.imux.bus.dat_r[ 12 : 15 ] ),
+          self.mem.dmux.bus.dat_w.eq( self.rb.data )
+        ]
 
       # R-type ALU operation: set inputs for rc = ra ? rb
       with m.Case( OP_REG ):

@@ -2,9 +2,9 @@
 
 This is a work-in-progress implementation of [the core `RV32I` `RISC-V` instruction set](https://riscv.org/specifications/isa-spec-pdf/), written with nMigen.
 
-It is fairly simple, with no I-cache, timers, or configurable interrupts. But it can read programs out of SPI Flash, and it has one peripheral for basic GPIO and one for driving 'neopixel' LEDs.
+It is fairly simple, with no I-cache, timers, or configurable interrupts. But it can read programs out of SPI Flash, and it has one peripheral for basic GPIO and two for driving 'neopixel' LEDs.
 
-Currently it uses about 85% of the logic cells in an `iCE40UP5K`, but it seems to work. I'm hoping to make it smaller so that it can also fit a debugging interface and some more LED peripherals.
+Currently it uses about 90% of the logic cells in an `iCE40UP5K`, but it seems to work. I'm hoping to make it smaller so that it can also fit a debugging interface and some more LED peripherals.
 
 Know that I'm still learning how to use nMigen, and I wasn't experienced with digital logic design to begin with. So on the off chance that anybody stumbles across this, suggestions are always welcome!
 
@@ -88,14 +88,21 @@ The RISC-V RV32I compliance tests can be simulated, and they probably all pass. 
 
 # Control and Status Registers
 
-This CPU does not implement User mode, Supervisor mode, or Hypervisor mode. That means all of the code will run in the top-level Machine mode, which still requires a basic subset of the `RISC-V` "Control and Status Registers" (CSRs):
+This CPU does not implement User mode, Supervisor mode, or Hypervisor mode. That means all of the code will run in the top-level Machine mode, which still requires a basic subset of the `RISC-V` "Control and Status Registers" (CSRs).
 
 The `MIE` and `MIP` CSRs won't really function properly until I finish implementing interrupts in the CPU. I also haven't added the memory-mapped 'time' CSRs yet.
 
+Some CSRs which are unlikely to be used in the context of a small microcontroller have been disabled to save space by commenting them out (:no_entry:). They will act like other unrecognized CSRs, as read-only registers which always return 0.
+
 |    CSR Name     | Logic Implemented? |
 |:---------------:|:------------------:|
+| `MARCHID`       |     :no_entry:     |
+| `MIMPID`        |     :no_entry:     |
+| `MHARTID`       |     :no_entry:     |
+| `MVENDORID`     |     :no_entry:     |
 | `MISA`          | :heavy_check_mark: |
 | `MSTATUS`       | :heavy_check_mark: |
+| `MSTATUSH`      |     :no_entry:     |
 | `MTVEC`         | :heavy_check_mark: |
 | `MIE`           |         :x:        |
 | `MIP`           |         :x:        |
@@ -105,9 +112,11 @@ The `MIE` and `MIP` CSRs won't really function properly until I finish implement
 | `MTVAL`         | :heavy_check_mark: |
 | `MTIME`         |         :x:        |
 | `MTIMECMP`      |         :x:        |
-| `MCYCLE`        | :heavy_check_mark: |
+| `MCYCLE`        |     :no_entry:     |
+| `MCYCLEH`       |     :no_entry:     |
 | `MINSTRET`      | :heavy_check_mark: |
-| `MCOUNTINHIBIT` | :heavy_check_mark: |
+| `MINSTRETH`     |     :no_entry:     |
+| `MCOUNTINHIBIT` |     :no_entry:     |
 
 # Programming
 

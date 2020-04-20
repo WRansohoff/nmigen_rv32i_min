@@ -107,7 +107,7 @@ class NeoPixels( Elaboratable, Interface ):
     # Color array progress tracker.
     cprog  = Signal( 20, reset = 0 )
     # Current color.
-    ccol   = Signal( 32, reset = 0 )
+    ccol   = Signal( 8, reset = 0 )
     # Main countdown counter. For counting progress between color
     # bytes, and the latching signal's duration.
     ccount = Signal( 12, reset = 0 )
@@ -128,11 +128,9 @@ class NeoPixels( Elaboratable, Interface ):
             self.mux.bus.cyc.eq( 1 ),
           ]
           # Start transmitting once color data is ready.
-          with m.If( ( self.mux.bus.ack == 0 ) | ( self.mux.bus.cyc == 0 ) ):
-            m.next = "NPX_WAITING"
-          with m.Else():
+          with m.If( self.mux.bus.ack ):
             m.d.sync += [
-              ccol.eq( self.mux.bus.dat_r ),
+              ccol.eq( self.mux.bus.dat_r[ :8 ] ),
               self.mux.bus.cyc.eq( 0 )
             ]
             m.next = "NPX_TX"
@@ -165,7 +163,7 @@ class NeoPixels( Elaboratable, Interface ):
               m.d.sync += [
                 ccount.eq( 0 ),
                 cdown.eq( 0 ),
-                ccol.eq( self.mux.bus.dat_r ),
+                ccol.eq( self.mux.bus.dat_r[ :8 ] ),
                 self.mux.bus.cyc.eq( 0 )
               ]
             m.next = "NPX_TX"

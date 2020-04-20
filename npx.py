@@ -22,8 +22,7 @@ from isa import *
 # * 0x04: 'control register'. Bits by index:
 # ** 0:     'Start transfer': Send colors to the string of LEDs.
 #           Cleared by hardware after the latching period finishes.
-# ** 1:     Current pin value.
-# ** 2-7:   Reserved.
+# ** 1-7:   Reserved.
 # ** 8-20:  Number of LEDs in the string. The peripheral will access
 #           memory starting at the 'colors array address' register,
 #           and continuing for (3 * 'num_leds') bytes.
@@ -33,7 +32,7 @@ NPX_CR  = 4
 class NeoPixels( Elaboratable, Interface ):
   def __init__( self, ram_bus ):
     # Initialize wishbone bus interface for peripheral registers.
-    Interface.__init__( self, addr_width = 4, data_width = 32 )
+    Interface.__init__( self, addr_width = 3, data_width = 32 )
     self.memory_map = MemoryMap( addr_width = self.addr_width,
                                  data_width = self.data_width,
                                  alignment = 0 )
@@ -66,7 +65,6 @@ class NeoPixels( Elaboratable, Interface ):
     # Read bits default to 0. Peripheral bus and memory bus signals
     # follow their respective 'cyc' signals.
     m.d.comb += [
-      self.dat_r.eq( 0 ),
       self.stb.eq( self.cyc ),
       self.mux.bus.stb.eq( self.mux.bus.cyc )
     ]
@@ -88,7 +86,6 @@ class NeoPixels( Elaboratable, Interface ):
       with m.Case( NPX_CR ):
         m.d.comb += [
           self.dat_r.bit_select( 0, 1 ).eq( self.bsy ),
-          self.dat_r.bit_select( 1, 2 ).eq( self.px ),
           self.dat_r.bit_select( 8, 12 ).eq( self.col_len )
         ]
         with m.If( ( self.we == 1 ) &

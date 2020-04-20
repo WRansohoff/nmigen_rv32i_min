@@ -39,6 +39,7 @@ typedef struct
 #define GPIO  ( ( GPIO_TypeDef * )  0x40000000 )
 #define IOMUX ( ( IOMUX_TypeDef * ) 0x40010000 )
 #define NPX1  ( ( NPX_TypeDef * )   0x40020000 )
+#define NPX2  ( ( NPX_TypeDef * )   0x40020100 )
 
 // GPIO pin address offsets.
 // (not every pin is an I/O pin)
@@ -78,6 +79,7 @@ typedef struct
 // GPIO multiplexer pin configuration values.
 #define IOMUX_GPIO ( 0x0 )
 #define IOMUX_NPX1 ( 0x1 )
+#define IOMUX_NPX2 ( 0x2 )
 // GPIO multiplexer pin configuration offsets.
 #define IOMUX2_O   ( 8 )
 #define IOMUX3_O   ( 12 )

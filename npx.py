@@ -117,20 +117,12 @@ class NeoPixels( Elaboratable, Interface ):
       # 'Waiting' state: Do nothing until a new transfer is requested.
       with m.State( "NPX_WAITING" ):
         with m.If( self.bsy == 1 ):
-          # Reset FSM signals and initiate a bus transfer when
-          # a new transfer is requested.
+          # Kick off a new data transfer.
           m.d.sync += [
-            cprog.eq( 0 ),
-            ccount.eq( 0 ),
-            self.mux.bus.cyc.eq( 1 ),
+            cprog.eq( -1 ),
+            ccount.eq( 31 )
           ]
-          # Start transmitting once color data is ready.
-          with m.If( self.mux.bus.ack ):
-            m.d.sync += [
-              ccol.eq( self.mux.bus.dat_r[ :8 ] ),
-              self.mux.bus.cyc.eq( 0 )
-            ]
-            m.next = "NPX_TX"
+          m.next = "NPX_TX"
 
       # "Transmit colors" state: send colors, 8 bits at a time.
       with m.State( "NPX_TX" ):

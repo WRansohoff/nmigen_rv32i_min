@@ -96,16 +96,10 @@ class CPU( Elaboratable ):
 
       # Decoder switch case:
       with m.Switch( self.mem.imux.bus.dat_r[ 0 : 7 ] ):
-        # LUI / AUIPC instructions: set destination register to
-        # 20 upper bits, +pc for AUIPC.
-        with m.Case( '0-10111' ):
-          m.d.comb += [
-            self.rc.data.eq(
-              Mux( self.mem.imux.bus.dat_r[ 5 ], 0, self.pc ) +
-              Cat( Repl( 0, 12 ),
-                   self.mem.imux.bus.dat_r[ 12 : 32 ] ) ),
-            self.rc.en.eq( self.rc.addr != 0 )
-          ]
+        # LUI, AUIPC, R-type, and I-type instructions:
+        # write to the destination register unless it's x0.
+        with m.Case( '0-10-11' ):
+          m.d.comb += self.rc.en.eq( self.rc.addr != 0 )
 
         # JAL / JALR instructions: jump to a new address and place
         # the 'return PC' in the destination register (rc).
@@ -122,25 +116,12 @@ class CPU( Elaboratable ):
                    self.mem.imux.bus.dat_r[ 20 : 32 ],
                    Repl( self.mem.imux.bus.dat_r[ 31 ], 20 ) ) ),
           )
-          m.d.comb += [
-            self.rc.data.eq( self.pc + 4 ),
-            self.rc.en.eq( self.rc.addr != 0 )
-          ]
+          m.d.comb += self.rc.en.eq( self.rc.addr != 0 )
 
         # Conditional branch instructions: similar to JAL / JALR,
         # but only take the branch if the condition is met.
         with m.Case( OP_BRANCH ):
-          # BEQ / BNE: use SUB ALU operation to check equality.
-          # BLT / BGE / BLTU / BGEU: use SLT or SLTU ALU operation.
-          m.d.comb += [
-            self.alu.a.eq( self.ra.data ),
-            self.alu.b.eq( self.rb.data ),
-            self.alu.f.eq( Mux(
-              self.mem.imux.bus.dat_r[ 14 ],
-              Cat( self.mem.imux.bus.dat_r[ 13 ], 0b001 ),
-              0b1000 ) )
-          ]
-          # Check the result. If the ALU result is zero, then
+          # Check the ALU result. If it is zero, then:
           # a == b for BEQ/BNE, or a >= b for BLT[U]/BGE[U].
           with m.If( ( ( self.alu.y == 0 ) ^
                          self.mem.imux.bus.dat_r[ 12 ] ) !=
@@ -156,11 +137,6 @@ class CPU( Elaboratable ):
         # LB / LBU / LH / LHU / LW "load from memory" instructions:
         # load a value from memory into a register.
         with m.Case( OP_LOAD ):
-          # Set the data bus memory address to load from.
-          m.d.comb += self.mem.dmux.bus.adr.eq(
-            self.ra.data + Cat(
-              self.mem.imux.bus.dat_r[ 20 : 32 ],
-              Repl( self.mem.imux.bus.dat_r[ 31 ], 20 ) ) )
           # Trigger a trap if the load address is mis-aligned.
           # * Byte accesses are never mis-aligned.
           # * Word-aligned accesses are never mis-aligned.
@@ -210,12 +186,6 @@ class CPU( Elaboratable ):
         # SB / SH / SW instructions: store a value from a
         # register into memory.
         with m.Case( OP_STORE ):
-          # Set the data bus memory address to store to.
-          m.d.comb += self.mem.dmux.bus.adr.eq(
-            self.ra.data + Cat(
-              self.mem.imux.bus.dat_r[ 7 : 12 ],
-              self.mem.imux.bus.dat_r[ 25 : 32 ],
-              Repl( self.mem.imux.bus.dat_r[ 31 ], 20 ) ) )
           # Trigger a trap if the store address is mis-aligned.
           # (Same logic as checking for mis-aligned loads.)
           with m.If( ( ( self.mem.dmux.bus.adr[ :2 ] == 0 ) |
@@ -238,34 +208,6 @@ class CPU( Elaboratable ):
                 self.pc.eq( self.pc ),
                 iws.eq( 1 )
               ]
-
-        # R-type ALU operation: rc = ra ? rb
-        with m.Case( OP_REG ):
-          m.d.comb += [
-            self.alu.a.eq( self.ra.data ),
-            self.alu.b.eq( self.rb.data ),
-            self.alu.f.eq( Cat(
-              self.mem.imux.bus.dat_r[ 12 : 15 ],
-              self.mem.imux.bus.dat_r[ 30 ] ) ),
-            self.rc.data.eq( self.alu.y ),
-            self.rc.en.eq( self.rc.addr != 0 )
-          ]
-
-        # I-type ALU operation: rc = ra ? immediate
-        # (Immediate is truncated to fit funct7 for SLLI, SRLI, SRAI)
-        with m.Case( OP_IMM ):
-          m.d.comb += [
-            self.alu.a.eq( self.ra.data ),
-            self.alu.b.eq( Cat( self.mem.imux.bus.dat_r[ 20 : 32 ],
-              Repl( self.mem.imux.bus.dat_r[ 31 ], 20 ) ) ),
-            self.alu.f.eq( Cat(
-              self.mem.imux.bus.dat_r[ 12 : 15 ],
-              Mux( self.mem.imux.bus.dat_r[ 12 : 14 ] == 0b01,
-                   self.mem.imux.bus.dat_r[ 30 ],
-                   0 ) ) ),
-            self.rc.data.eq( self.alu.y ),
-            self.rc.en.eq( self.rc.addr != 0 )
-          ]
 
         # System call instruction: ECALL, EBREAK, MRET,
         # and atomic CSR operations.
@@ -318,6 +260,75 @@ class CPU( Elaboratable ):
         # There is also no pipelining. So...this is a nop.
         with m.Case( OP_FENCE ):
           pass
+
+    # 'Always-on' decode/execute logic:
+    with m.Switch( self.mem.imux.bus.dat_r[ 0 : 7 ] ):
+      # LUI / AUIPC instructions: set destination register to
+      # 20 upper bits, +pc for AUIPC.
+      with m.Case( '0-10111' ):
+        m.d.comb += self.rc.data.eq(
+          Mux( self.mem.imux.bus.dat_r[ 5 ], 0, self.pc ) +
+          Cat( Repl( 0, 12 ),
+               self.mem.imux.bus.dat_r[ 12 : 32 ] ) )
+
+      # JAL / JALR instructions: set destination register to
+      # the 'return PC' value.
+      with m.Case( '110-111' ):
+        m.d.comb += self.rc.data.eq( self.pc + 4 )
+
+      # Conditional branch instructions:
+      # set us up the ALU for the condition check.
+      with m.Case( OP_BRANCH ):
+        # BEQ / BNE: use SUB ALU operation to check equality.
+        # BLT / BGE / BLTU / BGEU: use SLT or SLTU ALU operation.
+        m.d.comb += [
+          self.alu.a.eq( self.ra.data ),
+          self.alu.b.eq( self.rb.data ),
+          self.alu.f.eq( Mux(
+            self.mem.imux.bus.dat_r[ 14 ],
+            Cat( self.mem.imux.bus.dat_r[ 13 ], 0b001 ),
+            0b1000 ) )
+        ]
+
+      # Load instructions: Set the data bus' memory address.
+      with m.Case( OP_LOAD ):
+        m.d.comb += self.mem.dmux.bus.adr.eq(
+          self.ra.data + Cat(
+            self.mem.imux.bus.dat_r[ 20 : 32 ],
+            Repl( self.mem.imux.bus.dat_r[ 31 ], 20 ) ) )
+
+      # Store instructions: set the data bus' memory address.
+      with m.Case( OP_STORE ):
+        m.d.comb += self.mem.dmux.bus.adr.eq(
+          self.ra.data + Cat(
+            self.mem.imux.bus.dat_r[ 7 : 12 ],
+            self.mem.imux.bus.dat_r[ 25 : 32 ],
+            Repl( self.mem.imux.bus.dat_r[ 31 ], 20 ) ) )
+
+      # R-type ALU operation: set inputs for rc = ra ? rb
+      with m.Case( OP_REG ):
+        m.d.comb += [
+          self.alu.a.eq( self.ra.data ),
+          self.alu.b.eq( self.rb.data ),
+          self.alu.f.eq( Cat(
+            self.mem.imux.bus.dat_r[ 12 : 15 ],
+            self.mem.imux.bus.dat_r[ 30 ] ) ),
+          self.rc.data.eq( self.alu.y )
+        ]
+
+      # I-type ALU operation: set inputs for rc = ra ? immediate
+      with m.Case( OP_IMM ):
+        m.d.comb += [
+          self.alu.a.eq( self.ra.data ),
+          self.alu.b.eq( Cat( self.mem.imux.bus.dat_r[ 20 : 32 ],
+            Repl( self.mem.imux.bus.dat_r[ 31 ], 20 ) ) ),
+          self.alu.f.eq( Cat(
+            self.mem.imux.bus.dat_r[ 12 : 15 ],
+            Mux( self.mem.imux.bus.dat_r[ 12 : 14 ] == 0b01,
+                 self.mem.imux.bus.dat_r[ 30 ],
+                 0 ) ) ),
+          self.rc.data.eq( self.alu.y )
+        ]
 
     # End of CPU module definition.
     return m

@@ -38,7 +38,3 @@ def trigger_trap( self, cpu, trap_num ):
     # "Vecotred" interrupt mode: each trap has its own handler.
     cpu.d.sync += self.pc.eq( Cat( Repl( 0, 2 ),
       ( self.csr.mtvec_base + trap_num ) ) )
-  # Move back to 'instruction fetch' state.
-  # (TODO: remove after finalizing the move away from using
-  #  an FSM with von-neumann architecture)
-  #cpu.next = "CPU_IFETCH"

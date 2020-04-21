@@ -90,7 +90,7 @@ The RISC-V RV32I compliance tests can be simulated, and they probably all pass. 
 
 This CPU does not implement User mode, Supervisor mode, or Hypervisor mode. That means all of the code will run in the top-level Machine mode, which still requires a basic subset of the `RISC-V` "Control and Status Registers" (CSRs).
 
-The `MIE` and `MIP` CSRs won't really function properly until I finish implementing interrupts in the CPU. I also haven't added the memory-mapped 'time' CSRs yet.
+The `MIE`, `MIP`, `MTIME`, and `MTIMECMP` CSRs are not currently implemented.
 
 Some CSRs which are unlikely to be used in the context of a small microcontroller have been disabled to save space by commenting them out (:no_entry:). They will act like other unrecognized CSRs, as read-only registers which always return 0.
 

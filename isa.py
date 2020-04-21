@@ -217,6 +217,22 @@ MTVEC_MODE_DIRECT   = 0b0
     'c_addr': CSRA_MIMPID,
     'bits': { 'imp': [ 0, 31, 'r', MIMP_ID ] }
   },
+  'mie': {
+    'c_addr': CSRA_MIE,
+    'bits': {
+      'ms': [ 3,  3,  'rw', 0 ],
+      'mt': [ 7,  7,  'rw', 0 ],
+      'me': [ 11, 11, 'rw', 0 ]
+    }
+  },
+  'mip': {
+    'c_addr': CSRA_MIP,
+    'bits': {
+      'ms': [ 3,  3,  'rw', 0 ],
+      'mt': [ 7,  7,  'rw', 0 ],
+      'me': [ 11, 11, 'rw', 0 ]
+    }
+  },
   'mstatush': {
     'c_addr': CSRA_MSTATUSH,
     'bits': {
@@ -252,7 +268,7 @@ CSRS = {
     'c_addr': CSRA_MISA,
     'bits': {
       'mxl': [ 30, 31, 'r', MISA_MSL_32 ],
-      'ext': [ 0,  29, 'r', 0x00000100 ]
+      'ext': [ 8,  8,  'r', 1 ]
     }
   },
   'mstatus': {
@@ -267,27 +283,10 @@ CSRS = {
     'c_addr': CSRA_MINSTRET,
     'bits': { 'instrs': [ 0, 31, 'rw', 0 ] }
   },
-  'mie': {
-    'c_addr': CSRA_MIE,
-    'bits': {
-      'ms': [ 3,  3,  'rw', 0 ],
-      'mt': [ 7,  7,  'rw', 0 ],
-      'me': [ 11, 11, 'rw', 0 ]
-    }
-  },
-  'mip': {
-    'c_addr': CSRA_MIP,
-    'bits': {
-      'ms': [ 3,  3,  'rw', 0 ],
-      'mt': [ 7,  7,  'rw', 0 ],
-      'me': [ 11, 11, 'rw', 0 ]
-    }
-  },
   'mtvec': {
     'c_addr': CSRA_MTVEC,
     'bits': {
       'mode': [ 0, 0,  'rw', 0 ],
-      'res1': [ 1, 1,  'r',  0 ],
       'base': [ 2, 31, 'rw', 0 ]
     }
   },
@@ -295,7 +294,7 @@ CSRS = {
     'c_addr': CSRA_MCAUSE,
     'bits': {
       'interrupt': [ 31, 31, 'rw', 0 ],
-      'ecode':     [ 0, 30, 'rw', 0 ]
+      'ecode':     [ 0, 30,  'rw', 0 ]
     }
   },
   'mscratch': {
@@ -305,7 +304,6 @@ CSRS = {
   'mepc': {
     'c_addr': CSRA_MEPC,
     'bits': {
-      'res1': [ 0, 1,  'r', 0 ],
       'mepc': [ 2, 31, 'rw', 0 ]
     }
   },

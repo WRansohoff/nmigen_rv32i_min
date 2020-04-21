@@ -82,9 +82,11 @@ int main( void ) {
   // Clear the .bss RAM section.
   memset( &_sbss, 0x00, ( ( void* )&_ebss - ( void* )&_sbss ) );
 
-  // Connect GPIO pins 2 and 46 to the "neopixel" peripherals.
+  // Connect GPIO pins 2, 45, 46, 47 to the "neopixel" peripherals.
   IOMUX->CFG1 |= ( IOMUX_NPX1 << IOMUX2_O );
-  IOMUX->CFG6 |= ( IOMUX_NPX2 << IOMUX46_O );
+  IOMUX->CFG6 |= ( IOMUX_NPX2 << IOMUX45_O );
+  IOMUX->CFG6 |= ( IOMUX_NPX3 << IOMUX46_O );
+  IOMUX->CFG6 |= ( IOMUX_NPX4 << IOMUX47_O );
   // Set the colors address and length in the peripehrals.
   NPX1->ADR = ( uint32_t )&color_bytes;
   NPX1->CR |= ( NUM_LEDS << NPX_CR_LEN_O );
@@ -95,6 +97,11 @@ int main( void ) {
   // loads/stores and both of the 'neopixel' peripherals.
   NPX2->ADR = ( uint32_t )&color_bytes[ NUM_LEDS / 2 ];
   NPX2->CR |= ( ( NUM_LEDS / 2 ) << NPX_CR_LEN_O );
+  // Also test neopixel peripherals #3 and 4.
+  NPX3->ADR = ( uint32_t )&color_bytes[ NUM_LEDS / 3 ];
+  NPX3->CR |= ( ( NUM_LEDS / 3 ) << NPX_CR_LEN_O );
+  NPX4->ADR = ( uint32_t )&color_bytes[ NUM_LEDS / 4 ];
+  NPX4->CR |= ( ( NUM_LEDS / 4 ) << NPX_CR_LEN_O );
 
   // Progress counters.
   int progress = 0;
@@ -119,6 +126,10 @@ int main( void ) {
     NPX1->CR |= NPX_CR_BSY_M;
     while( ( NPX2->CR & NPX_CR_BSY_M ) != 0 ) {};
     NPX2->CR |= NPX_CR_BSY_M;
+    while( ( NPX3->CR & NPX_CR_BSY_M ) != 0 ) {};
+    NPX3->CR |= NPX_CR_BSY_M;
+    while( ( NPX4->CR & NPX_CR_BSY_M ) != 0 ) {};
+    NPX4->CR |= NPX_CR_BSY_M;
   }
   return 0; // lol
 }

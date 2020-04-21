@@ -70,7 +70,7 @@ class CPU( Elaboratable ):
     m.submodules.rc  = self.rc
 
     # Wait-state counter to let internal memories load.
-    iws = Signal( 2, reset = 0 )
+    iws = Signal( 1, reset = 0 )
 
     # Top-level combinatorial logic.
     m.d.comb += [
@@ -164,10 +164,10 @@ class CPU( Elaboratable ):
               self.mem.imux.bus.dat_r[ 7 ],
               Repl( self.mem.imux.bus.dat_r[ 31 ], 20 ) ) )
 
-        # LB / LBU / LH / LHU / LW "load from memory" instructions:
-        # load a value from memory into a register.
-        with m.Case( OP_LOAD ):
-          # Trigger a trap if the load address is mis-aligned.
+        # Load / Store instructions: perform memory access
+        # through the data bus.
+        with m.Case( '0-00011' ):
+          # Trigger a trap if the address is mis-aligned.
           # * Byte accesses are never mis-aligned.
           # * Word-aligned accesses are never mis-aligned.
           # * Halfword accesses are only mis-aligned when both of
@@ -179,42 +179,24 @@ class CPU( Elaboratable ):
                        ( ~( self.mem.dmux.bus.adr[ 0 ] &
                             self.mem.dmux.bus.adr[ 1 ] &
                             self.mem.imux.bus.dat_r[ 12 ] ) ) ) == 0 ):
-            self.trigger_trap( m, TRAP_LMIS )
+            self.trigger_trap( m, Cat( Repl( 0, 1 ),
+              self.mem.imux.bus.dat_r[ 5 ], Repl( 1, 1 ) ) )
           with m.Else():
-            m.d.comb += self.mem.dmux.bus.cyc.eq( 1 )
-            # Wait for the memory operation to complete.
-            with m.If( self.mem.dmux.bus.ack == 0 ):
-              m.d.sync += [
-                self.pc.eq( self.pc ),
-                iws.eq( 1 )
-              ]
-            # Put the loaded value into the destination register.
-            with m.Else():
-              m.d.comb += self.rc.en.eq( self.rc.addr != 0 )
-
-        # SB / SH / SW instructions: store a value from a
-        # register into memory.
-        with m.Case( OP_STORE ):
-          # Trigger a trap if the store address is mis-aligned.
-          # (Same logic as checking for mis-aligned loads.)
-          with m.If( ( ( self.mem.dmux.bus.adr[ :2 ] == 0 ) |
-                       ( self.mem.imux.bus.dat_r[ 12 : 14 ] == 0 ) |
-                       ( ~( self.mem.dmux.bus.adr[ 0 ] &
-                            self.mem.dmux.bus.adr[ 1 ] &
-                            self.mem.imux.bus.dat_r[ 12 ] ) ) ) == 0 ):
-            self.trigger_trap( m, TRAP_SMIS )
-          # Store the requested value in memory.
-          with m.Else():
+            # Activate the data bus.
             m.d.comb += [
-              self.mem.dmux.bus.we.eq( 1 ),
-              self.mem.dmux.bus.cyc.eq( 1 )
+              self.mem.dmux.bus.cyc.eq( 1 ),
+              # Stores only: set the 'write enable' bit.
+              self.mem.dmux.bus.we.eq( self.mem.imux.bus.dat_r[ 5 ] )
             ]
-            # Don't proceed until the operation completes.
+            # Don't proceed until the memory access finishes.
             with m.If( self.mem.dmux.bus.ack == 0 ):
               m.d.sync += [
                 self.pc.eq( self.pc ),
                 iws.eq( 1 )
               ]
+            # Loads only: write to the CPU register.
+            with m.Elif( self.mem.imux.bus.dat_r[ 5 ] == 0 ):
+              m.d.comb += self.rc.en.eq( self.rc.addr != 0 )
 
         # System call instruction: ECALL, EBREAK, MRET,
         # and atomic CSR operations.

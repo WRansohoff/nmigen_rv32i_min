@@ -198,7 +198,7 @@ class CPU( Elaboratable ):
           with m.Else():
             m.d.comb += [
               self.mem.dmux.bus.we.eq( 1 ),
-              self.mem.dmux.bus.cyc.eq( 1 ),
+              self.mem.dmux.bus.cyc.eq( 1 )
             ]
             # Don't proceed until the operation completes.
             with m.If( self.mem.dmux.bus.ack == 0 ):

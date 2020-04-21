@@ -176,24 +176,6 @@ class CPU( Elaboratable ):
               self.rc.en.eq( self.rc.addr != 0 ),
               self.mem.dmux.bus.cyc.eq( 1 )
             ]
-            with m.Switch( self.mem.imux.bus.dat_r[ 12 : 15 ] ):
-              with m.Case( F_LW ):
-                m.d.comb += self.rc.data.eq(
-                  self.mem.dmux.bus.dat_r )
-              with m.Case( F_LHU ):
-                m.d.comb += self.rc.data.eq(
-                  self.mem.dmux.bus.dat_r[ :16 ] )
-              with m.Case( F_LBU ):
-                m.d.comb += self.rc.data.eq(
-                  self.mem.dmux.bus.dat_r[ :8 ] )
-              with m.Case( F_LH ):
-                m.d.comb += self.rc.data.eq( Cat(
-                  self.mem.dmux.bus.dat_r[ :16 ],
-                  Repl( self.mem.dmux.bus.dat_r[ 15 ], 16 ) ) )
-              with m.Case( F_LB ):
-                m.d.comb += self.rc.data.eq( Cat(
-                  self.mem.dmux.bus.dat_r[ :8 ],
-                  Repl( self.mem.dmux.bus.dat_r[ 7 ], 24 ) ) )
 
         # SB / SH / SW instructions: store a value from a
         # register into memory.
@@ -282,14 +264,37 @@ class CPU( Elaboratable ):
             0b1000 ) )
         ]
 
-      # Load / Store instructions: Set the memory address.
-      with m.Case( '0-00011' ):
-        m.d.comb += self.mem.dmux.bus.adr.eq( self.ra.data + Cat(
-          Mux( self.mem.imux.bus.dat_r[ 5 ],
-               Cat( self.mem.imux.bus.dat_r[ 7 : 12 ],
-                    self.mem.imux.bus.dat_r[ 25 : 32 ] ),
-               self.mem.imux.bus.dat_r[ 20 : 32 ] ),
-          Repl( self.mem.imux.bus.dat_r[ 31 ], 20 ) ) )
+      # Load instructions: Set the memory address and data register.
+      with m.Case( OP_LOAD ):
+        m.d.comb += [
+          self.mem.dmux.bus.adr.eq( self.ra.data +
+            Cat( self.mem.imux.bus.dat_r[ 20 : 32 ],
+                 Repl( self.mem.imux.bus.dat_r[ 31 ], 20 ) ) ),
+          self.rc.data.bit_select( 0, 8 ).eq(
+            self.mem.dmux.bus.dat_r[ :8 ] )
+        ]
+        with m.If( self.mem.imux.bus.dat_r[ 12 ] ):
+          m.d.comb += [
+            self.rc.data.bit_select( 8, 8 ).eq(
+              self.mem.dmux.bus.dat_r[ 8 : 16 ] ),
+            self.rc.data.bit_select( 16, 16 ).eq(
+              Repl( ( self.mem.imux.bus.dat_r[ 14 ] == 0 ) &
+                    self.mem.dmux.bus.dat_r[ 15 ], 16 ) )
+          ]
+        with m.Elif( self.mem.imux.bus.dat_r[ 13 ] ):
+          m.d.comb += self.rc.data.bit_select( 8, 24 ).eq(
+            self.mem.dmux.bus.dat_r[ 8 : 32 ] )
+        with m.Else():
+          m.d.comb += self.rc.data.bit_select( 8, 24 ).eq(
+            Repl( ( self.mem.imux.bus.dat_r[ 14 ] == 0 ) &
+                  self.mem.dmux.bus.dat_r[ 7 ], 24 ) )
+
+      # Store instructions: Set the memory address.
+      with m.Case( OP_STORE ):
+        m.d.comb += self.mem.dmux.bus.adr.eq( self.ra.data +
+          Cat( self.mem.imux.bus.dat_r[ 7 : 12 ],
+               self.mem.imux.bus.dat_r[ 25 : 32 ],
+               Repl( self.mem.imux.bus.dat_r[ 31 ], 20 ) ) )
 
       # R-type ALU operation: set inputs for rc = ra ? rb
       with m.Case( OP_REG ):

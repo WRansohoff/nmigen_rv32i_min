@@ -532,7 +532,7 @@ if __name__ == "__main__":
       # it is with chips that have (I think) wider LUTs, but...
       #sopts += '-abc9 '
       prog_start = ( 2 * 1024 * 1024 )
-      cpu = CPU( SPI_ROM( prog_start, prog_start + 2048, None ) )
+      cpu = CPU( SPI_ROM( prog_start, prog_start * 2, None ) )
       UpduinoV2Platform().build( ResetInserter( cpu.clk_rst )( cpu ),
                                  do_build = True,
                                  do_program = False,

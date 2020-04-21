@@ -277,21 +277,17 @@ class CPU( Elaboratable ):
             0b1000 ) )
         ]
 
-      # Load instructions: Set the data bus' memory address.
-      with m.Case( OP_LOAD ):
-        m.d.comb += self.mem.dmux.bus.adr.eq(
-          self.ra.data + Cat(
-            self.mem.imux.bus.dat_r[ 20 : 32 ],
-            Repl( self.mem.imux.bus.dat_r[ 31 ], 20 ) ) )
-
-      # Store instructions: set the data bus' memory address.
-      with m.Case( OP_STORE ):
+      # Load / Store instructions: Set the memory address and
+      # write data / width. Load instructions just don't set the
+      # 'write enable' bits.
+      with m.Case( '0-00011' ):
         m.d.comb += [
-          self.mem.dmux.bus.adr.eq(
-            self.ra.data + Cat(
-              self.mem.imux.bus.dat_r[ 7 : 12 ],
-              self.mem.imux.bus.dat_r[ 25 : 32 ],
-              Repl( self.mem.imux.bus.dat_r[ 31 ], 20 ) ) ),
+          self.mem.dmux.bus.adr.eq( self.ra.data + Cat(
+            Mux( self.mem.imux.bus.dat_r[ 5 ],
+                 Cat( self.mem.imux.bus.dat_r[ 7 : 12 ],
+                      self.mem.imux.bus.dat_r[ 25 : 32 ] ),
+                 self.mem.imux.bus.dat_r[ 20 : 32 ] ),
+            Repl( self.mem.imux.bus.dat_r[ 31 ], 20 ) ) ),
           self.mem.ram.dw.eq( self.mem.imux.bus.dat_r[ 12 : 15 ] ),
           self.mem.dmux.bus.dat_w.eq( self.rb.data )
         ]

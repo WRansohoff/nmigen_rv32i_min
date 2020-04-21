@@ -108,18 +108,20 @@ class NeoPixels( Elaboratable, Interface ):
     # Main countdown counter. For counting progress between color
     # bytes, and the latching signal's duration.
     ccount = Signal( 12, reset = 0 )
-    m.d.comb += self.mux.bus.adr.eq( self.col_adr + cprog )
     # 6MHz->3MHz countdown.
     cdown  = Signal( 1, reset = 0 )
+
+    # Set the memory interface's address to the current color byte.
+    m.d.comb += self.mux.bus.adr.eq( self.col_adr + cprog )
 
     # FSM logic:
     with m.FSM():
       # 'Waiting' state: Do nothing until a new transfer is requested.
       with m.State( "NPX_WAITING" ):
+        # Kick off a new data transfer once 'busy / start' is set.
         with m.If( self.bsy == 1 ):
-          # Kick off a new data transfer.
           m.d.sync += [
-            cprog.eq( -1 ),
+            cprog.eq( 0 ),
             ccount.eq( 31 )
           ]
           m.next = "NPX_TX"
@@ -129,53 +131,41 @@ class NeoPixels( Elaboratable, Interface ):
         # Every 8 bits (4 3MHz 'ticks' * 8 = 32), read the next
         # color byte from memory.
         with m.If( ccount == 31 ):
+          m.d.comb += self.mux.bus.cyc.eq( 1 )
+          m.d.sync += cdown.eq( 1 )
           # If we've reached the end of the colors array, move
           # to the 'latch' state to finalize the transaction.
           with m.If( cprog == ( self.col_len * 3 ) ):
-            m.d.sync += [
-              ccount.eq( 0 ),
-              self.mux.bus.cyc.eq( 0 )
-            ]
+            m.d.sync += ccount.eq( 0 )
             m.next = "NPX_LATCH"
           # Otherwise, read the next byte from memory. It should
           # be okay to wait for the 'ack' signal, because the LEDs
           # can tolerate up to a few microseconds' delay between
           # color bits before they 'latch'. But this only works
           # with fast internal memory like RAM.
-          with m.Else():
-            with m.If( self.mux.bus.cyc == 0 ):
-              m.d.sync += [
-                cprog.eq( cprog + 1 ),
-                self.mux.bus.cyc.eq( 1 )
-              ]
-            with m.Elif( self.mux.bus.ack == 1 ):
-              m.d.sync += [
-                ccount.eq( 0 ),
-                cdown.eq( 0 ),
-                ccol.eq( self.mux.bus.dat_r[ :8 ] ),
-                self.mux.bus.cyc.eq( 0 )
-              ]
-            m.next = "NPX_TX"
+          with m.Elif( self.mux.bus.ack ):
+            m.d.sync += [
+              cprog.eq( cprog + 1 ),
+              ccount.eq( 0 ),
+              ccol.eq( self.mux.bus.dat_r[ :8 ] )
+            ]
         # If the current color byte is valid and we aren't done
         # with it yet, send the next bit spread out over four 3MHz
         # 'ticks' as described above.
         with m.Else():
+          # 'ccount' tracks the 3MHz 'ticks'.
+          # 'Tick 1': Pull pin high.
+          # 'Tick 2 / 3': Pull pin to the color bit (0 or 1).
+          # 'Tick 4': Pull pin low.
+          m.d.comb += self.px.eq( Mux(
+            ccount[ 0 ] ^ ccount[ 1 ],
+            ccol[ 7 ],
+            ccount[ 0 ] == 0 ) )
           # 'cdown' scales down a (3*N)MHz clock. In this case, N=2.
           m.d.sync += cdown.eq( cdown + 1 )
           with m.If( cdown == 0b1 ):
             m.d.sync += ccount.eq( ccount + 1 )
-          # 'ccount' tracks the 3MHz 'ticks'. 'Tick 1': Pull pin high.
-          with m.If( ccount[ :2 ] == 0b00 ):
-            m.d.comb += self.px.eq( 1 )
-          # 'Tick 2': Pull pin to the desired color bit (0 or 1).
-          with m.Elif( ( ccount[ :2 ] == 0b01 ) |
-                       ( ccount[ :2 ] == 0b10 ) ):
-            m.d.comb += self.px.eq( ccol[ 7 ] )
-          # 'Tick 3': Pull pin low.
-          with m.Else():
-            m.d.comb += self.px.eq( 0 )
-            # Finally, move on to the next color bit.
-            with m.If( cdown == 0b1 ):
+            with m.If( ccount[ :2 ] == 0b11 ):
               m.d.sync += ccol.eq( ccol << 1 )
 
       # "Latch" state: hold the pin low for a few dozen microseconds.
@@ -183,7 +173,7 @@ class NeoPixels( Elaboratable, Interface ):
       # SK6812s seem to tolerate shorter latches than WS2812Bs IME.
       with m.State( "NPX_LATCH" ):
         m.d.sync += ccount.eq( ccount + 1 )
-        with m.If( ccount[ -1: ] == 1 ):
+        with m.If( ccount[ -1 ] ):
           m.next = "NPX_WAITING"
           m.d.sync += self.bsy.eq( 0 )
 

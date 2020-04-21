@@ -16,6 +16,7 @@ from isa import *
 # * 0x1: Neopixel peripheral #1          #
 # * 0x2: Neopixel peripheral #2          #
 # * 0x3: Neopixel peripheral #3          #
+# * 0x4: Neopixel peripheral #4          #
 ##########################################
 
 # Dummy GPIO pin class for simulations.
@@ -44,6 +45,7 @@ class GPIO_Mux( Elaboratable, Interface ):
     self.npx1 = periphs[ 1 ]
     self.npx2 = periphs[ 2 ]
     self.npx3 = periphs[ 3 ]
+    self.npx4 = periphs[ 4 ]
 
   def elaborate( self, platform ):
     m = Module()
@@ -119,6 +121,13 @@ class GPIO_Mux( Elaboratable, Interface ):
             m.d.sync += [
               self.p[ i ].oe.eq( 1 ),
               self.p[ i ].o.eq( self.npx3.px )
+            ]
+          # Neopixel peripheral #4
+          with m.Case( 0x4 ):
+            # Set pin to output mode, and set its current value.
+            m.d.sync += [
+              self.p[ i ].oe.eq( 1 ),
+              self.p[ i ].o.eq( self.npx4.px )
             ]
 
     # (End of GPIO multiplexer module)

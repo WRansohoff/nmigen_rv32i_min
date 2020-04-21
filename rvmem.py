@@ -23,6 +23,7 @@ from ram import *
 # ** 0x400200-- = Neopixel peripheral #1                    #
 # ** 0x400201-- = Neopixel peripheral #2                    #
 # ** 0x400202-- = Neopixel peripheral #3                    #
+# ** 0x400203-- = Neopixel peripheral #4                    #
 #############################################################
 
 class RV_Memory( Elaboratable ):
@@ -51,13 +52,13 @@ class RV_Memory( Elaboratable ):
     self.dmux.add( self.npx1,     addr = 0x40020000 )
     self.npx2 = NeoPixels( self.ram.new_bus() )
     self.dmux.add( self.npx2,     addr = 0x40020100 )
-    # 3 'neopixel' peripherals push the design to use ~95% of the
-    # chip's resources, so only use 2 for now.
-    #self.npx3 = NeoPixels( self.ram.new_bus() )
-    #self.dmux.add( self.npx3,     addr = 0x40020200 )
-    self.npx3 = self.npx2
+    self.npx3 = NeoPixels( self.ram.new_bus() )
+    self.dmux.add( self.npx3,     addr = 0x40020200 )
+    self.npx4 = NeoPixels( self.ram.new_bus() )
+    self.dmux.add( self.npx4,     addr = 0x40020300 )
     self.gpio_mux = GPIO_Mux( [ self.gpio, self.npx1,
-                                self.npx2, self.npx3 ] )
+                                self.npx2, self.npx3,
+                                self.npx4 ] )
     self.dmux.add( self.gpio_mux, addr = 0x40010000 )
 
     # Add ROM and RAM buses to the instruction multiplexer.
@@ -77,7 +78,8 @@ class RV_Memory( Elaboratable ):
     m.submodules.gpio     = self.gpio
     m.submodules.npx1     = self.npx1
     m.submodules.npx2     = self.npx2
-    #m.submodules.npx3     = self.npx3
+    m.submodules.npx3     = self.npx3
+    m.submodules.npx4     = self.npx4
     m.submodules.gpio_mux = self.gpio_mux
 
     # Currently, all bus cycles are single-transaction.

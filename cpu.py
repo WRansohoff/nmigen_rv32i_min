@@ -180,19 +180,17 @@ class CPU( Elaboratable ):
                             self.mem.dmux.bus.adr[ 1 ] &
                             self.mem.imux.bus.dat_r[ 12 ] ) ) ) == 0 ):
             self.trigger_trap( m, TRAP_LMIS )
-          # Wait for the memory operation to complete.
-          with m.Elif( self.mem.dmux.bus.ack == 0 ):
-            m.d.comb += self.mem.dmux.bus.cyc.eq( 1 )
-            m.d.sync += [
-              self.pc.eq( self.pc ),
-              iws.eq( 1 )
-            ]
-          # Put the loaded value into the destination register.
           with m.Else():
-            m.d.comb += [
-              self.rc.en.eq( self.rc.addr != 0 ),
-              self.mem.dmux.bus.cyc.eq( 1 )
-            ]
+            m.d.comb += self.mem.dmux.bus.cyc.eq( 1 )
+            # Wait for the memory operation to complete.
+            with m.If( self.mem.dmux.bus.ack == 0 ):
+              m.d.sync += [
+                self.pc.eq( self.pc ),
+                iws.eq( 1 )
+              ]
+            # Put the loaded value into the destination register.
+            with m.Else():
+              m.d.comb += self.rc.en.eq( self.rc.addr != 0 )
 
         # SB / SH / SW instructions: store a value from a
         # register into memory.

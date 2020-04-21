@@ -9,7 +9,6 @@ from mux_rom import *
 from spi_rom import *
 from rom import *
 from rvmem import *
-from cpu_helpers import *
 
 import os
 import sys
@@ -42,6 +41,20 @@ class CPU( Elaboratable ):
     # Memory module to hold peripherals and ROM / RAM module(s)
     # (4KB of RAM = 1024 words)
     self.mem    = RV_Memory( rom_module, 1024 )
+
+  # Helper method to enter a trap handler: jump to the appropriate
+  # address, and set the MCAUSE / MEPC CSRs.
+  def trigger_trap( self, m, trap_num ):
+    m.d.sync += [
+      # Set mcause, mepc, interrupt context flag.
+      self.csr.mcause_interrupt.eq( 0 ),
+      self.csr.mcause_ecode.eq( trap_num ),
+      self.csr.mepc_mepc.eq( Past( self.pc ).bit_select( 2, 30 ) ),
+      # Set PC to the interrupt handler address.
+      self.pc.eq( Cat( Repl( 0, 2 ),
+                      ( self.csr.mtvec_base +
+                        Mux( self.csr.mtvec_mode, trap_num, 0 ) ) ) )
+    ]
 
   # CPU object's 'elaborate' method to generate the hardware logic.
   def elaborate( self, platform ):
@@ -85,7 +98,7 @@ class CPU( Elaboratable ):
     # Trigger an 'instruction mis-aligned' trap if necessary.
     with m.If( self.pc[ :2 ] != 0 ):
       m.d.sync += self.csr.mtval_einfo.eq( self.pc )
-      trigger_trap( self, m, TRAP_IMIS )
+      self.trigger_trap( m, TRAP_IMIS )
     with m.Else():
       # I-bus is active until it completes a transaction.
       m.d.comb += self.mem.imux.bus.cyc.eq( iws == 0 )
@@ -96,8 +109,12 @@ class CPU( Elaboratable ):
       # (This also lets the instruction bus' 'cyc' signal fall.)
       m.d.sync += iws.eq( 1 )
       with m.If( iws == 0 ):
-        # Increment the MINSTRET counter CSR. TODO: obo
-        minstret_incr( self, m )
+        # Increment pared-down 32-bit MINSTRET counter.
+        # I'd remove the whole MINSTRET CSR to save space, but the
+        # test harnesses depend on it to count instructions.
+        # TODO: This is OBO; it'll be 1 before the first retire.
+        m.d.sync += self.csr.minstret_instrs.eq(
+          self.csr.minstret_instrs + 1 )
 
     # Execute the current instruction, once it loads.
     with m.If( iws != 0 ):
@@ -162,7 +179,7 @@ class CPU( Elaboratable ):
                        ( ~( self.mem.dmux.bus.adr[ 0 ] &
                             self.mem.dmux.bus.adr[ 1 ] &
                             self.mem.imux.bus.dat_r[ 12 ] ) ) ) == 0 ):
-            trigger_trap( self, m, TRAP_LMIS )
+            self.trigger_trap( m, TRAP_LMIS )
           # Wait for the memory operation to complete.
           with m.Elif( self.mem.dmux.bus.ack == 0 ):
             m.d.comb += self.mem.dmux.bus.cyc.eq( 1 )
@@ -187,7 +204,7 @@ class CPU( Elaboratable ):
                        ( ~( self.mem.dmux.bus.adr[ 0 ] &
                             self.mem.dmux.bus.adr[ 1 ] &
                             self.mem.imux.bus.dat_r[ 12 ] ) ) ) == 0 ):
-            trigger_trap( self, m, TRAP_SMIS )
+            self.trigger_trap( m, TRAP_SMIS )
           # Store the requested value in memory.
           with m.Else():
             m.d.comb += [
@@ -209,11 +226,11 @@ class CPU( Elaboratable ):
               # An 'empty' ECALL instruction should raise an
               # 'environment-call-from-M-mode" exception.
               with m.Case( 0 ):
-                trigger_trap( self, m, TRAP_ECALL )
+                self.trigger_trap( m, TRAP_ECALL )
               # "EBREAK" instruction: enter the interrupt context
               # with 'breakpoint' as the cause of the exception.
               with m.Case( 1 ):
-                trigger_trap( self, m, TRAP_BREAK )
+                self.trigger_trap( m, TRAP_BREAK )
               # 'MRET' jumps to the stored 'pre-trap' PC in the
               # 30 MSbits of the MEPC CSR.
               with m.Case( 2 ):

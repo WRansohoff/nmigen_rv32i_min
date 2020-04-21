@@ -59,8 +59,28 @@ class CPU( Elaboratable ):
     # Wait-state counter to let internal memories load.
     iws = Signal( 2, reset = 0 )
 
-    # Instruction bus address is always equal to the program counter.
-    m.d.comb += self.mem.imux.bus.adr.eq( self.pc )
+    # Top-level combinatorial logic.
+    m.d.comb += [
+      # Set CPU register access addresses.
+      self.ra.addr.eq( self.mem.imux.bus.dat_r[ 15 : 20 ] ),
+      self.rb.addr.eq( self.mem.imux.bus.dat_r[ 20 : 25 ] ),
+      self.rc.addr.eq( self.mem.imux.bus.dat_r[ 7  : 12 ] ),
+      # Instruction bus address is always set to the program counter.
+      self.mem.imux.bus.adr.eq( self.pc ),
+      # The CSR inputs are always wired the same.
+      self.csr.dat_w.eq(
+        Mux( self.mem.imux.bus.dat_r[ 14 ] == 0,
+             self.ra.data,
+             Cat( self.ra.addr,
+                  Repl( self.ra.addr[ 4 ], 27 ) ) ) ),
+      self.csr.f.eq( self.mem.imux.bus.dat_r[ 12 : 15 ] ),
+      self.csr.adr.eq( self.mem.imux.bus.dat_r[ 20 : 32 ] ),
+      # Store data and width are always wired the same.
+      self.mem.ram.dw.eq( self.mem.imux.bus.dat_r[ 12 : 15 ] ),
+      self.mem.dmux.bus.dat_w.eq( self.rb.data ),
+      # The ALU's 'a' input can always be set to the 'ra' register.
+      self.alu.a.eq( self.ra.data )
+    ]
 
     # Trigger an 'instruction mis-aligned' trap if necessary.
     with m.If( self.pc[ :2 ] != 0 ):
@@ -69,13 +89,6 @@ class CPU( Elaboratable ):
     with m.Else():
       # I-bus is active until it completes a transaction.
       m.d.comb += self.mem.imux.bus.cyc.eq( iws == 0 )
-
-    # Set CPU register access addresses.
-    m.d.comb += [
-      self.ra.addr.eq( self.mem.imux.bus.dat_r[ 15 : 20 ] ),
-      self.rb.addr.eq( self.mem.imux.bus.dat_r[ 20 : 25 ] ),
-      self.rc.addr.eq( self.mem.imux.bus.dat_r[ 7  : 12 ] )
-    ]
 
     # Wait a cycle after 'ack' to load the appropriate CPU registers.
     with m.If( self.mem.imux.bus.ack ):
@@ -229,13 +242,6 @@ class CPU( Elaboratable ):
           # 'CSRR[WSC]I': Write/Set/Clear CSR value from immediate.
           with m.Else():
             m.d.comb += [
-              self.csr.dat_w.eq(
-                Mux( self.mem.imux.bus.dat_r[ 14 ] == 0,
-                     self.ra.data,
-                     Cat( self.ra.addr,
-                          Repl( self.ra.addr[ 4 ], 27 ) ) ) ),
-              self.csr.adr.eq( self.mem.imux.bus.dat_r[ 20 : 32 ] ),
-              self.csr.f.eq( self.mem.imux.bus.dat_r[ 12 : 15 ] ),
               self.rc.data.eq( self.csr.dat_r ),
               self.rc.en.eq( self.rc.addr != 0 ),
               self.csr.we.eq( 1 )
@@ -269,7 +275,6 @@ class CPU( Elaboratable ):
         # BEQ / BNE: use SUB ALU operation to check equality.
         # BLT / BGE / BLTU / BGEU: use SLT or SLTU ALU operation.
         m.d.comb += [
-          self.alu.a.eq( self.ra.data ),
           self.alu.b.eq( self.rb.data ),
           self.alu.f.eq( Mux(
             self.mem.imux.bus.dat_r[ 14 ],
@@ -277,25 +282,18 @@ class CPU( Elaboratable ):
             0b1000 ) )
         ]
 
-      # Load / Store instructions: Set the memory address and
-      # write data / width. Load instructions just don't set the
-      # 'write enable' bits.
+      # Load / Store instructions: Set the memory address.
       with m.Case( '0-00011' ):
-        m.d.comb += [
-          self.mem.dmux.bus.adr.eq( self.ra.data + Cat(
-            Mux( self.mem.imux.bus.dat_r[ 5 ],
-                 Cat( self.mem.imux.bus.dat_r[ 7 : 12 ],
-                      self.mem.imux.bus.dat_r[ 25 : 32 ] ),
-                 self.mem.imux.bus.dat_r[ 20 : 32 ] ),
-            Repl( self.mem.imux.bus.dat_r[ 31 ], 20 ) ) ),
-          self.mem.ram.dw.eq( self.mem.imux.bus.dat_r[ 12 : 15 ] ),
-          self.mem.dmux.bus.dat_w.eq( self.rb.data )
-        ]
+        m.d.comb += self.mem.dmux.bus.adr.eq( self.ra.data + Cat(
+          Mux( self.mem.imux.bus.dat_r[ 5 ],
+               Cat( self.mem.imux.bus.dat_r[ 7 : 12 ],
+                    self.mem.imux.bus.dat_r[ 25 : 32 ] ),
+               self.mem.imux.bus.dat_r[ 20 : 32 ] ),
+          Repl( self.mem.imux.bus.dat_r[ 31 ], 20 ) ) )
 
       # R-type ALU operation: set inputs for rc = ra ? rb
       with m.Case( OP_REG ):
         m.d.comb += [
-          self.alu.a.eq( self.ra.data ),
           self.alu.b.eq( self.rb.data ),
           self.alu.f.eq( Cat(
             self.mem.imux.bus.dat_r[ 12 : 15 ],
@@ -306,14 +304,13 @@ class CPU( Elaboratable ):
       # I-type ALU operation: set inputs for rc = ra ? immediate
       with m.Case( OP_IMM ):
         m.d.comb += [
-          self.alu.a.eq( self.ra.data ),
           self.alu.b.eq( Cat( self.mem.imux.bus.dat_r[ 20 : 32 ],
             Repl( self.mem.imux.bus.dat_r[ 31 ], 20 ) ) ),
           self.alu.f.eq( Cat(
             self.mem.imux.bus.dat_r[ 12 : 15 ],
-            Mux( self.mem.imux.bus.dat_r[ 12 : 14 ] == 0b01,
-                 self.mem.imux.bus.dat_r[ 30 ],
-                 0 ) ) ),
+            Mux( self.mem.imux.bus.dat_r[ 12 : 14 ] == 0b00,
+                 0,
+                 self.mem.imux.bus.dat_r[ 30 ] ) ) ),
           self.rc.data.eq( self.alu.y )
         ]
 

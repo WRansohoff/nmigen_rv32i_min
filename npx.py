@@ -45,28 +45,23 @@ class NeoPixels( Elaboratable, Interface ):
     self.bsy     = Signal( 1,  reset = 0 )
     # Current value to set the output pin(s) to.
     self.px      = Signal( 1,  reset = 0 )
-    # Wishbone bus multiplexer for memory access.
+
+    # RAM access Interface.
     # Currently, 'ROM' cannot be used to store NeoPixel colors,
     # because the delay in reading a word from SPI Flash may be too
     # long for the ~3MHz pulses, and the CPU is slow enough without
     # sharing the SPI Flash bus with several other peripherals.
-    # If I ever get this design fast enough and using an I-cache,
-    # it may be doable then. But I wouldn't hold your breath on that.
-    self.mux = Decoder( addr_width = 32,
-                        data_width = 32,
-                        alignment = 0 )
+    # Plus, the raw Wishbone Interface is cheaper than a Decoder.
     self.ram = ram_bus
-    self.mux.add( self.ram, addr = 0x20000000 )
 
   def elaborate( self, platform ):
     m = Module()
-    m.submodules.mux = self.mux
 
     # Read bits default to 0. Peripheral bus and memory bus signals
     # follow their respective 'cyc' signals.
     m.d.comb += [
       self.stb.eq( self.cyc ),
-      self.mux.bus.stb.eq( self.mux.bus.cyc )
+      self.ram.stb.eq( self.ram.cyc )
     ]
     m.d.sync += self.ack.eq( self.cyc )
 
@@ -78,8 +73,7 @@ class NeoPixels( Elaboratable, Interface ):
       # 'Colors address register':
       with m.Case( NPX_COL ):
         m.d.comb += self.dat_r.eq( self.col_adr )
-        with m.If( ( self.we == 1 ) &
-                   ( self.cyc == 1 ) &
+        with m.If( ( self.we & self.cyc ) &
                    ( self.bsy == 0 ) ):
           m.d.sync += self.col_adr.eq( self.dat_w )
       # 'Control register':
@@ -88,11 +82,13 @@ class NeoPixels( Elaboratable, Interface ):
           self.dat_r.bit_select( 0, 1 ).eq( self.bsy ),
           self.dat_r.bit_select( 8, 12 ).eq( self.col_len )
         ]
-        with m.If( ( self.we == 1 ) &
-                   ( self.cyc == 1 ) &
+        with m.If( ( self.we & self.cyc ) &
                    ( self.bsy == 0 ) ):
           m.d.sync += self.col_len.eq( self.dat_w[ 8 : 20 ] )
-          m.d.sync += self.bsy.eq( self.dat_w[ 0 ] )
+          # New transfers can't start if the colors memory
+          # address is not in RAM space.
+          with m.If( self.col_adr[ 29 : 32 ] == 0b001 ):
+            m.d.sync += self.bsy.eq( self.dat_w[ 0 ] )
 
     # State machine to send colors once the peripheral is activated.
     # Each color bit consists of four 3MHz 'ticks'.
@@ -112,7 +108,7 @@ class NeoPixels( Elaboratable, Interface ):
     cdown  = Signal( 1, reset = 0 )
 
     # Set the memory interface's address to the current color byte.
-    m.d.comb += self.mux.bus.adr.eq( self.col_adr + cprog )
+    m.d.comb += self.ram.adr.eq( self.col_adr[ :29 ] + cprog )
 
     # FSM logic:
     with m.FSM():
@@ -131,7 +127,7 @@ class NeoPixels( Elaboratable, Interface ):
         # Every 8 bits (4 3MHz 'ticks' * 8 = 32), read the next
         # color byte from memory.
         with m.If( ccount == 31 ):
-          m.d.comb += self.mux.bus.cyc.eq( 1 )
+          m.d.comb += self.ram.cyc.eq( 1 )
           m.d.sync += cdown.eq( 1 )
           # If we've reached the end of the colors array, move
           # to the 'latch' state to finalize the transaction.
@@ -143,11 +139,11 @@ class NeoPixels( Elaboratable, Interface ):
           # can tolerate up to a few microseconds' delay between
           # color bits before they 'latch'. But this only works
           # with fast internal memory like RAM.
-          with m.Elif( self.mux.bus.ack ):
+          with m.Elif( self.ram.ack ):
             m.d.sync += [
               cprog.eq( cprog + 1 ),
               ccount.eq( 0 ),
-              ccol.eq( self.mux.bus.dat_r[ :8 ] )
+              ccol.eq( self.ram.dat_r[ :8 ] )
             ]
         # If the current color byte is valid and we aren't done
         # with it yet, send the next bit spread out over four 3MHz

@@ -149,7 +149,6 @@ class CPU( Elaboratable ):
                        ( ~( self.mem.dmux.bus.adr[ 0 ] &
                             self.mem.dmux.bus.adr[ 1 ] &
                             self.mem.imux.bus.dat_r[ 12 ] ) ) ) == 0 ):
-            m.d.comb += self.mem.dmux.bus.cyc.eq( 0 )
             trigger_trap( self, m, TRAP_LMIS )
           # Wait for the memory operation to complete.
           with m.Elif( self.mem.dmux.bus.ack == 0 ):

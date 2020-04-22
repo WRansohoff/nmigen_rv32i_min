@@ -34,6 +34,13 @@ typedef struct
   // field which determines how many LEDs are in the string.
   volatile uint32_t CR;
 } NPX_TypeDef;
+// Pulse Width Modulation struct: only one register.
+typedef struct
+{
+  // "Control register": Holds the 'compare' and 'max' values
+  // which determine the PWM duty cycle.
+  volatile uint32_t CR;
+} PWM_TypeDef;
 
 // Peripheral address definitions
 #define GPIO  ( ( GPIO_TypeDef * )  0x40000000 )
@@ -42,6 +49,10 @@ typedef struct
 #define NPX2  ( ( NPX_TypeDef * )   0x40020100 )
 #define NPX3  ( ( NPX_TypeDef * )   0x40020200 )
 #define NPX4  ( ( NPX_TypeDef * )   0x40020300 )
+#define PWM1  ( ( PWM_TypeDef * )   0x40030000 )
+#define PWM2  ( ( PWM_TypeDef * )   0x40030100 )
+#define PWM3  ( ( PWM_TypeDef * )   0x40030200 )
+#define PWM4  ( ( PWM_TypeDef * )   0x40030300 )
 
 // GPIO pin address offsets.
 // (not every pin is an I/O pin)
@@ -84,6 +95,10 @@ typedef struct
 #define IOMUX_NPX2 ( 0x2 )
 #define IOMUX_NPX3 ( 0x3 )
 #define IOMUX_NPX4 ( 0x4 )
+#define IOMUX_PWM1 ( 0x5 )
+#define IOMUX_PWM2 ( 0x6 )
+#define IOMUX_PWM3 ( 0x7 )
+#define IOMUX_PWM4 ( 0x8 )
 // GPIO multiplexer pin configuration offsets.
 #define IOMUX2_O   ( 8 )
 #define IOMUX3_O   ( 12 )
@@ -117,6 +132,12 @@ typedef struct
 #define IOMUX46_O  ( 24 )
 #define IOMUX47_O  ( 28 )
 #define IOMUX48_O  ( 0 )
+
+// PWM peripheral control register offsets and masks.
+#define PWM_CR_CMP_O ( 0 )
+#define PWM_CR_CMP_M ( 0xFF << PWM_CR_CMP_O )
+#define PWM_CR_MAX_O ( 8 )
+#define PWM_CR_MAX_M ( 0xFF << PWM_CR_MAX_O )
 
 // "Neopixel" peripheral control register offsets and masks.
 #define NPX_CR_BSY_O ( 0 )

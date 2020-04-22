@@ -91,8 +91,6 @@ class CPU( Elaboratable ):
       # Store data and width are always wired the same.
       self.mem.ram.dw.eq( self.mem.imux.bus.dat_r[ 12 : 15 ] ),
       self.mem.dmux.bus.dat_w.eq( self.rb.data ),
-      # The ALU's 'a' input can always be set to the 'ra' register.
-      self.alu.a.eq( self.ra.data )
     ]
 
     # Trigger an 'instruction mis-aligned' trap if necessary.
@@ -118,19 +116,15 @@ class CPU( Elaboratable ):
 
     # Execute the current instruction, once it loads.
     with m.If( iws != 0 ):
-      # Increment the PC unless otherwise specified.
-      m.d.sync += self.pc.eq( self.pc + 4 )
-      # Reset the wait-state counter.
-      # (This also causes the I-bus 'cyc' signal to be re-asserted)
-      m.d.sync += iws.eq( 0 )
+      # Increment the PC and reset the wait-state unless
+      # otherwise specified.
+      m.d.sync += [
+        self.pc.eq( self.pc + 4 ),
+        iws.eq( 0 )
+      ]
 
       # Decoder switch case:
       with m.Switch( self.mem.imux.bus.dat_r[ 0 : 7 ] ):
-        # LUI, AUIPC, R-type, and I-type instructions:
-        # write to the destination register unless it's x0.
-        with m.Case( '0-10-11' ):
-          m.d.comb += self.rc.en.eq( self.rc.addr != 0 )
-
         # JAL / JALR instructions: jump to a new address and place
         # the 'return PC' in the destination register (rc).
         with m.Case( '110-111' ):
@@ -238,10 +232,13 @@ class CPU( Elaboratable ):
       # LUI / AUIPC instructions: set destination register to
       # 20 upper bits, +pc for AUIPC.
       with m.Case( '0-10111' ):
-        m.d.comb += self.rc.data.eq(
-          Mux( self.mem.imux.bus.dat_r[ 5 ], 0, self.pc ) +
-          Cat( Repl( 0, 12 ),
-               self.mem.imux.bus.dat_r[ 12 : 32 ] ) )
+        m.d.comb += [
+          self.rc.data.eq(
+            Mux( self.mem.imux.bus.dat_r[ 5 ], 0, self.pc ) +
+            Cat( Repl( 0, 12 ),
+                 self.mem.imux.bus.dat_r[ 12 : 32 ] ) ),
+          self.rc.en.eq( ( self.rc.addr != 0 ) & iws )
+        ]
 
       # JAL / JALR instructions: set destination register to
       # the 'return PC' value.
@@ -254,6 +251,7 @@ class CPU( Elaboratable ):
         # BEQ / BNE: use SUB ALU operation to check equality.
         # BLT / BGE / BLTU / BGEU: use SLT or SLTU ALU operation.
         m.d.comb += [
+          self.alu.a.eq( self.ra.data ),
           self.alu.b.eq( self.rb.data ),
           self.alu.f.eq( Mux(
             self.mem.imux.bus.dat_r[ 14 ],
@@ -295,25 +293,57 @@ class CPU( Elaboratable ):
 
       # R-type ALU operation: set inputs for rc = ra ? rb
       with m.Case( OP_REG ):
+        # Implement left shifts using the right shift ALU operation.
+        with m.If( self.mem.imux.bus.dat_r[ 12 : 15 ] == 0b001 ):
+          m.d.comb += [
+            self.alu.a.eq( FLIP( self.ra.data ) ),
+            self.alu.f.eq( 0b0101 ),
+            self.rc.data.eq( FLIP( self.alu.y ) )
+          ]
+        with m.Else():
+          m.d.comb += [
+            self.alu.a.eq( self.ra.data ),
+            self.alu.f.eq( Cat(
+              self.mem.imux.bus.dat_r[ 12 : 15 ],
+              self.mem.imux.bus.dat_r[ 30 ] ) ),
+            self.rc.data.eq( self.alu.y ),
+          ]
         m.d.comb += [
           self.alu.b.eq( self.rb.data ),
-          self.alu.f.eq( Cat(
-            self.mem.imux.bus.dat_r[ 12 : 15 ],
-            self.mem.imux.bus.dat_r[ 30 ] ) ),
-          self.rc.data.eq( self.alu.y )
+          self.rc.en.eq( ( self.rc.addr != 0 ) & iws )
         ]
 
       # I-type ALU operation: set inputs for rc = ra ? immediate
       with m.Case( OP_IMM ):
+        # Shift operations are a bit different from normal I-types.
+        # They use 'funct7' bits like R-type operations, and the
+        # left shift can be implemented as a right shift to avoid
+        # having two barrel shifters in the ALU.
+        with m.If( self.mem.imux.bus.dat_r[ 12 : 14 ] == 0b01 ):
+          with m.If( self.mem.imux.bus.dat_r[ 14 ] == 0 ):
+            m.d.comb += [
+              self.alu.a.eq( FLIP( self.ra.data ) ),
+              self.alu.f.eq( 0b0101 ),
+              self.rc.data.eq( FLIP( self.alu.y ) ),
+            ]
+          with m.Else():
+            m.d.comb += [
+              self.alu.a.eq( self.ra.data ),
+              self.alu.f.eq( Cat( 0b101, self.mem.imux.bus.dat_r[ 30 ] ) ),
+              self.rc.data.eq( self.alu.y ),
+            ]
+        # Normal I-type operation:
+        with m.Else():
+          m.d.comb += [
+            self.alu.a.eq( self.ra.data ),
+            self.alu.f.eq( self.mem.imux.bus.dat_r[ 12 : 15 ] ),
+            self.rc.data.eq( self.alu.y ),
+          ]
+        # Shared I-type logic:
         m.d.comb += [
           self.alu.b.eq( Cat( self.mem.imux.bus.dat_r[ 20 : 32 ],
             Repl( self.mem.imux.bus.dat_r[ 31 ], 20 ) ) ),
-          self.alu.f.eq( Cat(
-            self.mem.imux.bus.dat_r[ 12 : 15 ],
-            Mux( self.mem.imux.bus.dat_r[ 12 : 14 ] == 0b00,
-                 0,
-                 self.mem.imux.bus.dat_r[ 30 ] ) ) ),
-          self.rc.data.eq( self.alu.y )
+          self.rc.en.eq( ( self.rc.addr != 0 ) & iws )
         ]
 
     # End of CPU module definition.

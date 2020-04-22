@@ -42,10 +42,12 @@ class ALU( Elaboratable ):
       with m.Case( ALU_XOR & 0b111 ):
         m.d.comb += self.y.eq( self.a ^ self.b )
       # Y = A +/- B
+      # Subtraction is implemented as A + (-B).
       with m.Case( ALU_ADD & 0b111 ):
-        m.d.comb += self.y.eq( Mux( self.f[ 3 ],
-          self.a.as_signed() - self.b.as_signed(),
-          self.a.as_signed() + self.b.as_signed() ) )
+        m.d.comb += self.y.eq(
+          self.a.as_signed() + Mux( self.f[ 3 ],
+            ( ~self.b + 1 ).as_signed(),
+            self.b.as_signed() ) )
       # Y = ( A < B ) (signed)
       with m.Case( ALU_SLT & 0b111 ):
         m.d.comb += self.y.eq( self.a.as_signed() < self.b.as_signed() )
@@ -53,10 +55,8 @@ class ALU( Elaboratable ):
       with m.Case( ALU_SLTU & 0b111 ):
         m.d.comb += self.y.eq( self.a < self.b )
       # Note: Shift operations cannot shift more than XLEN (32) bits.
-      # Y = A << B
-      # TODO: Left shifts can be expressed as flip(y) = flip(a) >> b
-      with m.Case( ALU_SLL & 0b111 ):
-        m.d.comb += self.y.eq( self.a << ( self.b[ :5 ] ) )
+      # Also, left shifts are implemented by flipping the inputs
+      # and outputs of a right shift operation in the CPU logic.
       # Y = A >> B
       with m.Case( ALU_SRL & 0b111 ):
         m.d.comb += self.y.eq( Mux( self.f[ 3 ],

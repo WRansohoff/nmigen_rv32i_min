@@ -350,6 +350,10 @@ for k, v in CSRS.items():
 # so that it's easier to name variables.                     #
 ##############################################################
 
+# Flip a word of data.
+def FLIP( v ):
+  return Cat( v[ 31 - i ] for i in range( 0, 32 ) )
+
 # Convert a 32-bit word to little-endian byte format.
 # 0x1234ABCD -> 0xCDAB3412
 def LITTLE_END( v ):

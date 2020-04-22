@@ -155,9 +155,9 @@ def ram_write_ut( ram, address, data, dw, success ):
 # Perform an inidividual RAM read unit test.
 def ram_read_ut( ram, address, expected ):
   global p, f
-  # Set address and 'ren' bit.
+  # Set address.
   yield ram.arb.bus.adr.eq( address )
-  # Wait two ticks, and un-set the 'ren' bit.
+  # Wait two ticks.
   yield Tick()
   yield Tick()
   # Done. Check the 'dout' result after combinational logic settles.
@@ -182,6 +182,7 @@ def ram_test( ram ):
 
   # Assert 'cyc' to activate the bus.
   yield ram.arb.bus.cyc.eq( 1 )
+  yield Tick()
   yield Settle()
   # Test writing data to RAM.
   yield from ram_write_ut( ram, 0x00, 0x01234567, RAM_DW_32, 1 )
@@ -219,6 +220,7 @@ def ram_test( ram ):
   yield from ram_write_ut( ram, 0x00, 0x0F0A0B0C, RAM_DW_32, 1 )
   yield from ram_write_ut( ram, 0x00, 0xDEADBEEF, RAM_DW_8, 0 )
   yield from ram_read_ut( ram, 0x00, 0x0F0A0BEF )
+  yield from ram_write_ut( ram, 0x60, 0x00000000, RAM_DW_32, 1 )
   yield from ram_write_ut( ram, 0x10, 0x0000BEEF, RAM_DW_8, 0 )
   yield from ram_read_ut( ram, 0x10, 0x000000EF )
   yield from ram_write_ut( ram, 0x20, 0x000000EF, RAM_DW_8, 1 )

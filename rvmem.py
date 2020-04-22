@@ -6,6 +6,7 @@ from nmigen_soc.memory import *
 from gpio import *
 from gpio_mux import *
 from npx import *
+from pwm import *
 from ram import *
 
 #############################################################
@@ -24,6 +25,11 @@ from ram import *
 # ** 0x400201-- = Neopixel peripheral #2                    #
 # ** 0x400202-- = Neopixel peripheral #3                    #
 # ** 0x400203-- = Neopixel peripheral #4                    #
+# ** 0x4003---- = PWM peripherals                           #
+# ** 0x400300-- = PWM peripheral #1                         #
+# ** 0x400301-- = PWM peripheral #2                         #
+# ** 0x400302-- = PWM peripheral #3                         #
+# ** 0x400303-- = PWM peripheral #4                         #
 #############################################################
 
 class RV_Memory( Elaboratable ):
@@ -56,9 +62,19 @@ class RV_Memory( Elaboratable ):
     self.dmux.add( self.npx3,     addr = 0x40020200 )
     self.npx4 = NeoPixels( self.ram.new_bus() )
     self.dmux.add( self.npx4,     addr = 0x40020300 )
+    self.pwm1 = PWM()
+    self.dmux.add( self.pwm1,     addr = 0x40030000 )
+    self.pwm2 = PWM()
+    self.dmux.add( self.pwm2,     addr = 0x40030100 )
+    self.pwm3 = PWM()
+    self.dmux.add( self.pwm3,     addr = 0x40030200 )
+    self.pwm4 = PWM()
+    self.dmux.add( self.pwm4,     addr = 0x40030300 )
     self.gpio_mux = GPIO_Mux( [ self.gpio, self.npx1,
                                 self.npx2, self.npx3,
-                                self.npx4 ] )
+                                self.npx4, self.pwm1,
+                                self.pwm2, self.pwm3,
+                                self.pwm4 ] )
     self.dmux.add( self.gpio_mux, addr = 0x40010000 )
 
     # Add ROM and RAM buses to the instruction multiplexer.
@@ -80,6 +96,10 @@ class RV_Memory( Elaboratable ):
     m.submodules.npx2     = self.npx2
     m.submodules.npx3     = self.npx3
     m.submodules.npx4     = self.npx4
+    m.submodules.pwm1     = self.pwm1
+    m.submodules.pwm2     = self.pwm2
+    m.submodules.pwm3     = self.pwm3
+    m.submodules.pwm4     = self.pwm4
     m.submodules.gpio_mux = self.gpio_mux
 
     # Currently, all bus cycles are single-transaction.

@@ -17,6 +17,10 @@ from isa import *
 # * 0x2: Neopixel peripheral #2          #
 # * 0x3: Neopixel peripheral #3          #
 # * 0x4: Neopixel peripheral #4          #
+# * 0x5: PWM peripheral #1               #
+# * 0x6: PWM peripheral #2               #
+# * 0x7: PWM peripheral #3               #
+# * 0x8: PWM peripheral #4               #
 ##########################################
 
 # Dummy GPIO pin class for simulations.
@@ -46,6 +50,10 @@ class GPIO_Mux( Elaboratable, Interface ):
     self.npx2 = periphs[ 2 ]
     self.npx3 = periphs[ 3 ]
     self.npx4 = periphs[ 4 ]
+    self.pwm1 = periphs[ 5 ]
+    self.pwm2 = periphs[ 6 ]
+    self.pwm3 = periphs[ 7 ]
+    self.pwm4 = periphs[ 8 ]
 
   def elaborate( self, platform ):
     m = Module()
@@ -128,6 +136,34 @@ class GPIO_Mux( Elaboratable, Interface ):
             m.d.sync += [
               self.p[ i ].oe.eq( 1 ),
               self.p[ i ].o.eq( self.npx4.px )
+            ]
+          # PWM peripheral #1
+          with m.Case( 0x5 ):
+            # Set pin to output mode, and set its current value.
+            m.d.sync += [
+              self.p[ i ].oe.eq( 1 ),
+              self.p[ i ].o.eq( self.pwm1.o )
+            ]
+          # PWM peripheral #2
+          with m.Case( 0x6 ):
+            # Set pin to output mode, and set its current value.
+            m.d.sync += [
+              self.p[ i ].oe.eq( 1 ),
+              self.p[ i ].o.eq( self.pwm2.o )
+            ]
+          # PWM peripheral #3
+          with m.Case( 0x7 ):
+            # Set pin to output mode, and set its current value.
+            m.d.sync += [
+              self.p[ i ].oe.eq( 1 ),
+              self.p[ i ].o.eq( self.pwm3.o )
+            ]
+          # PWM peripheral #4
+          with m.Case( 0x8 ):
+            # Set pin to output mode, and set its current value.
+            m.d.sync += [
+              self.p[ i ].oe.eq( 1 ),
+              self.p[ i ].o.eq( self.pwm4.o )
             ]
 
     # (End of GPIO multiplexer module)

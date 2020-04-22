@@ -203,6 +203,8 @@ def csr_test( csr ):
   yield from csr_ut( csr, CSRA_MTVEC, 0x00000003, F_CSRRW,  0xFFFFFFFC )
   yield from csr_ut( csr, CSRA_MTVEC, 0x00000000, F_CSRRS,  0x00000001 )
 
+  # Disable MIE/MIP tests while those CSRs are disabled.
+  '''
   # Test reading / writing the 'MIE' CSR.
   yield from csr_ut( csr, CSRA_MIE, 0xFFFFFFFF, F_CSRRWI, 0x00000000 )
   yield from csr_ut( csr, CSRA_MIE, 0xFFFFFFFF, F_CSRRCI, 0x00000888 )
@@ -212,6 +214,8 @@ def csr_test( csr ):
   yield from csr_ut( csr, CSRA_MIP, 0xFFFFFFFF, F_CSRRS, 0x00000000 )
   yield from csr_ut( csr, CSRA_MIP, 0xFFFFFFFF, F_CSRRC, 0x00000888 )
   yield from csr_ut( csr, CSRA_MIP, 0x00000000, F_CSRRS, 0x00000000 )
+  '''
+
   # Test reading / writing the 'MCAUSE' CSR.
   yield from csr_rw_ut( csr, CSRA_MCAUSE )
 

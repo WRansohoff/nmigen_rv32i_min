@@ -157,14 +157,6 @@ def alu_test( alu ):
   yield from alu_ut( alu, -10, -42, ALU_SLTU, 0 )
   yield from alu_ut( alu, -42, 42, ALU_SLTU, 0 )
 
-  # Test the shift left operation.
-  print ( "SLL (<<) tests:" )
-  yield from alu_ut( alu, 0x00000001, 0, ALU_SLL, 0x00000001 )
-  yield from alu_ut( alu, 0x00000001, 1, ALU_SLL, 0x00000002 )
-  yield from alu_ut( alu, 0x00000001, 4, ALU_SLL, 0x00000010 )
-  yield from alu_ut( alu, 0x00000010, 4, ALU_SLL, 0x00000100 )
-  yield from alu_ut( alu, 0x80000000, 1, ALU_SLL, 0x00000000 )
-
   # Test the shift right operation.
   print ( "SRL (>>) tests:" )
   yield from alu_ut( alu, 0x00000001, 0, ALU_SRL, 0x00000001 )

@@ -35,13 +35,13 @@ LFLAGS += --specs=nosys.specs
 LFLAGS += -march=rv32i
 LFLAGS += -mabi=ilp32
 LFLAGS += -mcmodel=medlow
-LFLAGS += -T./tubul.ld
+LFLAGS += -T./../common/tubul.ld
 
 # Extra header file include directories.
-INCLUDE += -I./..
+INCLUDE += -I./../common
 
 # Source files.
-AS_SRC  = ./start.S
+AS_SRC  = ./../common/start.S
 C_SRC   = ./main.c
 # Object files to build.
 OBJS    = $(AS_SRC:.S=.o)

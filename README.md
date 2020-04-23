@@ -136,6 +136,8 @@ And you can program the resulting design with `iceprog`:
 
     iceprog build/top.bin
 
+Currently the design will not run faster than 12MHz, so you'll need to set `hfosc_div` to either 2 or 3 in the board file if you use the internal oscillator.
+
 # Programming
 
 This design should be able to run C programs compiled by GCC for the RV32I architecture; just flash the binary image to a 2MByte offset in the board's SPI Flash. See `tests/hw_tests` for some minimal examples.

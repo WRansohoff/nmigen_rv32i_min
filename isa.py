@@ -233,10 +233,40 @@ MTVEC_MODE_DIRECT   = 0b0
       'me': [ 11, 11, 'rw', 0 ]
     }
   },
+  'misa': {
+    'c_addr': CSRA_MISA,
+    'bits': {
+      'mxl': [ 30, 31, 'r', MISA_MSL_32 ],
+      'ext': [ 8,  8,  'r', 1 ]
+    }
+  },
+  'mstatus': {
+    'c_addr': CSRA_MSTATUS,
+    'bits': {
+      'mie':  [ 3,  3,  'rw', 0 ],
+      'mpie': [ 7,  7,  'r',  0 ],
+      'mpp':  [ 11, 12, 'r',  0b11 ],
+    }
+  },
   'mstatush': {
     'c_addr': CSRA_MSTATUSH,
     'bits': {
       'mbe':  [ 5, 5, 'r',  0 ]
+    }
+  },
+  'mscratch': {
+    'c_addr': CSRA_MSCRATCH,
+    'bits': { 'scratch': [ 0, 31, 'rw', 0 ] }
+  },
+  'mtval': {
+    'c_addr': CSRA_MTVAL,
+    'bits': { 'einfo': [ 0, 31, 'rw', 0 ] }
+  },
+  'mcause': {
+    'c_addr': CSRA_MCAUSE,
+    'bits': {
+      'interrupt': [ 31, 31, 'rw', 0 ],
+      'ecode':     [ 0, 30,  'rw', 0 ]
     }
   },
   'mcycle': {
@@ -264,24 +294,16 @@ MTVEC_MODE_DIRECT   = 0b0
 '''
 # CSR memory map definitions.
 CSRS = {
-  'misa': {
-    'c_addr': CSRA_MISA,
-    'bits': {
-      'mxl': [ 30, 31, 'r', MISA_MSL_32 ],
-      'ext': [ 8,  8,  'r', 1 ]
-    }
+  'minstret': {
+    'c_addr': CSRA_MINSTRET,
+    'bits': { 'instrs': [ 0, 15, 'rw', 0 ] }
   },
   'mstatus': {
     'c_addr': CSRA_MSTATUS,
     'bits': {
       'mie':  [ 3,  3,  'rw', 0 ],
-      'mpie': [ 7,  7,  'r',  0 ],
-      'mpp':  [ 11, 12, 'r',  0b11 ],
-    }
-  },
-  'minstret': {
-    'c_addr': CSRA_MINSTRET,
-    'bits': { 'instrs': [ 0, 31, 'rw', 0 ] }
+      'mpie': [ 7,  7,  'r',  0 ]
+     }
   },
   'mtvec': {
     'c_addr': CSRA_MTVEC,
@@ -290,26 +312,11 @@ CSRS = {
       'base': [ 2, 31, 'rw', 0 ]
     }
   },
-  'mcause': {
-    'c_addr': CSRA_MCAUSE,
-    'bits': {
-      'interrupt': [ 31, 31, 'rw', 0 ],
-      'ecode':     [ 0, 30,  'rw', 0 ]
-    }
-  },
-  'mscratch': {
-    'c_addr': CSRA_MSCRATCH,
-    'bits': { 'scratch': [ 0, 31, 'rw', 0 ] }
-  },
   'mepc': {
     'c_addr': CSRA_MEPC,
     'bits': {
       'mepc': [ 2, 31, 'rw', 0 ]
     }
-  },
-  'mtval': {
-    'c_addr': CSRA_MTVAL,
-    'bits': { 'einfo': [ 0, 31, 'rw', 0 ] }
   },
 }
 # Calculate 'read', 'read-only', 'set', and 'clear' bitmasks,

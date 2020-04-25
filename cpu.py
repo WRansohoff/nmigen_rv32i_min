@@ -47,8 +47,9 @@ class CPU( Elaboratable ):
   def trigger_trap( self, m, trap_num ):
     m.d.sync += [
       # Set mcause, mepc, interrupt context flag.
-      self.csr.mcause_interrupt.eq( 0 ),
-      self.csr.mcause_ecode.eq( trap_num ),
+      # (mcause is currently disabled to save space)
+      #self.csr.mcause_interrupt.eq( 0 ),
+      #self.csr.mcause_ecode.eq( trap_num ),
       self.csr.mepc_mepc.eq( Past( self.pc ).bit_select( 2, 30 ) ),
       # Set PC to the interrupt handler address.
       self.pc.eq( Cat( Repl( 0, 2 ),
@@ -95,7 +96,8 @@ class CPU( Elaboratable ):
 
     # Trigger an 'instruction mis-aligned' trap if necessary.
     with m.If( self.pc[ :2 ] != 0 ):
-      m.d.sync += self.csr.mtval_einfo.eq( self.pc )
+      # (mtval is currently disabled to save space.)
+      #m.d.sync += self.csr.mtval_einfo.eq( self.pc )
       self.trigger_trap( m, TRAP_IMIS )
     with m.Else():
       # I-bus is active until it completes a transaction.

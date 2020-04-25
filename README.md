@@ -40,7 +40,7 @@ Each test simulation also creates a `.vcd` file containing the waveform results,
 
 # Test Coverage
 
-The RISC-V RV32I compliance tests can be simulated, and they probably all pass. I try to run the full test suite regularly as I make changes, but sometimes a broken commit slips through.
+The RISC-V RV32I compliance tests are simulated as part of the CPU testbench. They probably all pass except for `MISALIGN_JMP`, which depends on a CSR that I disabled to save space. I try to run the full test suite regularly as I make changes, but sometimes a broken commit slips through.
 
 ## Compliance Tests
 
@@ -69,7 +69,7 @@ The RISC-V RV32I compliance tests can be simulated, and they probably all pass. 
 | `LHU`           |:heavy_check_mark:|
 | `LW`            |:heavy_check_mark:|
 | `LUI`           |:heavy_check_mark:|
-| `MISALIGN_JMP`  |:heavy_check_mark:|
+| `MISALIGN_JMP`  |:x:|
 | `MISALIGN_LDST` |:heavy_check_mark:|
 | `NOP`           |:heavy_check_mark:|
 | `OR`            |:heavy_check_mark:|
@@ -102,20 +102,22 @@ The `MIE`, `MIP`, `MTIME`, and `MTIMECMP` CSRs are not currently implemented.
 
 Some CSRs which are unlikely to be used in the context of a small microcontroller have also been disabled to save space by commenting them out (:no_entry:). They will act like other unrecognized CSRs, as read-only registers which always return 0.
 
+Also, the `MSTATUS` CSR also does not implement the `MPP` field, and the `MINSTRET` field is only 16 bits. Again, this is to save space.
+
 |    CSR Name     | Logic Implemented? |
 |:---------------:|:------------------:|
 | `MARCHID`       |     :no_entry:     |
 | `MIMPID`        |     :no_entry:     |
 | `MHARTID`       |     :no_entry:     |
 | `MVENDORID`     |     :no_entry:     |
-| `MISA`          | :heavy_check_mark: |
+| `MISA`          |     :no_entry:     |
 | `MSTATUS`       | :heavy_check_mark: |
 | `MSTATUSH`      |     :no_entry:     |
 | `MTVEC`         | :heavy_check_mark: |
 | `MIE`           |         :x:        |
 | `MIP`           |         :x:        |
-| `MCAUSE`        | :heavy_check_mark: |
-| `MSCRATCH`      | :heavy_check_mark: |
+| `MCAUSE`        |     :no_entry:     |
+| `MSCRATCH`      |     :no_entry:     |
 | `MEPC`          | :heavy_check_mark: |
 | `MTVAL`         | :heavy_check_mark: |
 | `MTIME`         |         :x:        |

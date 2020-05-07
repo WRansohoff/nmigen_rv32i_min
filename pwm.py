@@ -5,17 +5,16 @@ from nmigen_soc.memory import *
 
 ################################################
 # PWM "Pulse Width Modulation" peripheral      #
-# Produces a PWM output based on two values.   #
-# A counter runs constantly in the background. #
+# Produces a PWM output based on an 8-bit      #
+# value that constantly counts up.             #
 # When the counter is less than the 'compare'  #
 # value, the output is 1. When it reaches the  #
-# 'max' value, it resets. If 'compare' is 0,   #
-# the output is effectively disabled.          #
+# max value of 0xFF, it resets. If 'compare'   #
+# is 0, the output is effectively disabled.    #
 ################################################
 
 # Peripheral register offset (there's only one, so...zero)
 # Bits 0-8:  'compare' value.
-# Bits 8-16: 'max' value.
 PWM_CR = 0
 
 class PWM( Elaboratable, Interface ):
@@ -31,7 +30,6 @@ class PWM( Elaboratable, Interface ):
     # Peripheral signals. Use 8 bits to allow duty cycles
     # to be set with a granularity of ~0.4%
     self.compare = Signal( 8, reset = 0 )
-    self.max     = Signal( 8, reset = 0 )
     self.count   = Signal( 8, reset = 0 )
     # Current output value.
     self.o       = Signal( 1,  reset = 0 )
@@ -49,8 +47,7 @@ class PWM( Elaboratable, Interface ):
     ]
     m.d.sync += [
       # Increment the counter.
-      self.count.eq( Mux( self.count == self.max,
-                          0, self.count + 1 ) ),
+      self.count.eq( self.count + 1 ),
       # Peripheral bus signals follow 'cyc'.
       self.ack.eq( self.cyc )
     ]
@@ -58,11 +55,8 @@ class PWM( Elaboratable, Interface ):
     # There's only one peripheral register, so we don't really need
     # a switch case. Only address 0 is valid.
     with m.If( self.adr == 0 ):
-      m.d.comb += self.dat_r.eq( Cat( self.compare, self.max ) )
+      m.d.comb += self.dat_r.eq( self.compare )
       with m.If( self.we & self.cyc ):
-        m.d.sync += [
-          self.compare.eq( self.dat_w[ :8 ] ),
-          self.max.eq( self.dat_w[ 8 : 16 ] )
-        ]
+        m.d.sync += self.compare.eq( self.dat_w[ :8 ] )
 
     return m

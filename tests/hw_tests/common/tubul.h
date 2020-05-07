@@ -136,8 +136,6 @@ typedef struct
 // PWM peripheral control register offsets and masks.
 #define PWM_CR_CMP_O ( 0 )
 #define PWM_CR_CMP_M ( 0xFF << PWM_CR_CMP_O )
-#define PWM_CR_MAX_O ( 8 )
-#define PWM_CR_MAX_M ( 0xFF << PWM_CR_MAX_O )
 
 // "Neopixel" peripheral control register offsets and masks.
 #define NPX_CR_BSY_O ( 0 )

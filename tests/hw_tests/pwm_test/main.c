@@ -31,10 +31,6 @@ int main( void ) {
   IOMUX->CFG5 |= ( IOMUX_PWM1 << IOMUX39_O );
   IOMUX->CFG6 |= ( ( IOMUX_PWM2 << IOMUX40_O ) |
                    ( IOMUX_PWM3 << IOMUX41_O ) );
-  // Set the highest 'max' values for ~0.4% duty cycle increments.
-  PWM1->CR |= PWM_CR_MAX_M;
-  PWM2->CR |= PWM_CR_MAX_M;
-  PWM3->CR |= PWM_CR_MAX_M;
   // Increment a counter and set the PWM 'compare' values from it.
   int counter = 0;
   int gdir = 1;
@@ -56,9 +52,9 @@ int main( void ) {
       if ( ( b == 0x1F ) || ( b == 0 ) ) { bdir = -bdir; }
       if ( ( r == 0x1F ) || ( r == 0 ) ) { rdir = -rdir; }
       // Apply the new colors.
-      PWM1->CR = ( ( PWM1->CR & PWM_CR_MAX_M ) | g );
-      PWM2->CR = ( ( PWM2->CR & PWM_CR_MAX_M ) | b );
-      PWM3->CR = ( ( PWM3->CR & PWM_CR_MAX_M ) | r );
+      PWM1->CR = g;
+      PWM2->CR = b;
+      PWM3->CR = r;
     }
   }
   return 0; // lol

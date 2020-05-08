@@ -22,7 +22,9 @@ from isa import *
 # * 0x04: 'control register'. Bits by index:
 # ** 0:     'Start transfer': Send colors to the string of LEDs.
 #           Cleared by hardware after the latching period finishes.
-# ** 1-7:   Reserved.
+# ** 1:     'Transfer complete interrupt enable': Trigger an
+#           interrupt whenever a color transfer finishes.
+# ** 2-7:   Reserved.
 # ** 8-20:  Number of LEDs in the string. The peripheral will access
 #           memory starting at the 'colors array address' register,
 #           and continuing for (3 * 'num_leds') bytes.
@@ -30,7 +32,7 @@ NPX_COL = 0
 NPX_CR  = 4
 
 class NeoPixels( Elaboratable, Interface ):
-  def __init__( self, ram_bus ):
+  def __init__( self, ram_bus, index ):
     # Initialize wishbone bus interface for peripheral registers.
     Interface.__init__( self, addr_width = 3, data_width = 32 )
     self.memory_map = MemoryMap( addr_width = self.addr_width,
@@ -45,6 +47,10 @@ class NeoPixels( Elaboratable, Interface ):
     self.bsy     = Signal( 1,  reset = 0 )
     # Current value to set the output pin(s) to.
     self.px      = Signal( 1,  reset = 0 )
+    # 'Transfer complete' interrupt signals.
+    self.irq_num = IRQ_NPX_BASE + index
+    self.txie    = Signal( 1,  reset = 0 )
+    self.txip    = Signal( 1,  reset = 0 )
 
     # RAM access Interface.
     # Currently, 'ROM' cannot be used to store NeoPixel colors,
@@ -80,11 +86,15 @@ class NeoPixels( Elaboratable, Interface ):
       with m.Case( NPX_CR ):
         m.d.comb += [
           self.dat_r.bit_select( 0, 1 ).eq( self.bsy ),
+          self.dat_r.bit_select( 1, 1 ).eq( self.txie ),
           self.dat_r.bit_select( 8, 12 ).eq( self.col_len )
         ]
         with m.If( ( self.we & self.cyc ) &
                    ( self.bsy == 0 ) ):
-          m.d.sync += self.col_len.eq( self.dat_w[ 8 : 20 ] )
+          m.d.sync += [
+            self.txie.eq( self.dat_w[ 1 ] ),
+            self.col_len.eq( self.dat_w[ 8 : 20 ] )
+          ]
           # New transfers can't start if the colors memory
           # address is not in RAM space.
           with m.If( self.col_adr[ 29 : 32 ] == 0b001 ):
@@ -172,6 +182,8 @@ class NeoPixels( Elaboratable, Interface ):
         with m.If( ccount[ -1 ] ):
           m.next = "NPX_WAITING"
           m.d.sync += self.bsy.eq( 0 )
+          with m.If( self.txie ):
+            m.d.sync += self.txip.eq( 1 )
 
     # (End of 'NeoPixel peripheral' module definition.)
     return m

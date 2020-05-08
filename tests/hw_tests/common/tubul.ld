@@ -1,6 +1,6 @@
 /* Linker script for a minimal simulated RV32I RISC-V CPU */
 OUTPUT_ARCH( "riscv" )
-ENTRY( reset_handler )
+ENTRY( reset )
 
 MEMORY
 {
@@ -14,6 +14,7 @@ SECTIONS
 
   .text :
   {
+    KEEP (*(SORT_NONE(.reset_handler)))
     KEEP (*(SORT_NONE(.vector_table)))
     *(.rodata .rodata.*)
     *(.srodata .srodata.*)

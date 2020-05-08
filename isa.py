@@ -99,6 +99,8 @@ TRAP_BREAK = 3
 TRAP_LMIS  = 4
 TRAP_SMIS  = 6
 TRAP_ECALL = 11
+# ID numbers for implementation-specific interrupts.
+IRQ_NPX_BASE = 24
 # CSR definitions, for 'ECALL' system instructions.
 # Like with other "I-type" instructions, the 'funct3' bits select
 # between different types of environment calls.

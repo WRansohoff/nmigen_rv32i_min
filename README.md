@@ -4,11 +4,11 @@ This is a work-in-progress implementation of [the core `RV32I` `RISC-V` instruct
 
 The project's goal is to create an affordable and easy-to-use microcontroller softcore with a focus on lighting applications. The target hardware is an `iCE40UP5K-SG48` FPGA, because of its low cost and hobbyist-friendly QFN packaging. The RV32I `RISC-V` architecture was chosen for its open license and extensive compiler support.
 
-The current design is fairly simple, with no I-cache, timers, or configurable interrupts. But it can read programs out of SPI Flash, and it has a few LED-related peripherals.
+The current design is fairly simple, with no I-cache or timers. It also omits some of the core `RISC-V` "Control and Status Registers" to save space, so it does not strictly comply with the specification. But it works with GCC, it can read programs out of SPI Flash, and it has a few LED-related peripherals.
 
-There's a basic GPIO peripheral, four 'neopixel' LED drivers, and four PWM outputs. There's also an I/O multiplexer to configure which peripherals are assigned to which pins.
+There's a basic GPIO peripheral, four 'neopixel' LED drivers, and four simple PWM outputs. There's also an I/O multiplexer to configure which peripherals are assigned to which pins.
 
-It uses about 95% of the logic cells in an `iCE40UP5K`, but I'm hoping to make it smaller so that it can also fit a debugging interface and maybe a UART or two.
+It uses almost all of the logic cells in an `iCE40UP5K`, but a lot of that comes from the peripherals, and you can configure how many of those are included in the `gpio_mux.py` file. Eventually, I'd like to add other options such as a debugging interface and `SPI` / `UART` / etc.
 
 Know that I'm still learning how to use nMigen, and I wasn't experienced with digital logic design to begin with. So on the off chance that anybody stumbles across this, suggestions are always welcome!
 
@@ -26,7 +26,7 @@ To build the design, you'll also need [`yosys`](https://github.com/YosysHQ/yosys
 
 The ALU, CSR, RAM, and ROM Python files each have their own testbench to run some basic unit tests.
 
-The CPU module's testbench runs the standard `rv32i` [`RISC-V` compliance tests](https://github.com/riscv/riscv-compliance).
+The CPU module's testbench runs the standard `rv32i` [`RISC-V` compliance tests](https://github.com/riscv/riscv-compliance), and it can also be configured to simulate compiled C programs or simple assembly ROM images.
 
 The `tests/test_roms/` directory contains auto-generated Python files with corresponding machine code instructions in a format that the CPU testbenches can interpret. The generated files are not included in the repository, so you'll need to run the `tests/gen_tests.py` script to create them before you run the CPU testbenches:
 
@@ -38,9 +38,11 @@ To run a module's testbench, just run the corresponding `.py` file:
 
 Each test simulation also creates a `.vcd` file containing the waveform results, so you can check how each signal changes over time.
 
+The compliance tests don't generate a `.vcd` file by default, because they are run in one simulation instance and the resulting waveform file is large (almost 500MB). But you can swap in the commented `with Simulator(...)` line in `cpu.py`'s `cpu_mux_sim` method to change that.
+
 # Test Coverage
 
-The RISC-V RV32I compliance tests are simulated as part of the CPU testbench. They probably all pass except for `MISALIGN_JMP`, which depends on a CSR that I disabled to save space. I try to run the full test suite regularly as I make changes, but sometimes a broken commit slips through.
+The RISC-V RV32I compliance tests are simulated as part of the CPU testbench. They probably all pass except for some CSR-related ones which rely on CSRs that I disabled to save space. I try to run the full test suite regularly as I make changes, but sometimes a broken commit slips through.
 
 ## Compliance Tests
 
@@ -96,13 +98,13 @@ The RISC-V RV32I compliance tests are simulated as part of the CPU testbench. Th
 
 # Control and Status Registers
 
-This CPU does not implement User mode, Supervisor mode, or Hypervisor mode. That means all of the code will run in the top-level Machine mode, which still requires a basic subset of the `RISC-V` "Control and Status Registers" (CSRs).
+This microcontroller CPU does not implement User mode, Supervisor mode, or Hypervisor mode. That means all of the code will run in the top-level Machine mode, which still requires a basic subset of the `RISC-V` "Control and Status Registers" (CSRs).
 
-The `MIE`, `MIP`, `MTIME`, and `MTIMECMP` CSRs are not currently implemented.
+The `MIE`, `MIP`, `MTIME`, and `MTIMECMP` CSRs are not currently implemented. Interrupts and exceptions also use identical "trap" logic, which is not quite in line with the specification.
 
-Some CSRs which are unlikely to be used in the context of a small microcontroller have also been disabled to save space by commenting them out (:no_entry:). They will act like other unrecognized CSRs, as read-only registers which always return 0.
+Some CSRs which are unlikely to be used in the context of a small microcontroller have also been disabled to save space by commenting them out in `isa.py` (:no_entry:). They will act like other unrecognized CSRs, as read-only registers which always return 0.
 
-Also, the `MSTATUS` CSR also does not implement the `MPP` field, and the `MINSTRET` field is only 16 bits. Again, this is to save space.
+Also, the `MSTATUS` CSR also does not implement the `MPP` field, and the `MINSTRET` counter is only 16 bits long. Again, this is to save space.
 
 |    CSR Name     | Logic Implemented? |
 |:---------------:|:------------------:|
@@ -138,7 +140,7 @@ And you can program the resulting design with `iceprog`:
 
     iceprog build/top.bin
 
-Currently the design will not run faster than 12MHz, so you'll need to set `hfosc_div` to either 2 or 3 in the board file if you use the internal oscillator.
+Currently the design will not run faster than 10-12MHz, so you'll need to set `hfosc_div` to either 2 or 3 in the board file if you use the internal oscillator, depending on how the bees arrange the design.
 
 # Programming
 
@@ -152,4 +154,4 @@ Loading code into RAM and running it there should work, but I've only tested tha
 
 - Illegal instructions are currently ignored instead of raising an exception.
 
-- I haven't implemented interrupts yet; only the most basic non-maskable exceptions.
+- Initialized data sections don't work properly, probably because the RAM module does not perform little-endian conversions.

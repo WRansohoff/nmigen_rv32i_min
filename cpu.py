@@ -44,13 +44,15 @@ class CPU( Elaboratable ):
 
   # Helper method to enter a trap handler: jump to the appropriate
   # address, and set the MCAUSE / MEPC CSRs.
-  def trigger_trap( self, m, trap_num ):
+  def trigger_trap( self, m, trap_num, return_pc ):
     m.d.sync += [
       # Set mcause, mepc, interrupt context flag.
       # (mcause is currently disabled to save space)
       #self.csr.mcause_interrupt.eq( 0 ),
       #self.csr.mcause_ecode.eq( trap_num ),
-      self.csr.mepc_mepc.eq( Past( self.pc ).bit_select( 2, 30 ) ),
+      self.csr.mepc_mepc.eq( return_pc.bit_select( 2, 30 ) ),
+      # Disable interrupts globally until MRET or CSR write.
+      self.csr.mstatus_mie.eq( 0 ),
       # Set PC to the interrupt handler address.
       self.pc.eq( Cat( Repl( 0, 2 ),
                       ( self.csr.mtvec_base +
@@ -71,7 +73,7 @@ class CPU( Elaboratable ):
     m.submodules.rc  = self.rc
 
     # Wait-state counter to let internal memories load.
-    iws = Signal( 1, reset = 0 )
+    iws = Signal( 2, reset = 0 )
 
     # Top-level combinatorial logic.
     m.d.comb += [
@@ -98,7 +100,7 @@ class CPU( Elaboratable ):
     with m.If( self.pc[ :2 ] != 0 ):
       # (mtval is currently disabled to save space.)
       #m.d.sync += self.csr.mtval_einfo.eq( self.pc )
-      self.trigger_trap( m, TRAP_IMIS )
+      self.trigger_trap( m, TRAP_IMIS, Past( self.pc ) )
     with m.Else():
       # I-bus is active until it completes a transaction.
       m.d.comb += self.mem.imux.bus.cyc.eq( iws == 0 )
@@ -125,122 +127,145 @@ class CPU( Elaboratable ):
         iws.eq( 0 )
       ]
 
-      # Decoder switch case:
-      with m.Switch( self.mem.imux.bus.dat_r[ 0 : 7 ] ):
-        # JAL / JALR instructions: jump to a new address and place
-        # the 'return PC' in the destination register (rc).
-        with m.Case( '110-111' ):
-          m.d.sync += self.pc.eq(
-            Mux( self.mem.imux.bus.dat_r[ 3 ],
-                 self.pc + Cat(
-                   Repl( 0, 1 ),
-                   self.mem.imux.bus.dat_r[ 21: 31 ],
-                   self.mem.imux.bus.dat_r[ 20 ],
-                   self.mem.imux.bus.dat_r[ 12 : 20 ],
-                   Repl( self.mem.imux.bus.dat_r[ 31 ], 12 ) ),
-                 self.ra.data + Cat(
-                   self.mem.imux.bus.dat_r[ 20 : 32 ],
-                   Repl( self.mem.imux.bus.dat_r[ 31 ], 20 ) ) ),
-          )
-          m.d.comb += self.rc.en.eq( self.rc.addr != 0 )
+      # If an interrupt is pending and interrupts are enabled,
+      # jump to the IRQ handler instead of executing this instruction.
+      condition = m.If
+      # Neopixel peripherals:
+      for i in range( NPX_PERIPHS ):
+        with condition( ( iws == 1 ) &
+                        self.csr.mstatus_mie &
+                        self.mem.npx[ i ].txie &
+                        self.mem.npx[ i ].txip ):
+          self.trigger_trap( m, self.mem.npx[ i ].irq_num, self.pc )
+          m.d.sync += self.mem.npx[ i ].txip.eq( 0 )
+        condition = m.Elif
 
-        # Conditional branch instructions: similar to JAL / JALR,
-        # but only take the branch if the condition is met.
-        with m.Case( OP_BRANCH ):
-          # Check the ALU result. If it is zero, then:
-          # a == b for BEQ/BNE, or a >= b for BLT[U]/BGE[U].
-          with m.If( ( ( self.alu.y == 0 ) ^
-                         self.mem.imux.bus.dat_r[ 12 ] ) !=
-                       self.mem.imux.bus.dat_r[ 14 ] ):
-            # Branch only if the condition is met.
-            m.d.sync += self.pc.eq( self.pc + Cat(
-              Repl( 0, 1 ),
-              self.mem.imux.bus.dat_r[ 8 : 12 ],
-              self.mem.imux.bus.dat_r[ 25 : 31 ],
-              self.mem.imux.bus.dat_r[ 7 ],
-              Repl( self.mem.imux.bus.dat_r[ 31 ], 20 ) ) )
+      # If no interrupt is pending, process the instruction normally.
+      with m.Else():
+        # Decoder switch case:
+        with m.Switch( self.mem.imux.bus.dat_r[ 0 : 7 ] ):
+          # LUI / AUIPC / R-type / I-type instructions: apply
+          # pending CPU register write.
+          with m.Case( '0-10-11' ):
+            m.d.comb += self.rc.en.eq( self.rc.addr != 0 )
 
-        # Load / Store instructions: perform memory access
-        # through the data bus.
-        with m.Case( '0-00011' ):
-          # Trigger a trap if the address is mis-aligned.
-          # * Byte accesses are never mis-aligned.
-          # * Word-aligned accesses are never mis-aligned.
-          # * Halfword accesses are only mis-aligned when both of
-          #   the address' LSbits are 1s.
-          # Since this logic only depends on 4 bits as inputs, I think
-          # it should fit in one LUT4. (adr[0], adr[1], f[0], f[1])
-          with m.If( ( ( self.mem.dmux.bus.adr[ :2 ] == 0 ) |
-                       ( self.mem.imux.bus.dat_r[ 12 : 14 ] == 0 ) |
-                       ( ~( self.mem.dmux.bus.adr[ 0 ] &
-                            self.mem.dmux.bus.adr[ 1 ] &
-                            self.mem.imux.bus.dat_r[ 12 ] ) ) ) == 0 ):
-            self.trigger_trap( m, Cat( Repl( 0, 1 ),
-              self.mem.imux.bus.dat_r[ 5 ], Repl( 1, 1 ) ) )
-          with m.Else():
-            # Activate the data bus.
-            m.d.comb += [
-              self.mem.dmux.bus.cyc.eq( 1 ),
-              # Stores only: set the 'write enable' bit.
-              self.mem.dmux.bus.we.eq( self.mem.imux.bus.dat_r[ 5 ] )
-            ]
-            # Don't proceed until the memory access finishes.
-            with m.If( self.mem.dmux.bus.ack == 0 ):
-              m.d.sync += [
-                self.pc.eq( self.pc ),
-                iws.eq( 1 )
+          # JAL / JALR instructions: jump to a new address and place
+          # the 'return PC' in the destination register (rc).
+          with m.Case( '110-111' ):
+            m.d.sync += self.pc.eq(
+              Mux( self.mem.imux.bus.dat_r[ 3 ],
+                   self.pc + Cat(
+                     Repl( 0, 1 ),
+                     self.mem.imux.bus.dat_r[ 21: 31 ],
+                     self.mem.imux.bus.dat_r[ 20 ],
+                     self.mem.imux.bus.dat_r[ 12 : 20 ],
+                     Repl( self.mem.imux.bus.dat_r[ 31 ], 12 ) ),
+                   self.ra.data + Cat(
+                     self.mem.imux.bus.dat_r[ 20 : 32 ],
+                     Repl( self.mem.imux.bus.dat_r[ 31 ], 20 ) ) ),
+            )
+            m.d.comb += self.rc.en.eq( self.rc.addr != 0 )
+
+          # Conditional branch instructions: similar to JAL / JALR,
+          # but only take the branch if the condition is met.
+          with m.Case( OP_BRANCH ):
+            # Check the ALU result. If it is zero, then:
+            # a == b for BEQ/BNE, or a >= b for BLT[U]/BGE[U].
+            with m.If( ( ( self.alu.y == 0 ) ^
+                           self.mem.imux.bus.dat_r[ 12 ] ) !=
+                         self.mem.imux.bus.dat_r[ 14 ] ):
+              # Branch only if the condition is met.
+              m.d.sync += self.pc.eq( self.pc + Cat(
+                Repl( 0, 1 ),
+                self.mem.imux.bus.dat_r[ 8 : 12 ],
+                self.mem.imux.bus.dat_r[ 25 : 31 ],
+                self.mem.imux.bus.dat_r[ 7 ],
+                Repl( self.mem.imux.bus.dat_r[ 31 ], 20 ) ) )
+
+          # Load / Store instructions: perform memory access
+          # through the data bus.
+          with m.Case( '0-00011' ):
+            # Trigger a trap if the address is mis-aligned.
+            # * Byte accesses are never mis-aligned.
+            # * Word-aligned accesses are never mis-aligned.
+            # * Halfword accesses are only mis-aligned when both of
+            #   the address' LSbits are 1s.
+            # Since this logic only depends on 4 bits as inputs,
+            # it should fit in one LUT4. (adr[0], adr[1], f[0], f[1])
+            with m.If( ( ( self.mem.dmux.bus.adr[ :2 ] == 0 ) |
+                         ( self.mem.imux.bus.dat_r[ 12 : 14 ] == 0 ) |
+                         ( ~( self.mem.dmux.bus.adr[ 0 ] &
+                              self.mem.dmux.bus.adr[ 1 ] &
+                              self.mem.imux.bus.dat_r[ 12 ] ) ) ) == 0 ):
+              self.trigger_trap( m,
+                Cat( Repl( 0, 1 ),
+                     self.mem.imux.bus.dat_r[ 5 ],
+                     Repl( 1, 1 ) ),
+                Past( self.pc ) )
+            with m.Else():
+              # Activate the data bus.
+              m.d.comb += [
+                self.mem.dmux.bus.cyc.eq( 1 ),
+                # Stores only: set the 'write enable' bit.
+                self.mem.dmux.bus.we.eq( self.mem.imux.bus.dat_r[ 5 ] )
               ]
-            # Loads only: write to the CPU register.
-            with m.Elif( self.mem.imux.bus.dat_r[ 5 ] == 0 ):
-              m.d.comb += self.rc.en.eq( self.rc.addr != 0 )
+              # Don't proceed until the memory access finishes.
+              with m.If( self.mem.dmux.bus.ack == 0 ):
+                m.d.sync += [
+                  self.pc.eq( self.pc ),
+                  iws.eq( 2 )
+                ]
+              # Loads only: write to the CPU register.
+              with m.Elif( self.mem.imux.bus.dat_r[ 5 ] == 0 ):
+                m.d.comb += self.rc.en.eq( self.rc.addr != 0 )
 
-        # System call instruction: ECALL, EBREAK, MRET,
-        # and atomic CSR operations.
-        with m.Case( OP_SYSTEM ):
-          with m.If( self.mem.imux.bus.dat_r[ 12 : 15 ] == 0 ):
-            with m.Switch( self.mem.imux.bus.dat_r[ 20 : 22 ] ):
-              # An 'empty' ECALL instruction should raise an
-              # 'environment-call-from-M-mode" exception.
-              with m.Case( 0 ):
-                self.trigger_trap( m, TRAP_ECALL )
-              # "EBREAK" instruction: enter the interrupt context
-              # with 'breakpoint' as the cause of the exception.
-              with m.Case( 1 ):
-                self.trigger_trap( m, TRAP_BREAK )
-              # 'MRET' jumps to the stored 'pre-trap' PC in the
-              # 30 MSbits of the MEPC CSR.
-              with m.Case( 2 ):
-                m.d.sync += self.pc.eq( Cat( Repl( 0, 2 ),
-                                             self.csr.mepc_mepc ) )
-          # Defer to the CSR module for atomic CSR reads/writes.
-          # 'CSRR[WSC]': Write/Set/Clear CSR value from a register.
-          # 'CSRR[WSC]I': Write/Set/Clear CSR value from immediate.
-          with m.Else():
-            m.d.comb += [
-              self.rc.data.eq( self.csr.dat_r ),
-              self.rc.en.eq( self.rc.addr != 0 ),
-              self.csr.we.eq( 1 )
-            ]
+          # System call instruction: ECALL, EBREAK, MRET,
+          # and atomic CSR operations.
+          with m.Case( OP_SYSTEM ):
+            with m.If( self.mem.imux.bus.dat_r[ 12 : 15 ] == 0 ):
+              with m.Switch( self.mem.imux.bus.dat_r[ 20 : 22 ] ):
+                # An 'empty' ECALL instruction should raise an
+                # 'environment-call-from-M-mode" exception.
+                with m.Case( 0 ):
+                  self.trigger_trap( m, TRAP_ECALL, Past( self.pc ) )
+                # "EBREAK" instruction: enter the interrupt context
+                # with 'breakpoint' as the cause of the exception.
+                with m.Case( 1 ):
+                  self.trigger_trap( m, TRAP_BREAK, Past( self.pc ) )
+                # 'MRET' jumps to the stored 'pre-trap' PC in the
+                # 30 MSbits of the MEPC CSR.
+                with m.Case( 2 ):
+                  m.d.sync += [
+                    self.csr.mstatus_mie.eq( 1 ),
+                    self.pc.eq( Cat( Repl( 0, 2 ),
+                                     self.csr.mepc_mepc ) )
+                  ]
+            # Defer to the CSR module for atomic CSR reads/writes.
+            # 'CSRR[WSC]': Write/Set/Clear CSR value from a register.
+            # 'CSRR[WSC]I': Write/Set/Clear CSR value from immediate.
+            with m.Else():
+              m.d.comb += [
+                self.rc.data.eq( self.csr.dat_r ),
+                self.rc.en.eq( self.rc.addr != 0 ),
+                self.csr.we.eq( 1 )
+              ]
 
-        # FENCE instruction: clear any I-caches and ensure all
-        # memory operations are applied. There is no I-cache,
-        # and there is no caching of memory operations.
-        # There is also no pipelining. So...this is a nop.
-        with m.Case( OP_FENCE ):
-          pass
+          # FENCE instruction: clear any I-caches and ensure all
+          # memory operations are applied. There is no I-cache,
+          # and there is no caching of memory operations.
+          # There is also no pipelining. So...this is a nop.
+          with m.Case( OP_FENCE ):
+            pass
 
     # 'Always-on' decode/execute logic:
     with m.Switch( self.mem.imux.bus.dat_r[ 0 : 7 ] ):
       # LUI / AUIPC instructions: set destination register to
       # 20 upper bits, +pc for AUIPC.
       with m.Case( '0-10111' ):
-        m.d.comb += [
-          self.rc.data.eq(
-            Mux( self.mem.imux.bus.dat_r[ 5 ], 0, self.pc ) +
-            Cat( Repl( 0, 12 ),
-                 self.mem.imux.bus.dat_r[ 12 : 32 ] ) ),
-          self.rc.en.eq( ( self.rc.addr != 0 ) & iws )
-        ]
+        m.d.comb += self.rc.data.eq(
+          Mux( self.mem.imux.bus.dat_r[ 5 ], 0, self.pc ) +
+          Cat( Repl( 0, 12 ),
+               self.mem.imux.bus.dat_r[ 12 : 32 ] ) )
 
       # JAL / JALR instructions: set destination register to
       # the 'return PC' value.
@@ -310,10 +335,7 @@ class CPU( Elaboratable ):
               self.mem.imux.bus.dat_r[ 30 ] ) ),
             self.rc.data.eq( self.alu.y ),
           ]
-        m.d.comb += [
-          self.alu.b.eq( self.rb.data ),
-          self.rc.en.eq( ( self.rc.addr != 0 ) & iws )
-        ]
+        m.d.comb += self.alu.b.eq( self.rb.data )
 
       # I-type ALU operation: set inputs for rc = ra ? immediate
       with m.Case( OP_IMM ):
@@ -342,11 +364,9 @@ class CPU( Elaboratable ):
             self.rc.data.eq( self.alu.y ),
           ]
         # Shared I-type logic:
-        m.d.comb += [
-          self.alu.b.eq( Cat( self.mem.imux.bus.dat_r[ 20 : 32 ],
-            Repl( self.mem.imux.bus.dat_r[ 31 ], 20 ) ) ),
-          self.rc.en.eq( ( self.rc.addr != 0 ) & iws )
-        ]
+        m.d.comb += self.alu.b.eq( Cat(
+          self.mem.imux.bus.dat_r[ 20 : 32 ],
+          Repl( self.mem.imux.bus.dat_r[ 31 ], 20 ) ) )
 
     # End of CPU module definition.
     return m

@@ -51,7 +51,7 @@ class RV_Memory( Elaboratable ):
     self.npx = []
     nadr = 0x40020000
     for i in range( NPX_PERIPHS ):
-      self.npx.append( NeoPixels( self.ram.new_bus() ) )
+      self.npx.append( NeoPixels( self.ram.new_bus(), i ) )
       self.dmux.add( self.npx[ i ], addr = nadr )
       nadr += 0x0100
     self.pwm = []

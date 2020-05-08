@@ -13,6 +13,8 @@
 #define ISTEP ( SMAX / NUM_LEDS )
 // Storage for LED colors.
 volatile uint8_t color_bytes[ ( NUM_LEDS * 3 ) ];
+// Tracking variable for when each string finishes sending colors.
+volatile uint8_t donezo = 0;
 
 // Set an LED to a rainbow color based on a 'progress' count.
 // There are no multiply or divide hardware instructions, so 'STEP'
@@ -60,19 +62,6 @@ void led_rainbow( int ind, int prg ) {
   }
 }
 
-// Pre-boot reset handler: disable interrupts, set the
-// stack pointer, then call the 'main' method.
-__attribute__( ( naked ) ) void reset_handler( void ) {
-  // Disable interrupts.
-  clear_csr( mstatus, MSTATUS_MIE );
-  // Set the stack pointer.
-  __asm__( "la sp, _sp" );
-  // Call main(0, 0) in case 'argc' and 'argv' are present.
-  __asm__( "li a0, 0\n\t"
-           "li a1, 0\n\t"
-           "call main" );
-}
-
 // Pre-defined memory locations for program initialization.
 extern uint32_t _sidata, _sdata, _edata, _sbss, _ebss;
 // 'main' method which gets called from the boot code.
@@ -81,6 +70,9 @@ int main( void ) {
   memcpy( &_sdata, &_sidata, ( ( void* )&_edata - ( void* )&_sdata ) );
   // Clear the .bss RAM section.
   memset( &_sbss, 0x00, ( ( void* )&_ebss - ( void* )&_sbss ) );
+
+  // Re-enable intrerupts globally.
+  set_csr( mstatus, MSTATUS_MIE );
 
   // Connect GPIO pins 2, 45, 46, 47 to the "neopixel" peripherals.
   IOMUX->CFG1 |= ( IOMUX_NPX1 << IOMUX2_O );
@@ -102,10 +94,16 @@ int main( void ) {
   NPX3->CR |= ( ( NUM_LEDS / 3 ) << NPX_CR_LEN_O );
   NPX4->ADR = ( uint32_t )&color_bytes[ NUM_LEDS / 4 ];
   NPX4->CR |= ( ( NUM_LEDS / 4 ) << NPX_CR_LEN_O );
+  // Enable interrupts for the Neopixel peripherals.
+  NPX1->CR |= ( NPX_CR_TXIE_M );
+  NPX2->CR |= ( NPX_CR_TXIE_M );
+  NPX3->CR |= ( NPX_CR_TXIE_M );
+  NPX4->CR |= ( NPX_CR_TXIE_M );
 
   // Progress counters.
   int progress = 0;
   int iprg = 0;
+  donezo = 0xF;
 
   // Main loop.
   while( 1 ) {
@@ -119,17 +117,37 @@ int main( void ) {
     if ( progress > SMAX ) { progress -= SMAX; }
     iprg = progress;
 
-    // Start async transfer once the current one finishes.
-    // TODO: 'transfer complete' would be a good candidate for an
-    // interrupt, once I can fit software interrupts in the design...
-    while( ( NPX1->CR & NPX_CR_BSY_M ) != 0 ) {};
+    // Start async transfers once the current ones finish.
+    while ( donezo != 0xF ) {};
+    donezo = 0;
     NPX1->CR |= NPX_CR_BSY_M;
-    while( ( NPX2->CR & NPX_CR_BSY_M ) != 0 ) {};
     NPX2->CR |= NPX_CR_BSY_M;
-    while( ( NPX3->CR & NPX_CR_BSY_M ) != 0 ) {};
     NPX3->CR |= NPX_CR_BSY_M;
-    while( ( NPX4->CR & NPX_CR_BSY_M ) != 0 ) {};
     NPX4->CR |= NPX_CR_BSY_M;
   }
   return 0; // lol
+}
+
+// Neopixel peripheral 1 interrupt handler.
+__attribute__( ( interrupt ) )
+void irq_npx1( void ) {
+  donezo |= ( 1 << 0 );
+}
+
+// Neopixel peripheral 2 interrupt handler.
+__attribute__( ( interrupt ) )
+void irq_npx2( void ) {
+  donezo |= ( 1 << 1 );
+}
+
+// Neopixel peripheral 3 interrupt handler.
+__attribute__( ( interrupt ) )
+void irq_npx3( void ) {
+  donezo |= ( 1 << 2 );
+}
+
+// Neopixel peripheral 4 interrupt handler.
+__attribute__( ( interrupt ) )
+void irq_npx4( void ) {
+  donezo |= ( 1 << 3 );
 }

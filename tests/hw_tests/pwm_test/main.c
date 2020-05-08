@@ -5,19 +5,6 @@
 #include "encoding.h"
 #include "tubul.h"
 
-// Pre-boot reset handler: disable interrupts, set the
-// stack pointer, then call the 'main' method.
-__attribute__( ( naked ) ) void reset_handler( void ) {
-  // Disable interrupts.
-  clear_csr( mstatus, MSTATUS_MIE );
-  // Set the stack pointer.
-  __asm__( "la sp, _sp" );
-  // Call main(0, 0) in case 'argc' and 'argv' are present.
-  __asm__( "li a0, 0\n\t"
-           "li a1, 0\n\t"
-           "call main" );
-}
-
 // Pre-defined memory locations for program initialization.
 extern uint32_t _sidata, _sdata, _edata, _sbss, _ebss;
 // 'main' method which gets called from the boot code.
